@@ -267,7 +267,7 @@ sickle_cell_unblinded <- merge(sickle_cell_blinded, sickle_cell_cohort, by = "r_
   select(Identifier, r_number, study_id, gestation_weeks, gestation_days, date_of_blood_sample, 
          Partner_sample_available, vacutainer, AcceptedDroplets_Variant_assay, Positives_variant,
          Positives_reference, ff_assay, AcceptedDroplets_FetalFrac, Positives_maternal, Positives_paternal, 
-         Molecules_variant, Molecules_reference, Molecules_maternal, Molecules_paternal, total_DNA_molecules,
+         Molecules_variant, Molecules_reference, Molecules_maternal, Molecules_paternal, Molecules_variant_assay,
          Fetal_fraction_max_percent, Fetal_fraction_percent, Fetal_fraction_min_percent,
          Variant_fraction_max_percent, Variant_fraction_percent, Variant_fraction_min_percent,
          Likelihood_ratio, SPRT_prediction, overall_prediction, mutation_genetic_info_fetus, invasive_result)
@@ -275,7 +275,7 @@ sickle_cell_unblinded <- merge(sickle_cell_blinded, sickle_cell_cohort, by = "r_
 # Export the inconclusives for the paper table
 inconclusives_only <- sickle_cell_unblinded %>%
   filter(overall_prediction == "no call") %>%
-  select(Identifier, r_number, gestation_weeks, gestation_days, total_DNA_molecules, 
+  select(Identifier, r_number, gestation_weeks, gestation_days, Molecules_variant_assay, 
          Variant_fraction_percent, Fetal_fraction_percent, 
          Likelihood_ratio, SPRT_prediction, overall_prediction, invasive_result)
 
@@ -464,7 +464,8 @@ bespoke_cohort_blinded <- cbind(Identifier, bespoke_cohort_analysed)
 
 bespoke_cohort_unblinded <- left_join(bespoke_cohort_blinded,
                                       RAPID_biobank %>%
-                                        select(r_number, study_id, gestation_weeks, gestation_days, date_of_blood_sample, 
+                                        select(r_number, study_id, gestation_weeks, gestation_days, 
+                                               Gestation_total_weeks, date_of_blood_sample, 
                                                vacutainer, mutation_genetic_info_fetus),
                                       by = "r_number") %>%
   mutate(Call = ifelse(SPRT_prediction == "no call", "no call", "call"))
@@ -644,26 +645,6 @@ ggplot(cfDNA_conc_gestations, aes(x = Gestation_total_weeks, y = cffDNA_GE_ml_pl
 t.test(cfDNA_conc_gestations$cfDNA_GE_ml_plasma_variant_assay, cfDNA_conc_gestations$cfDNA_GE_ml_plasma_ff_assay,
        paired = TRUE)
 
-#qubit_values <- read.csv("data/sample_qubit.csv")
-# Need to modify filepath to data file saved in worksheet folder.
-
-#cfDNA_conc_gestations_qubit <- left_join(cfDNA_conc_gestations, qubit_values, by = "r_number")
-
-#cfDNA_conc_gestations_qubit_graph <- cfDNA_conc_gestations_qubit %>%
-  filter(!is.na(Conc_ng_ml)) %>%
-  mutate(qubit_ng_ul = Conc_ng_ml/10) %>%
-  mutate(qubit_copies_ul = (qubit_ng_ul*1000)/3.3) %>%
-  select(r_number, qubit_copies_ul, cfDNA_elution_concentration_ff_assay, 
-         cfDNA_elution_concentration_variant_assay) %>%
-  mutate(amplifiability_ff_ddPCR = cfDNA_elution_concentration_ff_assay / qubit_copies_ul) %>%
-  mutate(amplifiability_variant_ddPCR = cfDNA_elution_concentration_variant_assay / qubit_copies_ul)
-
-#ggplot(cfDNA_conc_gestations_qubit_graph, aes(x = cfDNA_elution_concentration_ff_assay, y = qubit_copies_ul)) +
-  geom_point()+
-  ylim(0, 150)+
-  xlim(0, 150)+
-  geom_abline()
-
 #############################################################
 # Sickle cell disease twin case (20915)
 #############################################################
@@ -773,14 +754,14 @@ sample_20915_twin_SPRT <- sample_20915 %>%
   mutate(Gamma_1 = ((q1 * (1-q0))/ (q0*(1-q1)))) %>%
   mutate(Gamma_2 = ((q2 * (1-q1))/ (q1*(1-q2)))) %>%
   # Likelihood ratio for one homozygous
-  mutate(LR_1 = exp((((Over_represented_fraction*log(Gamma_1)) + log(Delta_1))*total_DNA_molecules))) %>%
+  mutate(LR_1 = exp((((Over_represented_fraction*log(Gamma_1)) + log(Delta_1))*Molecules_variant_assay))) %>%
   # Likelihood ratio for both homozygous
-  mutate(LR_2 = exp((((Over_represented_fraction*log(Gamma_2)) + log(Delta_2))*total_DNA_molecules))) %>%
+  mutate(LR_2 = exp((((Over_represented_fraction*log(Gamma_2)) + log(Delta_2))*Molecules_variant_assay))) %>%
   # Calculate the threshold variant fractions for each classification
-  mutate(threshold_AS_SS_lower = (((log(LR)/total_DNA_molecules) - log(Delta_1)) / log(Gamma_1))*100) %>%
-  mutate(threshold_SS_SS = (((log(LR)/total_DNA_molecules) - log(Delta_2)) / log(Gamma_2))*100) %>%
-  mutate(threshold_AS_AS_upper = (((log(1/LR)/total_DNA_molecules) - log(Delta_1)) / log(Gamma_1))*100) %>%
-  mutate(threshold_AS_SS_upper = (((log(1/LR)/total_DNA_molecules) - log(Delta_2)) / log(Gamma_2))*100) %>%
+  mutate(threshold_AS_SS_lower = (((log(LR)/Molecules_variant_assay) - log(Delta_1)) / log(Gamma_1))*100) %>%
+  mutate(threshold_SS_SS = (((log(LR)/Molecules_variant_assay) - log(Delta_2)) / log(Gamma_2))*100) %>%
+  mutate(threshold_AS_AS_upper = (((log(1/LR)/Molecules_variant_assay) - log(Delta_1)) / log(Gamma_1))*100) %>%
+  mutate(threshold_AS_SS_upper = (((log(1/LR)/Molecules_variant_assay) - log(Delta_2)) / log(Gamma_2))*100) %>%
   mutate(threshold_AA_AA = 50-(threshold_SS_SS-50)) %>%
   mutate(threshold_AS_AA_upper = 50- (threshold_AS_SS_lower-50)) %>%
   mutate(threshold_AS_AS_lower = 50-(threshold_AS_AS_upper-50)) %>%
@@ -1264,7 +1245,7 @@ ggplot(sickle_cell_unblinded %>%
 
 # Plot the results of all samples with HbAS fetuses by variant fraction and total number of molecules
 ggplot(sickle_cell_unblinded %>%
-         filter(invasive_result == "HbAS"), aes(x = total_DNA_molecules, y = Variant_fraction_percent,
+         filter(invasive_result == "HbAS"), aes(x = Molecules_variant_assay, y = Variant_fraction_percent,
                                                 colour = overall_prediction))+
   geom_point()+
   geom_errorbar(aes(ymin = Variant_fraction_min_percent, ymax = Variant_fraction_max_percent))+
@@ -1314,11 +1295,6 @@ ggplot(autosomal_cohort_imbalance %>%
 #############################################################
 
 current_time <- Sys.time()
-
-write.csv(sickle_cell_blinded, 
-          file = paste0("analysis_outputs/sickle_cell_cohort_analysed_blinded", 
-                        format(current_time, "%Y%m%d_%H%M%S"), ".csv"),
-          row.names = FALSE)
 
 write.csv(sickle_cell_unblinded, 
           file = paste0("analysis_outputs/sickle_cell_cohort_analysed_unblinded", 
