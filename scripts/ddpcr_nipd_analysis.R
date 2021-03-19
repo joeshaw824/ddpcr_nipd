@@ -439,7 +439,7 @@ AD_samples <- c(12990, 13519, 14116, 14491, 14522, 19261, 19711)
 AR_samples <- c(17531, 19102)
 XLR_samples <- c(10280, 11928, 12585, 13625, 13965, 14247, 
                  14917, 16319, 16468, 16881, 18164, 18385, 18891,
-                 20817, 19611, 20980, 17667)
+                 20817, 19611, 20980, 17667, 30030)
 XLD_samples <- c(12945)
 
 # Can remove the sample with a primer binding SNP if need be
@@ -1289,6 +1289,30 @@ ggplot(autosomal_cohort_imbalance %>%
        title = "Over-represented fraction versus fetal fraction
        in ddPCR cases with homozygous fetal genotypes")+
   geom_smooth(se = FALSE, method = "lm")
+
+
+#############################################################
+# Prepare data for Exeter MCMC pipeline
+#############################################################
+
+# n_K	= number of droplets tested for variant assay
+# K_M	= number of droplets positive for variant (mutant) allele
+# K_N	= number of droplets positive for normal (reference) allele
+# n_Z	= number of droplets tested for fetal fraction assay
+# Z_X	= number of droplets positive for maternal homozygous allele
+# Z_Y	= number of droplets positive for paternal allele
+
+ddpcr_data_mcmc <- ddpcr_data_tbl %>%
+  dplyr::rename(r_number = Sample,
+                n_K = AcceptedDroplets_Variant_assay,
+                K_M = Positives_variant,
+                K_N = Positives_reference,
+                n_Z = AcceptedDroplets_FetalFrac,
+                Z_X = Positives_maternal,
+                Z_Y = Positives_paternal) %>%
+  arrange(Inheritance, variant_assay) %>%
+  select(r_number, Inheritance, variant_assay, n_K, n_Z, 
+         K_N, K_M, n_Z, Z_X, Z_Y)
 
 #############################################################
 # Export csvs with time stamps
