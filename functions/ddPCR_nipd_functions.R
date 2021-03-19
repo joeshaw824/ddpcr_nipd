@@ -107,18 +107,18 @@ calc_molecules <- function(worksheet) {
     
     mutate(Molecules_ff_assay = Molecules_maternal + Molecules_paternal) %>%
     
+    mutate(Molecules_total = Molecules_variant_assay + Molecules_ff_assay) %>%
+    
     # Calculate the fetal fraction
     mutate(Fetal_fraction = calc_ff(Molecules_maternal, Molecules_paternal)) %>%
     
     # Convert to a percentage in case I want to print as a table later on (percentages are easier to look at than decimals)
     mutate(Fetal_fraction_percent = Fetal_fraction*100) %>%
     
-    mutate(total_DNA_molecules = Molecules_variant + Molecules_reference) %>%
-    
     # Calculate the fractional abundance of each allele
     
-    mutate(Reference_fraction = Molecules_reference / total_DNA_molecules) %>%
-    mutate(Variant_fraction = Molecules_variant / total_DNA_molecules) %>%
+    mutate(Reference_fraction = Molecules_reference / Molecules_variant_assay) %>%
+    mutate(Variant_fraction = Molecules_variant / Molecules_variant_assay) %>%
     mutate(Variant_fraction_percent  = Variant_fraction * 100) %>%
     
     # Calculate the fraction of the overrepresented allele
@@ -174,8 +174,8 @@ calc_SPRT <- function(worksheet, LR_threshold) {
     
     # Perform SPRT and return the likelihood ratio
     mutate(Likelihood_ratio = case_when(
-      Inheritance == "x_linked" ~ calc_LR_X_linked(Fetal_fraction, Over_represented_fraction, total_DNA_molecules),
-      Inheritance == "autosomal" ~ calc_LR_autosomal(Fetal_fraction, Over_represented_fraction, total_DNA_molecules))) %>%
+      Inheritance == "x_linked" ~ calc_LR_X_linked(Fetal_fraction, Over_represented_fraction, Molecules_variant_assay),
+      Inheritance == "autosomal" ~ calc_LR_autosomal(Fetal_fraction, Over_represented_fraction, Molecules_variant_assay))) %>%
     
     # Classify based on likelihood ratio threshold supplied
     mutate(SPRT_prediction = case_when(
@@ -224,7 +224,7 @@ RAPID_biobank <- read_excel("I:/Genetics/RAPID/Biobank Library/AA current bioban
                               #date_of_blood_sample
                               "date",
                               #time_of_blood sample
-                              "skip",
+                              "date",
                               #maternal_DOB
                               "date",
                               #expected_delivery_date
@@ -234,29 +234,29 @@ RAPID_biobank <- read_excel("I:/Genetics/RAPID/Biobank Library/AA current bioban
                               #gestation_days
                               "numeric",
                               #date_of_first_spin
-                              "skip",
+                              "date",
                               #time_first_spin
-                              "skip",
+                              "date",
                               #first_interval
-                              "skip",
+                              "text",
                               #date_of_2nd_spin
-                              "skip",
+                              "date",
                               #time_of_2nd_spin
-                              "skip",
+                              "date",
                               #second_ Interval
-                              "skip",
+                              "text",
                               #vacutainer
                               "text",
                               #original_plasma_vol
                               "numeric",
                               #current_volume
-                              "skip",
+                              "numeric",
                               #removed_for_plasma
-                              "skip",
+                              "text",
                               #date_removed
-                              "skip",
+                              "date",
                               #blood_Pellets
-                              "skip",
+                              "numeric",
                               #maternal_episode_number
                               "text",
                               #maternal_episode_removed_for
@@ -298,17 +298,17 @@ RAPID_biobank <- read_excel("I:/Genetics/RAPID/Biobank Library/AA current bioban
                               #maternal_height_cm
                               "numeric",
                               #diabetic
-                              "skip",
+                              "text",
                               #smoking
-                              "skip",
+                              "text",
                               #before_after_invasive
-                              "skip",
+                              "text",
                               #partner_date_of_birth
-                              "skip",
+                              "date",
                               #additional_comments
                               "text",
                               #Recruited_to_EACH
-                              "skip",
+                              "text",
                               #study_name
                               "skip",
                               #Recruited_to_PAGE
@@ -316,19 +316,19 @@ RAPID_biobank <- read_excel("I:/Genetics/RAPID/Biobank Library/AA current bioban
                               #Recruited_to_BOOSTB4
                               "skip",
                               #Recruited_to_Qiagen
-                              "skip",
+                              "text",
                               #EU_Consent
-                              "skip",
+                              "text",
                               #Long_Term_follow_up
-                              "skip",
+                              "text",
                               #DNA_storage_at_Sanger
-                              "skip",
+                              "text",
                               #Checked_By_GOSH
-                              "skip",
+                              "text",
                               #Fetal_Sex_Result_by_Lab_qPCR_dPCR
-                              "skip",
+                              "text",
                               #Fetal_sex_double_checked_locally
-                              "skip",
+                              "text",
                               #action_plasma
                               "text",
                               #tubes_plasma_original
