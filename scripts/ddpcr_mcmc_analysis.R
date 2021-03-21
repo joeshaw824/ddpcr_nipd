@@ -26,6 +26,9 @@
 library(cmdstanr)
 library(tidyverse)
 
+# Load functions
+source("functions/ddpcr_nipd_functions.R")
+
 # Compile the models
 
 dominant_model <- cmdstan_model("models/nipt_dominant.stan")
@@ -224,9 +227,24 @@ mcmc_vs_sprt <- rbind(x_linked_comparison %>%
          p_G0, p_G1, p_G2,  p_G3, fetal_fraction, mcmc_prediction,  
          SPRT_prediction)) %>%
   mutate(concordant = ifelse(mcmc_prediction == SPRT_prediction,
-                             "yes", "no")) %>%
-  # remove the contaminated sample
-  filter(r_number != 13262)
+                             "yes", "no"))
+
+
+colnames(RAPID_biobank)
+
+mcmc_vs_sprt_outcomes <- left_join(
+  mcmc_vs_sprt,
+  RAPID_biobank %>%
+    mutate(r_number = as.character(r_number)) %>%
+    select(r_number, confirmed_diagnosis, mutation_genetic_info_fetus),
+  BY = "r_number"
+)
+
+view(mcmc_vs_sprt_outcomes)
+
+
+scd_comparison %>%
+  filter(r_number == "13262")
 
 #############################################################
 # 4 - Output csvs

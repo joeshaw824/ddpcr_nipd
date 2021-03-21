@@ -215,7 +215,7 @@ sickle_cell_analysed <- calc_SPRT(calc_conf_intervals(calc_molecules(ddpcr_data_
   mutate(call = ifelse(overall_prediction == "no call", "no call", "call")) %>%
   
   # Remove sample 13262 as Natalie thinks this should not go in the paper.
-  filter(Sample != "13262") %>%
+  #filter(Sample != "13262") %>%
   
   # Rename sample to r_number to allow merge with RAPID Biobank data in next step.
   # Have to specify dplyr for rename.
@@ -292,6 +292,51 @@ no_call_fetal_fractions <- sickle_cell_blinded %>%
 
 t.test(call_fetal_fractions$Fetal_fraction_percent, no_call_fetal_fractions$Fetal_fraction_percent,
        paired = FALSE)
+
+#############################################################
+# Bespoke cohort analysis
+#############################################################
+
+bespoke_cohort <- ddpcr_data_tbl %>%
+  filter(variant_assay != "HBB c.20A>T") %>%
+  dplyr::rename(r_number = Sample)
+
+bespoke_cohort$r_number <- as.numeric(bespoke_cohort$r_number)
+
+AD_samples <- c(12990, 13519, 14116, 14491, 14522, 19261, 19711)
+AR_samples <- c(17531, 19102)
+XLR_samples <- c(10280, 11928, 12585, 13625, 13965, 14247, 
+                 14917, 16319, 16468, 16881, 18164, 18385, 18891,
+                 20817, 19611, 20980, 17667, 30030)
+XLD_samples <- c(12945)
+
+# Can remove the sample with a primer binding SNP if need be
+# filter(r_number != 19397) %>%
+
+# Perform Poisson correction and SPRT analysis
+bespoke_cohort_analysed <- calc_SPRT(calc_conf_intervals(calc_molecules(bespoke_cohort)), 8) %>%
+
+  mutate(Inheritance_pattern = case_when(
+    r_number %in% AD_samples ~"AD",
+    r_number %in% AR_samples ~"AR",
+    r_number %in% XLR_samples ~"XLR",
+    r_number %in% XLD_samples ~"XLD"))
+
+#Arrange into a nice order
+bespoke_cohort_analysed <- arrange(bespoke_cohort_analysed, Inheritance_pattern)
+
+# Add on a generic identifier for the samples.
+Identifier <- paste0("cfDNA", "-", rownames(bespoke_cohort_analysed))
+
+bespoke_cohort_blinded <- cbind(Identifier, bespoke_cohort_analysed)
+
+bespoke_cohort_unblinded <- left_join(bespoke_cohort_blinded,
+                                      RAPID_biobank %>%
+                                        select(r_number, study_id, gestation_weeks, gestation_days, 
+                                               Gestation_total_weeks, date_of_blood_sample, 
+                                               vacutainer, mutation_genetic_info_fetus),
+                                      by = "r_number") %>%
+  mutate(Call = ifelse(SPRT_prediction == "no call", "no call", "call"))
 
 #############################################################
 # Sickle cell gDNA analysis
@@ -424,51 +469,6 @@ ggplot(LOD_data_longer, aes(x = total_DNA_molecules, y = FractionalAbundance_HbS
   geom_point(size = 4)+
   geom_pointrange(aes(ymin = PoissonFractionalAbundanceMin_HbS, ymax = PoissonFractionalAbundanceMax_HbS))+
   geom_hline(yintercept=50, linetype="dashed", size = 1)
-
-#############################################################
-# Bespoke cohort analysis
-#############################################################
-
-bespoke_cohort <- ddpcr_data_tbl %>%
-  filter(variant_assay != "HBB c.20A>T") %>%
-  dplyr::rename(r_number = Sample)
-
-bespoke_cohort$r_number <- as.numeric(bespoke_cohort$r_number)
-
-AD_samples <- c(12990, 13519, 14116, 14491, 14522, 19261, 19711)
-AR_samples <- c(17531, 19102)
-XLR_samples <- c(10280, 11928, 12585, 13625, 13965, 14247, 
-                 14917, 16319, 16468, 16881, 18164, 18385, 18891,
-                 20817, 19611, 20980, 17667, 30030)
-XLD_samples <- c(12945)
-
-# Can remove the sample with a primer binding SNP if need be
-# filter(r_number != 19397) %>%
-
-# Perform Poisson correction and SPRT analysis
-bespoke_cohort_analysed <- calc_SPRT(calc_conf_intervals(calc_molecules(bespoke_cohort)), 8) %>%
-
-  mutate(Inheritance_pattern = case_when(
-    r_number %in% AD_samples ~"AD",
-    r_number %in% AR_samples ~"AR",
-    r_number %in% XLR_samples ~"XLR",
-    r_number %in% XLD_samples ~"XLD"))
-
-#Arrange into a nice order
-bespoke_cohort_analysed <- arrange(bespoke_cohort_analysed, Inheritance_pattern)
-
-# Add on a generic identifier for the samples.
-Identifier <- paste0("cfDNA", "-", rownames(bespoke_cohort_analysed))
-
-bespoke_cohort_blinded <- cbind(Identifier, bespoke_cohort_analysed)
-
-bespoke_cohort_unblinded <- left_join(bespoke_cohort_blinded,
-                                      RAPID_biobank %>%
-                                        select(r_number, study_id, gestation_weeks, gestation_days, 
-                                               Gestation_total_weeks, date_of_blood_sample, 
-                                               vacutainer, mutation_genetic_info_fetus),
-                                      by = "r_number") %>%
-  mutate(Call = ifelse(SPRT_prediction == "no call", "no call", "call"))
 
 
 #############################################################
