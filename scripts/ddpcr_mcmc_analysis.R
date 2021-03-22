@@ -2,17 +2,16 @@
 ## MonteCarlo Markov Chain ddPCR Analysis
 ## March 2021
 ## Joseph.Shaw@gosh.nhs.uk 
-## This script is compiled from scripts supplied by 
+## This script is compiled from scripts and modesl supplied by 
 ## Tristan Snowsill (Exeter). Exeter use a threshold of
-## 0.95 for classifying genotypes.
+## 0.95 for classifying genotypes. This script can be used with 
+## the ddPCR data prepared in the ddpcr_nipd script, named 
+## ddpcr_data_mcmc
 #############################################################
 
 #############################################################
 # Load Resources and Models
 #############################################################
-
-# This script can be used with the ddPCR data prepared in
-# the ddpcr_nipd script, named ddpcr_data_mcmc
 
 # Data structure
 # n_K	= number of droplets tested for variant assay
@@ -53,7 +52,7 @@ initialise_chains_recessive <- function() list(rho = runif(1, 0.1, 0.5),
                                      M_Z = runif(1, 0.1, 0.5))
 
 #############################################################
-# Dominant Condiions Analysis
+# Dominant Conditions Analysis
 #############################################################
 
 biallelic_assays <- c("HBB c.20A>T", "ADAR c.2997 G>T", "RNASEH2C c.205C>T",
@@ -86,7 +85,7 @@ dominant_mcmc_calls <- dominant_with_fits %>%
     p_G1 < 0.95 & p_G2 < 0.95 ~"no call"))
 
 #############################################################
-# X-linked Condiions Analysis
+# X-linked Conditions Analysis
 #############################################################
 
 # Add on fits and extract the probabilities that the fetus is hemizygous reference (p_G0)
@@ -163,7 +162,7 @@ x_linked_comparison <- left_join(
   bespoke_cohort_blinded %>%
     mutate(r_number = as.character(r_number))%>%
     filter(Inheritance == "x_linked") %>%
-    select(r_number, SPRT_prediction), 
+    select(r_number,Likelihood_ratio, SPRT_prediction), 
   # Join by
   by = "r_number")
 
@@ -174,7 +173,7 @@ dominant_comparison <- left_join(
   bespoke_cohort_blinded %>%
     mutate(r_number = as.character(r_number))%>%
     filter(Inheritance == "autosomal") %>%
-    select(r_number, SPRT_prediction), 
+    select(r_number, Likelihood_ratio, SPRT_prediction), 
   # Join by
   by = "r_number")
 
@@ -187,7 +186,7 @@ rare_recessive_comparison <- left_join(
   bespoke_cohort_blinded %>%
     mutate(r_number = as.character(r_number))%>%
     filter(Inheritance == "autosomal") %>%
-    select(r_number, SPRT_prediction), 
+    select(r_number, Likelihood_ratio, SPRT_prediction), 
   # Join by
   by = "r_number")
 
@@ -198,39 +197,35 @@ scd_comparison <- left_join(
   # Second table
   sickle_cell_blinded %>%
     mutate(r_number = as.character(r_number))%>%
-    select(r_number, SPRT_prediction, overall_prediction), 
+    select(r_number, Likelihood_ratio, SPRT_prediction), 
   # Join by
   by = "r_number")
-
 
 # Format the columns the same and bind together
 mcmc_vs_sprt <- rbind(x_linked_comparison %>%
   mutate(p_G2 = "") %>%
   mutate(p_G3 = "") %>%
-  select(r_number, Inheritance, variant_assay,    
-         p_G0, p_G1, p_G2,  p_G3, fetal_fraction, mcmc_prediction,  
+  select(r_number, Inheritance, variant_assay, fetal_fraction, 
+         p_G0, p_G1, p_G2,  p_G3, Likelihood_ratio, mcmc_prediction,  
          SPRT_prediction),
   dominant_comparison %>%
   mutate(p_G0 = "") %>%
   mutate(p_G3 = "") %>%
-  select(r_number, Inheritance, variant_assay,    
-         p_G0, p_G1, p_G2,  p_G3, fetal_fraction, mcmc_prediction,  
+  select(r_number, Inheritance, variant_assay, fetal_fraction, 
+         p_G0, p_G1, p_G2,  p_G3, Likelihood_ratio, mcmc_prediction,  
          SPRT_prediction),
   rare_recessive_comparison %>%
   mutate(p_G0 = "") %>%
-  select(r_number, Inheritance, variant_assay,    
-         p_G0, p_G1, p_G2,  p_G3, fetal_fraction, mcmc_prediction,  
+  select(r_number, Inheritance, variant_assay, fetal_fraction, 
+         p_G0, p_G1, p_G2,  p_G3, Likelihood_ratio, mcmc_prediction,  
          SPRT_prediction),
   scd_comparison %>%
   mutate(p_G0 = "") %>%
-  select(r_number, Inheritance, variant_assay,    
-         p_G0, p_G1, p_G2,  p_G3, fetal_fraction, mcmc_prediction,  
+  select(r_number, Inheritance, variant_assay, fetal_fraction, 
+         p_G0, p_G1, p_G2,  p_G3, Likelihood_ratio, mcmc_prediction,  
          SPRT_prediction)) %>%
   mutate(concordant = ifelse(mcmc_prediction == SPRT_prediction,
                              "yes", "no"))
-
-
-colnames(RAPID_biobank)
 
 mcmc_vs_sprt_outcomes <- left_join(
   mcmc_vs_sprt,
@@ -240,20 +235,14 @@ mcmc_vs_sprt_outcomes <- left_join(
   BY = "r_number"
 )
 
-view(mcmc_vs_sprt_outcomes)
-
-
-scd_comparison %>%
-  filter(r_number == "13262")
-
 #############################################################
 # 4 - Output csvs
 #############################################################
 
 current_time <- Sys.time()
 
-write.csv(mcmc_vs_sprt, 
-          file = paste0("analysis_outputs/mcmc_vs_sprt", 
+write.csv(mcmc_vs_sprt_outcomes, 
+          file = paste0("analysis_outputs/mcmc_vs_sprt_outcomes", 
                         format(current_time, "%Y%m%d_%H%M%S"), ".csv"),
           row.names = FALSE)
 

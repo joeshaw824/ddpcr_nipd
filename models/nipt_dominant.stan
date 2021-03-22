@@ -1,3 +1,5 @@
+// Dominant model from Tristan Snowsill.
+
 data {
   int<lower=0> n_K;
   int<lower=0> K_N;

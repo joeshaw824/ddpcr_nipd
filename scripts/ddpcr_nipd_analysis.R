@@ -118,6 +118,29 @@ ddpcr_data_tbl <- pivotted_ddpcr %>%
   mutate(Positives_paternal = pmin(Positives_ff_allele1, Positives_ff_allele2))
 
 #############################################################
+# Prepare data for Exeter MCMC pipeline
+#############################################################
+
+# n_K	= number of droplets tested for variant assay
+# K_M	= number of droplets positive for variant (mutant) allele
+# K_N	= number of droplets positive for normal (reference) allele
+# n_Z	= number of droplets tested for fetal fraction assay
+# Z_X	= number of droplets positive for maternal homozygous allele
+# Z_Y	= number of droplets positive for paternal allele
+
+ddpcr_data_mcmc <- ddpcr_data_tbl %>%
+  dplyr::rename(r_number = Sample,
+                n_K = AcceptedDroplets_Variant_assay,
+                K_M = Positives_variant,
+                K_N = Positives_reference,
+                n_Z = AcceptedDroplets_FetalFrac,
+                Z_X = Positives_maternal,
+                Z_Y = Positives_paternal) %>%
+  arrange(Inheritance, variant_assay) %>%
+  select(r_number, Inheritance, variant_assay, n_K, n_Z, 
+         K_N, K_M, n_Z, Z_X, Z_Y)
+
+#############################################################
 # Read in gDNA data and wrangle
 #############################################################
 
@@ -1289,30 +1312,6 @@ ggplot(autosomal_cohort_imbalance %>%
        title = "Over-represented fraction versus fetal fraction
        in ddPCR cases with homozygous fetal genotypes")+
   geom_smooth(se = FALSE, method = "lm")
-
-
-#############################################################
-# Prepare data for Exeter MCMC pipeline
-#############################################################
-
-# n_K	= number of droplets tested for variant assay
-# K_M	= number of droplets positive for variant (mutant) allele
-# K_N	= number of droplets positive for normal (reference) allele
-# n_Z	= number of droplets tested for fetal fraction assay
-# Z_X	= number of droplets positive for maternal homozygous allele
-# Z_Y	= number of droplets positive for paternal allele
-
-ddpcr_data_mcmc <- ddpcr_data_tbl %>%
-  dplyr::rename(r_number = Sample,
-                n_K = AcceptedDroplets_Variant_assay,
-                K_M = Positives_variant,
-                K_N = Positives_reference,
-                n_Z = AcceptedDroplets_FetalFrac,
-                Z_X = Positives_maternal,
-                Z_Y = Positives_paternal) %>%
-  arrange(Inheritance, variant_assay) %>%
-  select(r_number, Inheritance, variant_assay, n_K, n_Z, 
-         K_N, K_M, n_Z, Z_X, Z_Y)
 
 #############################################################
 # Export csvs with time stamps
