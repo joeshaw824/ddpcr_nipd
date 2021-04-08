@@ -1319,6 +1319,44 @@ ggplot(autosomal_cohort_imbalance %>%
   geom_smooth(se = FALSE, method = "lm")
 
 #############################################################
+# Enzyme cut site analysis
+#############################################################
+
+# Specify DNASE1L3 end motifs from Serpas et al PMID: 30593563 in both forward and reverse
+# complement.
+dnase1l3_end_motifs <- c("CCCA", "CCAG", "CCTG", "CCAA", "CCCT", "CCAT", 
+                         "TGGG", "CTGG", "CAGG", "TTGG", "AGGG", "ATGG") 
+
+# Read in amplicons
+amplicons <- read_excel("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/ddPCR Assay Design/ddPCR_Assay_Ordering.xlsx",
+                        sheet = "amplicons")
+
+reference_amplicons <- amplicons %>%
+  mutate(dnase1l3_CCCA = str_count(amplicon_reference, "CCCA")) %>%
+  mutate(dnase1l3_CCAG = str_count(amplicon_reference, "CCAG")) %>%
+  mutate(dnase1l3_CCTG = str_count(amplicon_reference, "CCTG")) %>%
+  mutate(dnase1l3_CCAA = str_count(amplicon_reference, "CCAA")) %>%
+  mutate(dnase1l3_CCCT = str_count(amplicon_reference, "CCCT")) %>%
+  mutate(dnase1l3_CCAT = str_count(amplicon_reference, "CCAT")) %>%
+  mutate(dnase1l3_TGGG = str_count(amplicon_reference, "TGGG")) %>%
+  mutate(dnase1l3_CTGG = str_count(amplicon_reference, "CTGG")) %>%
+  mutate(dnase1l3_CAGG = str_count(amplicon_reference, "CAGG")) %>%
+  mutate(dnase1l3_TTGG = str_count(amplicon_reference, "TTGG")) %>%
+  mutate(dnase1l3_AGGG = str_count(amplicon_reference, "AGGG")) %>%
+  mutate(dnase1l3_ATGG = str_count(amplicon_reference, "ATGG"))
+
+dnase1l3_sum <- rowSums(reference_amplicons[,3:14])
+
+amplicons_motifs <- cbind(reference_amplicons, dnase1l3_sum) %>%
+  mutate(assay_name = fct_reorder(assay_name, dnase1l3_sum))
+
+ggplot(amplicons_motifs, aes(x = dnase1l3_sum, y = assay_name))+
+  geom_col()+
+  theme_bw()+
+  labs( x = "Number of DNAse1L3 CC motifs in target amplicon", y = "ddPCR assay",
+        title = "Frequency of CC motifs in target amplicons")
+
+#############################################################
 # Export csvs with time stamps
 #############################################################
 
