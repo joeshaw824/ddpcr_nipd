@@ -51,12 +51,13 @@ initialise_chains_recessive <- function() list(rho = runif(1, 0.1, 0.5),
                                      M_K = runif(1, 0.1, 0.5),
                                      M_Z = runif(1, 0.1, 0.5))
 
+# Specify which assays are bi-allelic
+biallelic_assays <- c("ADAR c.2997 G>T", "RNASEH2C c.205C>T",
+                      "FGFR3 c.1138G>A", "ADA c.556G>A", "PMM2 c.691G>A")
+
 #############################################################
 # Dominant Conditions Analysis
 #############################################################
-
-biallelic_assays <- c("HBB c.20A>T", "ADAR c.2997 G>T", "RNASEH2C c.205C>T",
-                      "FGFR3 c.1138G>A")
 
 # Add on fits and extract the probabilities that the fetus is heterozygous (pG[1])
 # and homozygous reference (pG[2]).
@@ -117,14 +118,14 @@ x_linked_mcmc_calls <- x_linked_with_fits %>%
 
 
 #############################################################
-# Recessive Conditions Analysis
+# Rare Recessive Conditions Analysis
 #############################################################
 
 # Extract the probabilities that the fetus is homozygous reference (pG[1]),
 # heterozygous (pG[2]) and homozygous variant (pG[3]).
 
 recessive_with_fits <- ddpcr_data_mcmc %>%
-  filter(Inheritance == "autosomal" & variant_assay %in% biallelic_assays) %>%
+  filter(variant_assay %in% biallelic_assays) %>%
   nest(data = n_K:Z_Y) %>%
   mutate(
     data    = map(data, as.list),
@@ -140,6 +141,39 @@ recessive_with_fits <- ddpcr_data_mcmc %>%
   unnest_wider(results)
 
 recessive_mcmc_calls <- recessive_with_fits %>%
+  select(-c(data, fit)) %>%
+  dplyr::rename(fetal_fraction = rho_est) %>%
+  mutate(mcmc_prediction = case_when(
+    p_G1 > 0.95 ~"homozygous reference",
+    p_G2 > 0.95 ~"heterozygous",
+    p_G3 > 0.95 ~"homozygous variant",
+    p_G1 < 0.95 & p_G2 < 0.95 & p_G2 < 0.95 ~"no call"
+  ))
+
+#############################################################
+# Sickle Cell Disease Analysis
+#############################################################
+
+# Extract the probabilities that the fetus is homozygous reference (pG[1]),
+# heterozygous (pG[2]) and homozygous variant (pG[3]).
+
+sickle_with_fits <- ddpcr_data_mcmc %>%
+  filter(variant_assay == "HBB c.20A>T") %>%
+  nest(data = n_K:Z_Y) %>%
+  mutate(
+    data    = map(data, as.list),
+    fit     = map(data, ~ recessive_model$sample(data = .,
+                                                 init = initialise_chains_recessive,
+                                                 step_size = 0.2,
+                                                 parallel_chains = parallel::detectCores())),
+    results = map(fit,  ~ setNames(pivot_wider(.$summary(c("pG", "rho"), "mean"),
+                                               names_from = "variable",
+                                               values_from = "mean"),
+                                   c("p_G1", "p_G2", "p_G3", "rho_est")))
+  ) %>%
+  unnest_wider(results)
+
+sickle_mcmc_calls <- sickle_with_fits %>%
   select(-c(data, fit)) %>%
   dplyr::rename(fetal_fraction = rho_est) %>%
   mutate(mcmc_prediction = case_when(
@@ -180,8 +214,8 @@ dominant_comparison <- left_join(
 rare_recessive_comparison <- left_join(
   # First table
   recessive_mcmc_calls %>%
-    filter(variant_assay %in% c("ADAR c.2997 G>T", "RNASEH2C c.205C>T",
-                                "FGFR3 c.1138G>A")),
+    filter(variant_assay %in% biallelic_assays &
+             variant_assay != "HBB c.20A>T"),
   # Second table
   bespoke_cohort_blinded %>%
     mutate(r_number = as.character(r_number))%>%
@@ -245,8 +279,3 @@ write.csv(mcmc_vs_sprt_outcomes,
           file = paste0("analysis_outputs/mcmc_vs_sprt_outcomes", 
                         format(current_time, "%Y%m%d_%H%M%S"), ".csv"),
           row.names = FALSE)
-
-
-
-
-

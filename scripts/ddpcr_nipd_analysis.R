@@ -978,8 +978,6 @@ merged", 2))
 
 # VHL
 plot_sample_graph(14522, "20RG-148G0075")
-# TCOF
-plot_sample_graph(14116, "20RG-148G0076")
 # FGFR3
 plot_sample_graph(13519, "20RG-307G0060")
 # NF1
@@ -990,14 +988,21 @@ plot_sample_graph(19261, "20RG-307G0064")
 plot_sample_graph(19711, "20RG-148G0080")
 # ADAR
 plot_sample_graph(19102, "20RG-336G0066")
-# ABCD1
-plot_sample_graph(19397, "18G10773")
 # MAGED2
 plot_sample_graph(20980, "21RG-027G0010")
 # IDS
 plot_sample_graph(19611, "21RG-027G0070")
 # OTC
 plot_sample_graph(17667, "21RG-027G0004")
+# FOXP3 .1010
+plot_sample_graph(18891, "18G10772")+
+  ylim(0, 5000)
+# ABCD1
+plot_sample_graph(19397, "18G10773")
+# TCOF
+plot_sample_graph(14116, "20RG-148G0076")
+# COL4A5
+plot_sample_graph(12945, "18G10521")
 
 #############################################################
 # Plotting individual sample graphs for paper
@@ -1328,5 +1333,3 @@ write.csv(bespoke_cohort_unblinded,
           file = paste0("analysis_outputs/bespoke_cohort_unblinded", 
                         format(current_time, "%Y%m%d_%H%M%S"), ".csv"),
           row.names = FALSE)
-
-
