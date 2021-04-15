@@ -209,8 +209,13 @@ fifty_percent_line <- geom_hline(yintercept=50, linetype="dashed", size = 1)
 # Load RAPID Biobank
 #############################################################
 
+biobank_filepath <- "I:/Genetics/RAPID/Biobank Library/AA current biobank/"
+
+# Use filename pattern recognition with a wildcard for the date to select the current biobank.
+biobank_current <- list.files(path= biobank_filepath, pattern="^RAPID_Biobank_database_.*.xlsx$")
+
 # Loads the most recent version of the RAPID biobank.
-RAPID_biobank <- read_excel("I:/Genetics/RAPID/Biobank Library/AA current biobank/RAPID_Biobank_database_2020301.xlsx",
+RAPID_biobank <- read_excel(paste0(biobank_filepath,biobank_current),
                             sheet = "database",
                             # Have to specify the data types for each column as not all cells have data
                             # and read_excel cannot guess correctly.
