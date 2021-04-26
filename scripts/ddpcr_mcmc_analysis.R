@@ -53,7 +53,7 @@ initialise_chains_recessive <- function() list(rho = runif(1, 0.1, 0.5),
 
 # Specify which assays are bi-allelic
 biallelic_assays <- c("ADAR c.2997 G>T", "RNASEH2C c.205C>T",
-                      "FGFR3 c.1138G>A", "ADA c.556G>A", "PMM2 c.691G>A")
+                      "FGFR3 c.1138G>A", "ADA c.556G>A", "PMM2 c.691G>A", "HBB c.20A>T")
 
 #############################################################
 # Dominant Conditions Analysis
@@ -125,7 +125,7 @@ x_linked_mcmc_calls <- x_linked_with_fits %>%
 # heterozygous (pG[2]) and homozygous variant (pG[3]).
 
 recessive_with_fits <- ddpcr_data_mcmc %>%
-  filter(variant_assay %in% biallelic_assays) %>%
+  filter(variant_assay %in% biallelic_assays & variant_assay != "HBB c.20A>T") %>%
   nest(data = n_K:Z_Y) %>%
   mutate(
     data    = map(data, as.list),
