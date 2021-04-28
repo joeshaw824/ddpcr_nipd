@@ -337,7 +337,7 @@ XLD_samples <- c(12945)
 # filter(r_number != 19397) %>%
 
 # Perform Poisson correction and SPRT analysis
-bespoke_cohort_analysed <- calc_SPRT(calc_conf_intervals(calc_molecules(bespoke_cohort)), 8) %>%
+bespoke_cohort_analysed <- calc_SPRT(calc_conf_intervals(calc_molecules(bespoke_cohort)), 250) %>%
 
   mutate(Inheritance_pattern = case_when(
     r_number %in% AD_samples ~"AD",

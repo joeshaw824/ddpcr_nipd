@@ -213,9 +213,7 @@ dominant_comparison <- left_join(
 
 rare_recessive_comparison <- left_join(
   # First table
-  recessive_mcmc_calls %>%
-    filter(variant_assay %in% biallelic_assays &
-             variant_assay != "HBB c.20A>T"),
+  recessive_mcmc_calls,
   # Second table
   bespoke_cohort_blinded %>%
     mutate(r_number = as.character(r_number))%>%
@@ -226,8 +224,7 @@ rare_recessive_comparison <- left_join(
 
 scd_comparison <- left_join(
   # First table
-  recessive_mcmc_calls %>%
-    filter(variant_assay == "HBB c.20A>T"),
+  sickle_mcmc_calls,
   # Second table
   sickle_cell_blinded %>%
     mutate(r_number = as.character(r_number))%>%
@@ -266,8 +263,10 @@ mcmc_vs_sprt_outcomes <- left_join(
   RAPID_biobank %>%
     mutate(r_number = as.character(r_number)) %>%
     select(r_number, confirmed_diagnosis, mutation_genetic_info_fetus),
-  BY = "r_number"
+  by = "r_number"
 )
+
+view(mcmc_vs_sprt_outcomes)
 
 #############################################################
 # 4 - Output csvs
