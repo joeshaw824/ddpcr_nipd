@@ -1008,9 +1008,6 @@ plot_sample_graph(12945, "18G10521")
 # Plotting individual sample graphs for paper
 #############################################################
 
-R_number <- 14491
-control_number <- "20RG-148G0081"
-
 sample_variant <- bespoke_cohort_analysed %>%
   filter(r_number == R_number) %>%
   # RENAME
@@ -1257,6 +1254,10 @@ plot_rmd_graph <- function(cfdna_sample, parents) {
                                 filter(r_number == cfdna_sample) %>%
                                 select(SPRT_prediction))
   
+  mcmc_result <- as.character(sickle_mcmc_calls %>%
+                                      filter(r_number == cfdna_sample) %>%
+                                      select(mcmc_prediction))
+  
   # Fetal fraction result
   ff_result <- as.character(round(sickle_cell_analysed %>% 
                                     filter(r_number == cfdna_sample) %>%
@@ -1267,7 +1268,8 @@ plot_rmd_graph <- function(cfdna_sample, parents) {
                                     filter(r_number == cfdna_sample) %>%
                                     select(Variant_fraction_percent), digits = 1))
   
-  sprt_result_subtitle <- paste0("Prediction: ", sprt_result, "   ", "Fetal fraction: ", ff_result, "%", 
+  sprt_result_subtitle <- paste0("SPRT: ", sprt_result, "   ", "MCMC: ", mcmc_result, 
+                                 "   ", "Fetal fraction: ", ff_result, "%", 
                                  "   ", "Variant fraction: ", vf_result, "%")
 
 
@@ -1285,14 +1287,28 @@ plot_rmd_graph <- function(cfdna_sample, parents) {
                                                 variant_cfdna_sample$assay, "  ",
                                                 "Fetal fraction assay:", ff_cfdna_sample$assay),
          subtitle = paste(sprt_result_subtitle))
-  
+
   return(rmd_plot)
 }
 
-plot_rmd_graph(30173, c("21RG-062G0120", "21RG-062G0114"))
-plot_rmd_graph(19868, c("21RG-083G0126", "21RG-083G0132"))
-plot_rmd_graph(14182, c("21RG-062G0108", "21RG-062G0111"))
-plot_rmd_graph(30142, c("21RG-083G0112", "21RG-083G0120"))
+rmd_graph_30173 <- plot_rmd_graph(30173, c("21RG-062G0120", "21RG-062G0114"))
+rmd_graph_19868 <- plot_rmd_graph(19868, c("21RG-083G0126", "21RG-083G0132"))
+rmd_graph_14182 <- plot_rmd_graph(14182, c("21RG-062G0108", "21RG-062G0111"))
+rmd_graph_30142 <- plot_rmd_graph(30142, c("21RG-083G0112", "21RG-083G0120"))
+rmd_graph_30063 <- plot_rmd_graph(30063, c("21RG-103G0115", "21RG-103G0117"))
+rmd_graph_30228 <- plot_rmd_graph(30228, c("21RG-103G0061", "21RG-103G0062"))
+rmd_graph_20874 <- plot_rmd_graph(20874, c("21RG-103G0118", "21RG-103G0119"))
+rmd_graph_30230 <- plot_rmd_graph(30230, c("21RG-103G0120", "21RG-103G0122"))
+
+ggsave("rmd_graph_30173.png", rmd_graph_30173, path = "plots/")
+ggsave("rmd_graph_19868.png", rmd_graph_19868, path = "plots/")
+ggsave("rmd_graph_14182.png", rmd_graph_14182, path = "plots/")
+ggsave("rmd_graph_30142.png", rmd_graph_30142, path = "plots/")
+ggsave("rmd_graph_30063.png", rmd_graph_30063, path = "plots/")
+ggsave("rmd_graph_30228.png", rmd_graph_30228, path = "plots/")
+ggsave("rmd_graph_20874.png", rmd_graph_20874, path = "plots/")
+ggsave("rmd_graph_30230.png", rmd_graph_30230, path = "plots/")
+
 
 #############################################################
 # Plotting graphs of sample cohorts
@@ -1399,6 +1415,31 @@ ggplot(sickle_cell_unblinded, aes(x = Fetal_fraction_percent, y = Variant_fracti
   labs(x = "Fetal fraction (%)", y = "Variant fraction (%)")+
   ylim(42.5, 57.5)+
   xlim(0, 22)
+
+# Plot the SCD results fro ESHG 2021 Poster
+ggplot(sickle_cell_unblinded %>%
+         filter(!r_number %in% c(13262, 20915)), aes(x = Fetal_fraction_percent, y = Variant_fraction_percent))+
+  # Add colours for the classifications. Also put them in the right order for the legend: homozygous
+  # variant at the top
+  # 0000FF is dark blue
+  # 999999 is grey
+  # 000000 is black
+  # 99CCFF is light blue
+  # Factor order is alphabetical: het, hom normal, hom variant, no call
+  scale_fill_manual(values=c("#000000", "#99CCFF", "#999999", "#0000FF","#FF0000"),
+                    breaks=c("homozygous variant", "heterozygous", "no call", "homozygous reference", "twin pregnancy"))+
+  geom_point(size = 8, aes(fill = overall_prediction), colour="black", pch=21, alpha = 0.8)+
+  scale_colour_manual(values = c("#FFFFFF"))+
+  fifty_percent_line +
+  theme_bw()+
+  theme(axis.text=element_text(size=15), axis.title = element_text(size=18), 
+        plot.title = element_text(size=20),
+        legend.background = element_rect(fill="white"),
+        legend.position = "bottom", 
+        legend.title = element_blank(), legend.text = element_text(size= 15))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  labs(x = "Fetal fraction (%)", y = "Variant fraction (%)")+
+  xlim(0, 20)
 
 
 cfDNA_for_graph <- sickle_cell_unblinded %>%
@@ -1710,7 +1751,8 @@ plot_rmd_graph(14116, "20RG-148G0076")
 plot_rmd_graph(12945, "18G10521")
 # IDS
 plot_rmd_graph(19611, "21RG-027G0070")
-
+# MAGED2
+plot_rmd_graph(20980, "21RG-027G0010")
 
 #############################################################
 
