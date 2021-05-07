@@ -206,7 +206,7 @@ fifty_percent_line <- geom_hline(yintercept=50, linetype="dashed", size = 1)
 
 
 #############################################################
-# Load RAPID Biobank
+# Functions for using the RAPID Biobank
 #############################################################
 
 biobank_filepath <- "I:/Genetics/RAPID/Biobank Library/AA current biobank/"
@@ -362,4 +362,47 @@ RAPID_biobank <- read_excel(paste0(biobank_filepath,biobank_current),
   mutate(gestation_days_as_weeks = gestation_days/7) %>%
   mutate(Gestation_total_weeks = gestation_weeks + gestation_days_as_weeks) %>%
   mutate(Partner_sample_available = ifelse(paste0("Partner",study_id) %in% study_id, "Yes", "No")) %>%
-  mutate(year = year(date_of_blood_sample))
+  mutate(year = year(date_of_blood_sample)) %>%
+  # Add sample type to allow easy exclusion of partner samples when searching.
+  mutate(sample_type = ifelse(startsWith(study_id, "Partner"), "Partner", "Pregnant woman"))
+
+# Finding relevant samples in the RAPID biobank Excel spreadsheet is tricky
+# due to the use of free-type fields for sample indication/diagnosis etc and 
+# lack of standardisation.
+
+# There are several free-type columns that could have relevant information: 
+# indication, mutation_genetic_info_fetus, risk, confirmed_diagnosis, maternal_mutation, 
+# paternal_mutation, additional_comments.
+
+# The search_biobank function allows you to input various strings that you want to search
+# for and then uses grep to find matches in the relevant columns, before filtering and
+# and returning the results table. Search terms can be input as a character vector.
+# grep defaults to ignore.case = FALSE, so search terms can be in any case.
+
+# Example: search_biobank(c("sma ", "spinal", "atrophy", "smn1"))
+# Example: search_biobank(c("CF", "cftr", "delta508", "cystic fibrosis"))
+
+search_biobank <- function(search_terms) {
+  search_hits <- unique(grep(paste(search_terms,collapse="|"), 
+                             # Columns to look in
+                             c(RAPID_biobank$indication, RAPID_biobank$mutation_genetic_info_fetus,
+                               RAPID_biobank$risk, RAPID_biobank$confirmed_diagnosis,
+                               RAPID_biobank$additional_comments, RAPID_biobank$maternal_mutation,
+                               RAPID_biobank$paternal_mutation), value=TRUE))
+  
+  search_results <- RAPID_biobank %>%
+    filter(indication %in% search_hits 
+           | mutation_genetic_info_fetus %in% search_hits
+           | risk %in% search_hits
+           | confirmed_diagnosis %in% search_hits
+           | additional_comments %in% search_hits
+           | maternal_mutation %in% search_hits
+           | paternal_mutation %in% search_hits) %>%
+    # Only show samples which were not discarded in the reorganisation process
+    filter(r_number > 10444) %>%
+    select(r_number, study_id, site, maternal_DOB, indication, mutation_genetic_info_fetus,
+           confirmed_diagnosis, additional_comments, maternal_mutation,
+           paternal_mutation, tubes_plasma_current)
+  
+  return(search_results)
+}
