@@ -21,12 +21,16 @@
 # Z_X	= number of droplets positive for maternal homozygous allele
 # Z_Y	= number of droplets positive for paternal allele
 
-# Load cmdstanr
+# Load necessary packages
+# cmdstanr required for running stan models
 library(cmdstanr)
+# bayesplot required for diagnostic modelling
+library(bayesplot)
 library(tidyverse)
 
 # Load functions
 source("functions/ddpcr_nipd_functions.R")
+source("functions/RAPID_biobank.R")
 
 # Compile the models
 
@@ -157,8 +161,10 @@ recessive_mcmc_calls <- recessive_with_fits %>%
 # Extract the probabilities that the fetus is homozygous reference (pG[1]),
 # heterozygous (pG[2]) and homozygous variant (pG[3]).
 
+run_1413 <- c(20238, 30206, 30068)
+
 sickle_with_fits <- ddpcr_data_mcmc %>%
-  filter(variant_assay == "HBB c.20A>T") %>%
+  filter(r_number %in% run_1413) %>%
   nest(data = n_K:Z_Y) %>%
   mutate(
     data    = map(data, as.list),
@@ -182,6 +188,8 @@ sickle_mcmc_calls <- sickle_with_fits %>%
     p_G3 > 0.95 ~"homozygous variant",
     p_G1 < 0.95 & p_G2 < 0.95 & p_G2 < 0.95 ~"no call"
   ))
+
+view(sickle_mcmc_calls)
 
 #############################################################
 # Compare to SPRT
@@ -269,7 +277,31 @@ mcmc_vs_sprt_outcomes <- left_join(
 view(mcmc_vs_sprt_outcomes)
 
 #############################################################
-# 4 - Output csvs
+# Diagnostic plotting
+#############################################################
+
+?mcmc_scatter()
+
+test <- dominant_with_fits[1,5]
+
+nuts_params(dominant_with_fits[1,5])
+
+?nuts_params()
+
+dominant_with_fits[1, 5]
+
+nuts_params(dominant_model, pars = NULL, inc_warmup = FALSE)
+
+log_posterior()
+
+fit     = map(data, ~ dominant_model$sample(data = .,
+                                            init = initialise_chains_dominant,
+                                            step_size = 0.2,
+                                            parallel_chains = parallel::detectCores()))
+?map()
+
+#############################################################
+# Output csvs
 #############################################################
 
 current_time <- Sys.time()
