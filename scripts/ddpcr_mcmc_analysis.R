@@ -2,17 +2,16 @@
 ## MonteCarlo Markov Chain ddPCR Analysis
 ## March 2021
 ## Joseph.Shaw@gosh.nhs.uk 
-## This script is compiled from scripts supplied by 
+## This script is compiled from scripts and modesl supplied by 
 ## Tristan Snowsill (Exeter). Exeter use a threshold of
-## 0.95 for classifying genotypes.
+## 0.95 for classifying genotypes. This script can be used with 
+## the ddPCR data prepared in the ddpcr_nipd script, named 
+## ddpcr_data_mcmc
 #############################################################
 
 #############################################################
 # Load Resources and Models
 #############################################################
-
-# This script can be used with the ddPCR data prepared in
-# the ddpcr_nipd script, named ddpcr_data_mcmc
 
 # Data structure
 # n_K	= number of droplets tested for variant assay
@@ -22,9 +21,16 @@
 # Z_X	= number of droplets positive for maternal homozygous allele
 # Z_Y	= number of droplets positive for paternal allele
 
-# Load cmdstanr
+# Load necessary packages
+# cmdstanr required for running stan models
 library(cmdstanr)
+# bayesplot required for diagnostic modelling
+library(bayesplot)
 library(tidyverse)
+
+# Load functions
+source("functions/ddpcr_nipd_functions.R")
+source("functions/RAPID_biobank.R")
 
 # Compile the models
 
@@ -49,12 +55,13 @@ initialise_chains_recessive <- function() list(rho = runif(1, 0.1, 0.5),
                                      M_K = runif(1, 0.1, 0.5),
                                      M_Z = runif(1, 0.1, 0.5))
 
-#############################################################
-# Dominant Condiions Analysis
-#############################################################
+# Specify which assays are bi-allelic
+biallelic_assays <- c("ADAR c.2997 G>T", "RNASEH2C c.205C>T",
+                      "FGFR3 c.1138G>A", "ADA c.556G>A", "PMM2 c.691G>A", "HBB c.20A>T")
 
-biallelic_assays <- c("HBB c.20A>T", "ADAR c.2997 G>T", "RNASEH2C c.205C>T",
-                      "FGFR3 c.1138G>A")
+#############################################################
+# Dominant Conditions Analysis
+#############################################################
 
 # Add on fits and extract the probabilities that the fetus is heterozygous (pG[1])
 # and homozygous reference (pG[2]).
@@ -83,7 +90,7 @@ dominant_mcmc_calls <- dominant_with_fits %>%
     p_G1 < 0.95 & p_G2 < 0.95 ~"no call"))
 
 #############################################################
-# X-linked Condiions Analysis
+# X-linked Conditions Analysis
 #############################################################
 
 # Add on fits and extract the probabilities that the fetus is hemizygous reference (p_G0)
@@ -115,14 +122,14 @@ x_linked_mcmc_calls <- x_linked_with_fits %>%
 
 
 #############################################################
-# Recessive Conditions Analysis
+# Rare Recessive Conditions Analysis
 #############################################################
 
 # Extract the probabilities that the fetus is homozygous reference (pG[1]),
 # heterozygous (pG[2]) and homozygous variant (pG[3]).
 
 recessive_with_fits <- ddpcr_data_mcmc %>%
-  filter(Inheritance == "autosomal" & variant_assay %in% biallelic_assays) %>%
+  filter(variant_assay %in% biallelic_assays & variant_assay != "HBB c.20A>T") %>%
   nest(data = n_K:Z_Y) %>%
   mutate(
     data    = map(data, as.list),
@@ -148,6 +155,43 @@ recessive_mcmc_calls <- recessive_with_fits %>%
   ))
 
 #############################################################
+# Sickle Cell Disease Analysis
+#############################################################
+
+# Extract the probabilities that the fetus is homozygous reference (pG[1]),
+# heterozygous (pG[2]) and homozygous variant (pG[3]).
+
+run_1413 <- c(20238, 30206, 30068)
+
+sickle_with_fits <- ddpcr_data_mcmc %>%
+  filter(r_number %in% run_1413) %>%
+  nest(data = n_K:Z_Y) %>%
+  mutate(
+    data    = map(data, as.list),
+    fit     = map(data, ~ recessive_model$sample(data = .,
+                                                 init = initialise_chains_recessive,
+                                                 step_size = 0.2,
+                                                 parallel_chains = parallel::detectCores())),
+    results = map(fit,  ~ setNames(pivot_wider(.$summary(c("pG", "rho"), "mean"),
+                                               names_from = "variable",
+                                               values_from = "mean"),
+                                   c("p_G1", "p_G2", "p_G3", "rho_est")))
+  ) %>%
+  unnest_wider(results)
+
+sickle_mcmc_calls <- sickle_with_fits %>%
+  select(-c(data, fit)) %>%
+  dplyr::rename(fetal_fraction = rho_est) %>%
+  mutate(mcmc_prediction = case_when(
+    p_G1 > 0.95 ~"homozygous reference",
+    p_G2 > 0.95 ~"heterozygous",
+    p_G3 > 0.95 ~"homozygous variant",
+    p_G1 < 0.95 & p_G2 < 0.95 & p_G2 < 0.95 ~"no call"
+  ))
+
+view(sickle_mcmc_calls)
+
+#############################################################
 # Compare to SPRT
 #############################################################
 
@@ -160,7 +204,7 @@ x_linked_comparison <- left_join(
   bespoke_cohort_blinded %>%
     mutate(r_number = as.character(r_number))%>%
     filter(Inheritance == "x_linked") %>%
-    select(r_number, SPRT_prediction), 
+    select(r_number,Likelihood_ratio, SPRT_prediction), 
   # Join by
   by = "r_number")
 
@@ -171,75 +215,98 @@ dominant_comparison <- left_join(
   bespoke_cohort_blinded %>%
     mutate(r_number = as.character(r_number))%>%
     filter(Inheritance == "autosomal") %>%
-    select(r_number, SPRT_prediction), 
+    select(r_number, Likelihood_ratio, SPRT_prediction), 
   # Join by
   by = "r_number")
 
 rare_recessive_comparison <- left_join(
   # First table
-  recessive_mcmc_calls %>%
-    filter(variant_assay %in% c("ADAR c.2997 G>T", "RNASEH2C c.205C>T",
-                                "FGFR3 c.1138G>A")),
+  recessive_mcmc_calls,
   # Second table
   bespoke_cohort_blinded %>%
     mutate(r_number = as.character(r_number))%>%
     filter(Inheritance == "autosomal") %>%
-    select(r_number, SPRT_prediction), 
+    select(r_number, Likelihood_ratio, SPRT_prediction), 
   # Join by
   by = "r_number")
 
 scd_comparison <- left_join(
   # First table
-  recessive_mcmc_calls %>%
-    filter(variant_assay == "HBB c.20A>T"),
+  sickle_mcmc_calls,
   # Second table
   sickle_cell_blinded %>%
     mutate(r_number = as.character(r_number))%>%
-    select(r_number, SPRT_prediction, overall_prediction), 
+    select(r_number, Likelihood_ratio, SPRT_prediction), 
   # Join by
   by = "r_number")
-
 
 # Format the columns the same and bind together
 mcmc_vs_sprt <- rbind(x_linked_comparison %>%
   mutate(p_G2 = "") %>%
   mutate(p_G3 = "") %>%
-  select(r_number, Inheritance, variant_assay,    
-         p_G0, p_G1, p_G2,  p_G3, fetal_fraction, mcmc_prediction,  
+  select(r_number, Inheritance, variant_assay, fetal_fraction, 
+         p_G0, p_G1, p_G2,  p_G3, Likelihood_ratio, mcmc_prediction,  
          SPRT_prediction),
   dominant_comparison %>%
   mutate(p_G0 = "") %>%
   mutate(p_G3 = "") %>%
-  select(r_number, Inheritance, variant_assay,    
-         p_G0, p_G1, p_G2,  p_G3, fetal_fraction, mcmc_prediction,  
+  select(r_number, Inheritance, variant_assay, fetal_fraction, 
+         p_G0, p_G1, p_G2,  p_G3, Likelihood_ratio, mcmc_prediction,  
          SPRT_prediction),
   rare_recessive_comparison %>%
   mutate(p_G0 = "") %>%
-  select(r_number, Inheritance, variant_assay,    
-         p_G0, p_G1, p_G2,  p_G3, fetal_fraction, mcmc_prediction,  
+  select(r_number, Inheritance, variant_assay, fetal_fraction, 
+         p_G0, p_G1, p_G2,  p_G3, Likelihood_ratio, mcmc_prediction,  
          SPRT_prediction),
   scd_comparison %>%
   mutate(p_G0 = "") %>%
-  select(r_number, Inheritance, variant_assay,    
-         p_G0, p_G1, p_G2,  p_G3, fetal_fraction, mcmc_prediction,  
+  select(r_number, Inheritance, variant_assay, fetal_fraction, 
+         p_G0, p_G1, p_G2,  p_G3, Likelihood_ratio, mcmc_prediction,  
          SPRT_prediction)) %>%
   mutate(concordant = ifelse(mcmc_prediction == SPRT_prediction,
-                             "yes", "no")) %>%
-  # remove the contaminated sample
-  filter(r_number != 13262)
+                             "yes", "no"))
+
+mcmc_vs_sprt_outcomes <- left_join(
+  mcmc_vs_sprt,
+  RAPID_biobank %>%
+    mutate(r_number = as.character(r_number)) %>%
+    select(r_number, confirmed_diagnosis, mutation_genetic_info_fetus),
+  by = "r_number"
+)
+
+view(mcmc_vs_sprt_outcomes)
 
 #############################################################
-# 4 - Output csvs
+# Diagnostic plotting
+#############################################################
+
+?mcmc_scatter()
+
+test <- dominant_with_fits[1,5]
+
+nuts_params(dominant_with_fits[1,5])
+
+?nuts_params()
+
+dominant_with_fits[1, 5]
+
+nuts_params(dominant_model, pars = NULL, inc_warmup = FALSE)
+
+log_posterior()
+
+fit     = map(data, ~ dominant_model$sample(data = .,
+                                            init = initialise_chains_dominant,
+                                            step_size = 0.2,
+                                            parallel_chains = parallel::detectCores()))
+?map()
+
+#############################################################
+# Output csvs
 #############################################################
 
 current_time <- Sys.time()
 
-write.csv(mcmc_vs_sprt, 
-          file = paste0("analysis_outputs/mcmc_vs_sprt", 
+write.csv(mcmc_vs_sprt_outcomes, 
+          file = paste0("analysis_outputs/mcmc_vs_sprt_outcomes", 
                         format(current_time, "%Y%m%d_%H%M%S"), ".csv"),
           row.names = FALSE)
-
-
-
-
-

@@ -1,3 +1,5 @@
+// X-linked model from Tristan Snowsill.
+
 data {
   // X-linked assay
   int<lower=0> n_K;  // Number of accepted droplets

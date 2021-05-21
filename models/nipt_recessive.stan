@@ -1,4 +1,4 @@
-// Model from Tristan Snowsill. Variables renamed to be consistent with other stan models.
+// Recessive model from Tristan Snowsill. Variables renamed to be consistent with other stan models.
 
 data {
   int<lower=0> n_K;

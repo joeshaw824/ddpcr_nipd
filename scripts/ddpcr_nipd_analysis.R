@@ -23,6 +23,7 @@ ddpcr_target_panel <- readr::read_csv("resources/ddpcr_target_panel.csv")
 
 # Source functions
 source("functions/ddPCR_nipd_functions.R")
+source("functions/RAPID_biobank.R")
 
 #############################################################
 # Read in cfDNA data and wrangle into shape
@@ -54,7 +55,7 @@ ddpcr_data_merged_samples <- ddpcr_data %>%
   # Remove single wells
   drop_na("MergedWells") %>%
   # Remove controls
-  filter(!(Sample %in% controls$Controls))
+  filter(!(Sample %in% controls$Sample))
 
 # Reshape the data frame to sum all values by Target
 ddpcr_data_reshape <- ddpcr_data_merged_samples %>% 
@@ -118,12 +119,35 @@ ddpcr_data_tbl <- pivotted_ddpcr %>%
   mutate(Positives_paternal = pmin(Positives_ff_allele1, Positives_ff_allele2))
 
 #############################################################
+# Prepare data for Exeter MCMC pipeline
+#############################################################
+
+# n_K	= number of droplets tested for variant assay
+# K_M	= number of droplets positive for variant (mutant) allele
+# K_N	= number of droplets positive for normal (reference) allele
+# n_Z	= number of droplets tested for fetal fraction assay
+# Z_X	= number of droplets positive for maternal homozygous allele
+# Z_Y	= number of droplets positive for paternal allele
+
+ddpcr_data_mcmc <- ddpcr_data_tbl %>%
+  dplyr::rename(r_number = Sample,
+                n_K = AcceptedDroplets_Variant_assay,
+                K_M = Positives_variant,
+                K_N = Positives_reference,
+                n_Z = AcceptedDroplets_FetalFrac,
+                Z_X = Positives_maternal,
+                Z_Y = Positives_paternal) %>%
+  arrange(Inheritance, variant_assay) %>%
+  select(r_number, Inheritance, variant_assay, n_K, n_Z, 
+         K_N, K_M, n_Z, Z_X, Z_Y)
+
+#############################################################
 # Read in gDNA data and wrangle
 #############################################################
 
 # Get single well controls only without NTC
 ddpcr_controls <- ddpcr_data %>%
-  filter(Sample %in% controls$Controls & Sample != "NTC" & !is.na(CopiesPer20uLWell))
+  filter(Sample %in% controls$Sample & Sample != "NTC" & !is.na(CopiesPer20uLWell))
 
 ddpcr_controls_with_target <- ddpcr_controls %>% 
   left_join(ddpcr_target_panel %>%
@@ -215,7 +239,7 @@ sickle_cell_analysed <- calc_SPRT(calc_conf_intervals(calc_molecules(ddpcr_data_
   mutate(call = ifelse(overall_prediction == "no call", "no call", "call")) %>%
   
   # Remove sample 13262 as Natalie thinks this should not go in the paper.
-  filter(Sample != "13262") %>%
+  #filter(Sample != "13262") %>%
   
   # Rename sample to r_number to allow merge with RAPID Biobank data in next step.
   # Have to specify dplyr for rename.
@@ -292,6 +316,51 @@ no_call_fetal_fractions <- sickle_cell_blinded %>%
 
 t.test(call_fetal_fractions$Fetal_fraction_percent, no_call_fetal_fractions$Fetal_fraction_percent,
        paired = FALSE)
+
+#############################################################
+# Bespoke cohort analysis
+#############################################################
+
+bespoke_cohort <- ddpcr_data_tbl %>%
+  filter(variant_assay != "HBB c.20A>T") %>%
+  dplyr::rename(r_number = Sample)
+
+bespoke_cohort$r_number <- as.numeric(bespoke_cohort$r_number)
+
+AD_samples <- c(12990, 13519, 14116, 14491, 14522, 19261, 19711)
+AR_samples <- c(17531, 19102)
+XLR_samples <- c(10280, 11928, 12585, 13625, 13965, 14247, 
+                 14917, 16319, 16468, 16881, 18164, 18385, 18891,
+                 20817, 19611, 20980, 17667, 30030)
+XLD_samples <- c(12945)
+
+# Can remove the sample with a primer binding SNP if need be
+# filter(r_number != 19397) %>%
+
+# Perform Poisson correction and SPRT analysis
+bespoke_cohort_analysed <- calc_SPRT(calc_conf_intervals(calc_molecules(bespoke_cohort)), 8) %>%
+
+  mutate(Inheritance_pattern = case_when(
+    r_number %in% AD_samples ~"AD",
+    r_number %in% AR_samples ~"AR",
+    r_number %in% XLR_samples ~"XLR",
+    r_number %in% XLD_samples ~"XLD"))
+
+#Arrange into a nice order
+bespoke_cohort_analysed <- arrange(bespoke_cohort_analysed, Inheritance_pattern)
+
+# Add on a generic identifier for the samples.
+Identifier <- paste0("cfDNA", "-", rownames(bespoke_cohort_analysed))
+
+bespoke_cohort_blinded <- cbind(Identifier, bespoke_cohort_analysed)
+
+bespoke_cohort_unblinded <- left_join(bespoke_cohort_blinded,
+                                      RAPID_biobank %>%
+                                        select(r_number, study_id, gestation_weeks, gestation_days, 
+                                               Gestation_total_weeks, date_of_blood_sample, 
+                                               vacutainer, mutation_genetic_info_fetus),
+                                      by = "r_number") %>%
+  mutate(Call = ifelse(SPRT_prediction == "no call", "no call", "call"))
 
 #############################################################
 # Sickle cell gDNA analysis
@@ -424,51 +493,6 @@ ggplot(LOD_data_longer, aes(x = total_DNA_molecules, y = FractionalAbundance_HbS
   geom_point(size = 4)+
   geom_pointrange(aes(ymin = PoissonFractionalAbundanceMin_HbS, ymax = PoissonFractionalAbundanceMax_HbS))+
   geom_hline(yintercept=50, linetype="dashed", size = 1)
-
-#############################################################
-# Bespoke cohort analysis
-#############################################################
-
-bespoke_cohort <- ddpcr_data_tbl %>%
-  filter(variant_assay != "HBB c.20A>T") %>%
-  dplyr::rename(r_number = Sample)
-
-bespoke_cohort$r_number <- as.numeric(bespoke_cohort$r_number)
-
-AD_samples <- c(12990, 13519, 14116, 14491, 14522, 19261, 19711)
-AR_samples <- c(17531, 19102)
-XLR_samples <- c(10280, 11928, 12585, 13625, 13965, 14247, 
-                 14917, 16319, 16468, 16881, 18164, 18385, 18891,
-                 20817, 19611, 20980, 17667, 30030)
-XLD_samples <- c(12945)
-
-# Can remove the sample with a primer binding SNP if need be
-# filter(r_number != 19397) %>%
-
-# Perform Poisson correction and SPRT analysis
-bespoke_cohort_analysed <- calc_SPRT(calc_conf_intervals(calc_molecules(bespoke_cohort)), 8) %>%
-
-  mutate(Inheritance_pattern = case_when(
-    r_number %in% AD_samples ~"AD",
-    r_number %in% AR_samples ~"AR",
-    r_number %in% XLR_samples ~"XLR",
-    r_number %in% XLD_samples ~"XLD"))
-
-#Arrange into a nice order
-bespoke_cohort_analysed <- arrange(bespoke_cohort_analysed, Inheritance_pattern)
-
-# Add on a generic identifier for the samples.
-Identifier <- paste0("cfDNA", "-", rownames(bespoke_cohort_analysed))
-
-bespoke_cohort_blinded <- cbind(Identifier, bespoke_cohort_analysed)
-
-bespoke_cohort_unblinded <- left_join(bespoke_cohort_blinded,
-                                      RAPID_biobank %>%
-                                        select(r_number, study_id, gestation_weeks, gestation_days, 
-                                               Gestation_total_weeks, date_of_blood_sample, 
-                                               vacutainer, mutation_genetic_info_fetus),
-                                      by = "r_number") %>%
-  mutate(Call = ifelse(SPRT_prediction == "no call", "no call", "call"))
 
 
 #############################################################
@@ -955,8 +979,6 @@ merged", 2))
 
 # VHL
 plot_sample_graph(14522, "20RG-148G0075")
-# TCOF
-plot_sample_graph(14116, "20RG-148G0076")
 # FGFR3
 plot_sample_graph(13519, "20RG-307G0060")
 # NF1
@@ -967,21 +989,25 @@ plot_sample_graph(19261, "20RG-307G0064")
 plot_sample_graph(19711, "20RG-148G0080")
 # ADAR
 plot_sample_graph(19102, "20RG-336G0066")
-# ABCD1
-plot_sample_graph(19397, "18G10773")
 # MAGED2
 plot_sample_graph(20980, "21RG-027G0010")
 # IDS
 plot_sample_graph(19611, "21RG-027G0070")
 # OTC
 plot_sample_graph(17667, "21RG-027G0004")
+# FOXP3 .1010
+plot_sample_graph(18891, "18G10772")+
+  ylim(0, 5000)
+# ABCD1
+plot_sample_graph(19397, "18G10773")
+# TCOF
+plot_sample_graph(14116, "20RG-148G0076")
+# COL4A5
+plot_sample_graph(12945, "18G10521")
 
 #############################################################
 # Plotting individual sample graphs for paper
 #############################################################
-
-R_number <- 14491
-control_number <- "20RG-148G0081"
 
 sample_variant <- bespoke_cohort_analysed %>%
   filter(r_number == R_number) %>%
@@ -1087,6 +1113,408 @@ plot_sample_graph(19261, "20RG-307G0064")
 # FGFR2
 plot_sample_graph(19711, "20RG-148G0080")
 
+
+
+#############################################################
+# Plotting sickle cell graph with both parents
+#############################################################
+
+# This is the function for how I want the sickle cell disease 
+# relative mutation dosage (rmd) results to be 
+# displayed from now on.
+
+plot_rmd_graph <- function(cfdna_sample, parents, number_parents) {
+  
+  # Get the sample variant fraction information
+  variant_cfdna_sample <- sickle_cell_analysed %>%
+    filter(r_number == cfdna_sample) %>%
+    select(r_number, Molecules_variant, variant_assay,
+           Molecules_reference, AcceptedDroplets_Variant_assay) %>%
+    pivot_longer(
+      cols = !c(r_number, variant_assay, AcceptedDroplets_Variant_assay),
+      names_to = "Target",
+      values_to = "count"
+    ) %>%
+    rename(assay = variant_assay, AcceptedDroplets = AcceptedDroplets_Variant_assay) %>%
+    mutate(identity = "cfDNA") %>%
+    select(r_number, assay, AcceptedDroplets, identity, Target, count)
+  
+  # Get the sample fetal fraction informatio
+  ff_cfdna_sample <- sickle_cell_analysed %>%
+    filter(r_number == cfdna_sample) %>%
+    select(r_number, ff_assay, AcceptedDroplets_FetalFrac, Molecules_maternal,
+           Molecules_paternal) %>%
+    pivot_longer(
+      cols = !c(r_number, ff_assay, AcceptedDroplets_FetalFrac),
+      names_to = "Target",
+      values_to = "count"
+    ) %>%
+    rename(assay = ff_assay, AcceptedDroplets = AcceptedDroplets_FetalFrac) %>%
+    mutate(identity = "cfDNA") %>%
+    select(r_number, assay, AcceptedDroplets, identity, Target, count)
+  
+  # Get the parental control information
+  ddpcr_control_tbl_ff_no_id <- pivotted_controls_ff %>%
+    left_join(control_table_ff %>%
+                select(Worksheet_well, ff_assay), by = "Worksheet_well",
+              .groups="drop") %>%
+    # Remove duplicate columns and rename to be compatible with functions
+    rename(AcceptedDroplets_FetalFrac = AcceptedDroplets_ff_allele1)
+  
+  # Specify whether maternal or paternal
+  ddpcr_control_tbl_ff_id <- ddpcr_control_tbl_ff_no_id %>%
+    left_join(controls %>%
+                select(Sample, identity), by = "Sample",
+              .groups="drop") %>%
+    filter(Sample %in% parents)
+  
+  # Calculate the molecules for each target type (maternal or paternal)
+  ddpcr_control_tbl_ff_id_molecules <- ddpcr_control_tbl_ff_id %>%
+    mutate(Positives_maternal = case_when(
+      identity == "paternal gDNA" ~pmin(Positives_ff_allele1, Positives_ff_allele2),
+      identity == "maternal gDNA" ~ pmax(Positives_ff_allele1, Positives_ff_allele2))) %>%
+    mutate(Positives_paternal = case_when(
+      identity == "paternal gDNA" ~pmax(Positives_ff_allele1, Positives_ff_allele2),
+      identity == "maternal gDNA" ~ pmin(Positives_ff_allele1, Positives_ff_allele2))) %>% 
+    mutate(Molecules_maternal = Poisson_correct(AcceptedDroplets_FetalFrac,Positives_maternal)) %>%
+    mutate(Molecules_paternal = Poisson_correct(AcceptedDroplets_FetalFrac,Positives_paternal))
+  
+  ddpcr_control_tbl_var_id <- ddpcr_control_tbl_var %>%
+    left_join(controls %>%
+                select(Sample, identity), by = "Sample",
+              .groups="drop") %>%
+    filter(Sample %in% parents)
+  
+  # Get the parental control variant fraction information
+  control_variant_all <- ddpcr_control_tbl_var_id %>%
+    select(Worksheet_well, Molecules_variant, variant_assay, AcceptedDroplets_Variant_assay,
+           Molecules_reference, identity) %>%
+    pivot_longer(
+      cols = !c(Worksheet_well, variant_assay, AcceptedDroplets_Variant_assay, identity),
+      names_to = "Target",
+      values_to = "count"
+    ) %>%
+    rename(r_number = Worksheet_well, assay = variant_assay,
+           AcceptedDroplets = AcceptedDroplets_Variant_assay) %>%
+    select(r_number, assay, AcceptedDroplets, identity, Target, count) %>%
+    arrange(identity)
+  
+  # Get the parental control ff information
+  control_ff_all <- ddpcr_control_tbl_ff_id_molecules %>%
+    select(Worksheet_well, ff_assay, AcceptedDroplets_FetalFrac, Molecules_maternal,
+           Molecules_paternal, identity) %>%
+    pivot_longer(
+      cols = !c(Worksheet_well, ff_assay, AcceptedDroplets_FetalFrac, identity),
+      names_to = "Target",
+      values_to = "count") %>%
+    rename(r_number = Worksheet_well, assay = ff_assay, 
+           AcceptedDroplets = AcceptedDroplets_FetalFrac) %>%
+    select(r_number, assay, AcceptedDroplets, identity, Target, count) %>%
+    # Arrange by idenity so that the head and tail step works
+    arrange(identity)
+  
+  ## Head and tail it to select one well only for maternal and paternal
+  
+  control_ff <- rbind(head(control_ff_all, n = number_parents), tail(control_ff_all, n = number_parents))
+  control_variant <- rbind(head(control_variant_all, n = number_parents), tail(control_variant_all, n = number_parents))
+  
+  # Bind the tables
+  plot_table_cfdna_sample <- rbind(control_ff, control_variant, ff_cfdna_sample, variant_cfdna_sample) %>%
+    mutate(r_number = as.character(r_number))%>%
+    mutate(id = paste(r_number, assay)) %>%
+    mutate(Cpd = count/AcceptedDroplets) %>%
+    mutate(count_max = Poisson_max(Cpd, AcceptedDroplets)) %>%
+    mutate(count_min = Poisson_min(Cpd, AcceptedDroplets)) %>%
+    mutate(new_target = case_when(
+      Target == "Molecules_maternal" ~"Maternal SNP",
+      Target == "Molecules_paternal" ~"Paternal SNP",
+      Target == "Molecules_variant" ~"Variant allele",
+      Target == "Molecules_reference" ~"Reference allele")) %>%
+    mutate(assay_type = case_when(
+      new_target %in% c("Paternal SNP", "Maternal SNP") ~"fetal_fraction",
+      new_target %in% c("Variant allele", "Reference allele") ~"variant_fraction")) %>%
+    mutate(case = cfdna_sample)
+  
+  # Make them factors to define the order in the plot
+  plot_table_cfdna_sample$new_target <- factor(plot_table_cfdna_sample$new_target, levels = c("Maternal SNP",
+                                                                                              "Paternal SNP",
+                                                                                              "Reference allele",
+                                                                                              "Variant allele"))
+  
+  plot_table_cfdna_sample$identity <- factor(plot_table_cfdna_sample$identity, levels = c("maternal gDNA",
+                                                                                          "paternal gDNA", "cfDNA"))
+  
+  plot_table_cfdna_sample$assay_type <- factor(plot_table_cfdna_sample$assay_type, levels = c("fetal_fraction",
+                                                                                              "variant_fraction"))
+  
+  plot_table_cfdna_sample <- plot_table_cfdna_sample%>%
+    arrange(assay_type, identity, new_target)
+  
+  # For subtitle
+  #sprt_result <- as.character(sickle_cell_analysed %>% 
+                                #filter(r_number == cfdna_sample) %>%
+                                #select(SPRT_prediction))
+  
+  #mcmc_result <- as.character(sickle_mcmc_calls %>%
+                                      #filter(r_number == cfdna_sample) %>%
+                                      #select(mcmc_prediction))
+  
+  # Fetal fraction result
+  #ff_result <- as.character(round(sickle_cell_analysed %>% 
+                                    #filter(r_number == cfdna_sample) %>%
+                                    #select(Fetal_fraction_percent), digits = 1))
+  
+  # Variant fraction result
+  #vf_result <- as.character(round(sickle_cell_analysed %>% 
+                                    #filter(r_number == cfdna_sample) %>%
+                                   #select(Variant_fraction_percent), digits = 1))
+  
+  #sprt_result_subtitle <- paste0("SPRT: ", sprt_result, "   ", "MCMC: ", mcmc_result, 
+                                 #"   ", "Fetal fraction: ", ff_result, "%", 
+                                 #"   ", "Variant fraction: ", vf_result, "%")
+
+
+  # Plot the results
+  rmd_plot <- ggplot(plot_table_cfdna_sample, aes(x = identity, y = count, fill = new_target))+
+    geom_col(position = position_dodge(width = 0.9), colour="black", alpha = 0.6)+
+    
+    scale_fill_manual(values = c("#99FFFF", "#FFCC99", "#3366FF", "#FF0000"))+
+    geom_errorbar(aes(ymin = count_min, ymax = count_max, width = 0.3), position = position_dodge(width = 0.9))+
+    theme_bw()+
+    theme(axis.text=element_text(size=15), axis.title = element_text(size=18),
+          legend.position = "bottom", legend.title = element_blank(),
+          panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+    labs(x = "", y = "Molecules", title = paste("Sample:", cfdna_sample, " ", "Variant assay:", 
+                                                variant_cfdna_sample$assay, "  ",
+                                                "Fetal fraction assay:", ff_cfdna_sample$assay))
+
+  return(rmd_plot)
+}
+
+#subtitle = paste(sprt_result_subtitle)
+
+rmd_graph_30173 <- plot_rmd_graph(30173, c("21RG-062G0120", "21RG-062G0114"))
+rmd_graph_19868 <- plot_rmd_graph(19868, c("21RG-083G0126", "21RG-083G0132"))
+rmd_graph_14182 <- plot_rmd_graph(14182, c("21RG-062G0108", "21RG-062G0111"))
+rmd_graph_30142 <- plot_rmd_graph(30142, c("21RG-083G0112", "21RG-083G0120"))
+rmd_graph_30063 <- plot_rmd_graph(30063, c("21RG-103G0115", "21RG-103G0117"))
+rmd_graph_30228 <- plot_rmd_graph(30228, c("21RG-103G0061", "21RG-103G0062"))
+rmd_graph_20874 <- plot_rmd_graph(20874, c("21RG-103G0118", "21RG-103G0119"))
+rmd_graph_30230 <- plot_rmd_graph(30230, c("21RG-103G0120", "21RG-103G0122"))
+rmd_graph_20238 <- plot_rmd_graph(20238, c("21RG-103G0120", "21RG-103G0122"))
+rmd_graph_30206 <- plot_rmd_graph(30206, c("21RG-120G0092", "21RG-120G0097"))
+rmd_graph_30068 <- plot_rmd_graph(30068, c("21RG-120G0099", "21RG-120G0103"))
+
+plot_rmd_graph(30068, "21RG-120G0099", 1)
+plot_rmd_graph(30063, "21RG-103G0115", 1)
+
+ggsave("rmd_graph_30173.png", rmd_graph_30173, path = "plots/")
+ggsave("rmd_graph_19868.png", rmd_graph_19868, path = "plots/")
+ggsave("rmd_graph_14182.png", rmd_graph_14182, path = "plots/")
+ggsave("rmd_graph_30142.png", rmd_graph_30142, path = "plots/")
+ggsave("rmd_graph_30063.png", rmd_graph_30063, path = "plots/")
+ggsave("rmd_graph_30228.png", rmd_graph_30228, path = "plots/")
+ggsave("rmd_graph_20874.png", rmd_graph_20874, path = "plots/")
+ggsave("rmd_graph_30230.png", rmd_graph_30230, path = "plots/")
+ggsave("rmd_graph_20238.png", rmd_graph_20238, path = "plots/")
+ggsave("rmd_graph_30206.png", rmd_graph_30206, path = "plots/")
+ggsave("rmd_graph_30068.png", rmd_graph_30068, path = "plots/")
+
+
+phase_3_cases <- c(30173, 19868, 14182, 30142, 30063, 30228, 20874, 30230, 20238, 30206, 30068)
+
+phase3_results <- sickle_cell_analysed %>%
+  filter(r_number %in% phase_3_cases) %>%
+  filter(overall_prediction == "heterozygous") %>%
+         select(r_number, Molecules_variant, variant_assay,
+                Molecules_reference, AcceptedDroplets_Variant_assay, overall_prediction) %>%
+         pivot_longer(
+           cols = !c(r_number, variant_assay, AcceptedDroplets_Variant_assay, overall_prediction),
+           names_to = "Target",
+           values_to = "count") %>%
+  mutate(Cpd = count/ AcceptedDroplets_Variant_assay) %>%
+  mutate(count_max = Poisson_max(Cpd,  AcceptedDroplets_Variant_assay)) %>%
+  mutate(count_min = Poisson_min(Cpd,  AcceptedDroplets_Variant_assay))
+
+
+ggplot(phase3_results, aes(x = r_number, y = count, fill = Target))+
+  geom_col(position = position_dodge(width = 0.9), colour="black", alpha = 0.6)+
+  labs(x= "", y = "Molecules", title = "Samples where SPRT predicts fetus as heterozygous")+
+  scale_fill_manual(values = c("#3366FF", "#FF0000"))+
+  geom_errorbar(aes(ymin = count_min, ymax = count_max, width = 0.3), position = position_dodge(width = 0.9))+
+  theme_bw()
+
+
+#############################################################
+# Plotting graphs for ISPD 2021
+#############################################################
+
+cfdna_sample <- 20980
+parents <- c("21RG-027G0010", "21RG-027G0014")
+
+plot_rmd_graph <- function(cfdna_sample, parents, number_parents) {
+  
+  # Get the sample variant fraction information
+  variant_cfdna_sample <- bespoke_cohort_analysed %>%
+    filter(r_number == cfdna_sample) %>%
+    select(r_number, Molecules_variant, variant_assay,
+           Molecules_reference, AcceptedDroplets_Variant_assay) %>%
+    pivot_longer(
+      cols = !c(r_number, variant_assay, AcceptedDroplets_Variant_assay),
+      names_to = "Target",
+      values_to = "count"
+    ) %>%
+    rename(assay = variant_assay, AcceptedDroplets = AcceptedDroplets_Variant_assay) %>%
+    mutate(identity = "cfDNA") %>%
+    select(r_number, assay, AcceptedDroplets, identity, Target, count)
+  
+  # Get the sample fetal fraction information
+  ff_cfdna_sample <- bespoke_cohort_analysed %>%
+    filter(r_number == cfdna_sample) %>%
+    select(r_number, ff_assay, AcceptedDroplets_FetalFrac, Molecules_maternal,
+           Molecules_paternal) %>%
+    pivot_longer(
+      cols = !c(r_number, ff_assay, AcceptedDroplets_FetalFrac),
+      names_to = "Target",
+      values_to = "count"
+    ) %>%
+    rename(assay = ff_assay, AcceptedDroplets = AcceptedDroplets_FetalFrac) %>%
+    mutate(identity = "cfDNA") %>%
+    select(r_number, assay, AcceptedDroplets, identity, Target, count)
+  
+  # Get the parental control information
+  ddpcr_control_tbl_ff_no_id <- pivotted_controls_ff %>%
+    left_join(control_table_ff %>%
+                select(Worksheet_well, ff_assay), by = "Worksheet_well",
+              .groups="drop") %>%
+    # Remove duplicate columns and rename to be compatible with functions
+    rename(AcceptedDroplets_FetalFrac = AcceptedDroplets_ff_allele1)
+  
+  # Specify whether maternal or paternal
+  ddpcr_control_tbl_ff_id <- ddpcr_control_tbl_ff_no_id %>%
+    left_join(controls %>%
+                select(Sample, identity), by = "Sample",
+              .groups="drop") %>%
+    filter(Sample %in% parents)
+  
+  # Calculate the molecules for each target type (maternal or paternal)
+  ddpcr_control_tbl_ff_id_molecules <- ddpcr_control_tbl_ff_id %>%
+    mutate(Positives_maternal = case_when(
+      identity == "paternal gDNA" ~pmin(Positives_ff_allele1, Positives_ff_allele2),
+      identity == "maternal gDNA" ~ pmax(Positives_ff_allele1, Positives_ff_allele2))) %>%
+    mutate(Positives_paternal = case_when(
+      identity == "paternal gDNA" ~pmax(Positives_ff_allele1, Positives_ff_allele2),
+      identity == "maternal gDNA" ~ pmin(Positives_ff_allele1, Positives_ff_allele2))) %>% 
+    mutate(Molecules_maternal = Poisson_correct(AcceptedDroplets_FetalFrac,Positives_maternal)) %>%
+    mutate(Molecules_paternal = Poisson_correct(AcceptedDroplets_FetalFrac,Positives_paternal))
+  
+  ddpcr_control_tbl_var_id <- ddpcr_control_tbl_var %>%
+    left_join(controls %>%
+                select(Sample, identity), by = "Sample",
+              .groups="drop") %>%
+    filter(Sample %in% parents)
+  
+  # Get the parental control variant fraction information
+  control_variant_all <- ddpcr_control_tbl_var_id %>%
+    select(Worksheet_well, Molecules_variant, variant_assay, AcceptedDroplets_Variant_assay,
+           Molecules_reference, identity) %>%
+    pivot_longer(
+      cols = !c(Worksheet_well, variant_assay, AcceptedDroplets_Variant_assay, identity),
+      names_to = "Target",
+      values_to = "count"
+    ) %>%
+    rename(r_number = Worksheet_well, assay = variant_assay,
+           AcceptedDroplets = AcceptedDroplets_Variant_assay) %>%
+    select(r_number, assay, AcceptedDroplets, identity, Target, count) %>%
+    arrange(identity)
+  
+  # Get the parental control ff information
+  control_ff_all <- ddpcr_control_tbl_ff_id_molecules %>%
+    select(Worksheet_well, ff_assay, AcceptedDroplets_FetalFrac, Molecules_maternal,
+           Molecules_paternal, identity) %>%
+    pivot_longer(
+      cols = !c(Worksheet_well, ff_assay, AcceptedDroplets_FetalFrac, identity),
+      names_to = "Target",
+      values_to = "count") %>%
+    rename(r_number = Worksheet_well, assay = ff_assay, 
+           AcceptedDroplets = AcceptedDroplets_FetalFrac) %>%
+    select(r_number, assay, AcceptedDroplets, identity, Target, count) %>%
+    # Arrange by idenity so that the head and tail step works
+    arrange(identity)
+  
+  ## Head and tail it to select one well only for maternal and paternal
+  
+  control_ff <- rbind(head(control_ff_all, n = number_parents), tail(control_ff_all, n = number_parents))
+  control_variant <- rbind(head(control_variant_all, n = number_parents), tail(control_variant_all, n = number_parents))
+  
+  # Bind the tables
+  plot_table_cfdna_sample <- rbind(control_ff, control_variant, ff_cfdna_sample, variant_cfdna_sample) %>%
+    mutate(r_number = as.character(r_number))%>%
+    mutate(id = paste(r_number, assay)) %>%
+    mutate(Cpd = count/AcceptedDroplets) %>%
+    mutate(count_max = Poisson_max(Cpd, AcceptedDroplets)) %>%
+    mutate(count_min = Poisson_min(Cpd, AcceptedDroplets)) %>%
+    mutate(new_target = case_when(
+      Target == "Molecules_maternal" ~"Maternal SNP",
+      Target == "Molecules_paternal" ~"Paternal SNP",
+      Target == "Molecules_variant" ~"Variant allele",
+      Target == "Molecules_reference" ~"Normal allele")) %>%
+    mutate(assay_type = case_when(
+      new_target %in% c("Paternal SNP", "Maternal SNP") ~"fetal_fraction",
+      new_target %in% c("Variant allele", "Normal allele") ~"variant_fraction")) %>%
+    mutate(case = cfdna_sample)
+  
+  # Make them factors to define the order in the plot
+  plot_table_cfdna_sample$new_target <- factor(plot_table_cfdna_sample$new_target, levels = c("Maternal SNP",
+                                                                                              "Paternal SNP",
+                                                                                              "Normal allele",
+                                                                                              "Variant allele"))
+  
+  plot_table_cfdna_sample$identity <- factor(plot_table_cfdna_sample$identity, levels = c("maternal gDNA",
+                                                                                          "paternal gDNA", "cfDNA"))
+  
+  plot_table_cfdna_sample$assay_type <- factor(plot_table_cfdna_sample$assay_type, levels = c("fetal_fraction",
+                                                                                              "variant_fraction"))
+  
+  plot_table_cfdna_sample <- plot_table_cfdna_sample%>%
+    arrange(assay_type, identity, new_target)
+  
+  # Plot the results
+  rmd_plot <- ggplot(plot_table_cfdna_sample, aes(x = identity, y = count, fill = new_target))+
+    geom_col(position = position_dodge(width = 0.9), colour="black", alpha = 0.6)+
+    scale_fill_manual(values = c("#99FFFF", "#FFCC99", "#3366FF", "#FF0000"))+
+    geom_errorbar(aes(ymin = count_min, ymax = count_max, width = 0.3), position = position_dodge(width = 0.9))+
+    theme_bw()+
+    theme(axis.text=element_text(size=15), axis.title = element_text(size=18),
+          legend.position = "bottom", legend.title = element_blank(),
+          panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+    labs(x = "", y = "Molecules", title = paste("Variant assay:", 
+                                                variant_cfdna_sample$assay, "  ",
+                                                "Fetal fraction assay:", ff_cfdna_sample$assay))
+  
+  return(rmd_plot)
+}
+
+# MAGED2
+plot_rmd_graph(20980, "21RG-027G0010", 1)
+# Achondroplasia
+plot_rmd_graph(13519, c("20RG-307G0060", "20RG-307G0062"))
+# PMM2
+plot_rmd_graph(17841, c("21RG-047G0111", "21RG-047G0112"))
+
+
+# VHL
+plot_rmd_graph(14522, "20RG-148G0075", 1)
+
+
+# ADA
+plot_rmd_graph(14142, c("21RG-047G0089", "21RG-047G0093"))
+
+# NF1
+plot_rmd_graph(14491, "20RG-148G0081", 1)
+
+# FLNA
+plot_rmd_graph(10280, "18G10515", 1)
 
 
 
@@ -1196,6 +1624,35 @@ ggplot(sickle_cell_unblinded, aes(x = Fetal_fraction_percent, y = Variant_fracti
   ylim(42.5, 57.5)+
   xlim(0, 22)
 
+# Plot the SCD results for ESHG 2021 Poster
+ggplot(sickle_cell_unblinded %>%
+         filter(!r_number %in% c(13262, 20915)), aes(x = Fetal_fraction_percent, y = Variant_fraction_percent))+
+  # Add colours for the classifications. Also put them in the right order for the legend: homozygous
+  # variant at the top
+  # 0000FF is dark blue
+  # 999999 is grey
+  # 000000 is black
+  # 99CCFF is light blue
+  # Factor order is alphabetical: het, hom normal, hom variant, no call
+  scale_fill_manual(values=c("#000000", "#99CCFF", "#999999", "#0000FF","#FF0000"),
+                    breaks=c("homozygous variant", "heterozygous", "no call", "homozygous reference", "twin pregnancy"))+
+  geom_point(size = 8, aes(fill = overall_prediction), colour="black", pch=21, alpha = 0.8)+
+  scale_colour_manual(values = c("#FFFFFF"))+
+  fifty_percent_line +
+  theme_bw()+
+  theme(axis.text=element_text(size=15), axis.title = element_text(size=18), 
+        plot.title = element_text(size=20),
+        legend.background = element_rect(fill="white"),
+        legend.position = "bottom", 
+        legend.title = element_blank(), legend.text = element_text(size= 15))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  labs(x = "Fetal fraction (%)", y = "Variant fraction (%)")+
+  xlim(0, 20)
+
+
+nrow(sickle_cell_unblinded %>%
+       filter(!r_number %in% c(13262, 20915)))
+
 
 cfDNA_for_graph <- sickle_cell_unblinded %>%
   filter(overall_prediction != "no call") %>%
@@ -1291,28 +1748,242 @@ ggplot(autosomal_cohort_imbalance %>%
   geom_smooth(se = FALSE, method = "lm")
 
 
+# ESHG poster plot for Ben
+ggplot(bespoke_cohort_unblinded, aes(x = Gestation_total_weeks, y = Fetal_fraction_percent,
+                                  shape = Call))+
+  geom_point(size = 3, alpha = 0.5)+
+  scale_shape_manual(values = c(19, 1))+
+  geom_errorbar(aes(ymin = Fetal_fraction_min_percent, ymax = Fetal_fraction_max_percent))+
+  theme_bw()+
+  theme(axis.text=element_text(size=15), axis.title = element_text(size=14))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        legend.position = "")+
+  xlim(0, 40)+
+  labs(x = "Gestational Age (weeks)", y = "Fetal fraction (%)")
+
 #############################################################
-# Prepare data for Exeter MCMC pipeline
+# Enzyme cut site analysis
 #############################################################
 
-# n_K	= number of droplets tested for variant assay
-# K_M	= number of droplets positive for variant (mutant) allele
-# K_N	= number of droplets positive for normal (reference) allele
-# n_Z	= number of droplets tested for fetal fraction assay
-# Z_X	= number of droplets positive for maternal homozygous allele
-# Z_Y	= number of droplets positive for paternal allele
+# Specify DNASE1L3 end motifs from Serpas et al PMID: 30593563 in both forward and reverse
+# complement.
+dnase1l3_end_motifs <- c("CCCA", "CCAG", "CCTG", "CCAA", "CCCT", "CCAT", 
+                         "TGGG", "CTGG", "CAGG", "TTGG", "AGGG", "ATGG") 
 
-ddpcr_data_mcmc <- ddpcr_data_tbl %>%
-  dplyr::rename(r_number = Sample,
-                n_K = AcceptedDroplets_Variant_assay,
-                K_M = Positives_variant,
-                K_N = Positives_reference,
-                n_Z = AcceptedDroplets_FetalFrac,
-                Z_X = Positives_maternal,
-                Z_Y = Positives_paternal) %>%
-  arrange(Inheritance, variant_assay) %>%
-  select(r_number, Inheritance, variant_assay, n_K, n_Z, 
-         K_N, K_M, n_Z, Z_X, Z_Y)
+var_amplicons <- c("IDS_c182_189del_var", "ABCD1_c3GA_var", 
+                   "TCOF1_c3611_C_A_v2_var", "COL4A5_c1295GAv2_var")
+
+top_CC_assays <- c("IDS_c182_189del_var", "IDS_c182_189del_ref", "ABCD1_c3GA_var", 
+                   "ABCD1_c3GA_ref", "TCOF1_c3611_C_A_v2_var", "TCOF1_c3611_C_A_v2_ref", 
+                   "COL4A5_c1295GAv2_var", "COL4A5_c1295GAv2_ref")
+
+# Read in amplicons
+amplicons <- read_excel("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/ddPCR Assay Design/ddPCR_Assay_Ordering.xlsx",
+                        sheet = "amplicons")
+
+reference_amplicons <- amplicons %>%
+  mutate(dnase1l3_CCCA = str_count(amplicon_reference, "CCCA")) %>%
+  mutate(dnase1l3_CCAG = str_count(amplicon_reference, "CCAG")) %>%
+  mutate(dnase1l3_CCTG = str_count(amplicon_reference, "CCTG")) %>%
+  mutate(dnase1l3_CCAA = str_count(amplicon_reference, "CCAA")) %>%
+  mutate(dnase1l3_CCCT = str_count(amplicon_reference, "CCCT")) %>%
+  mutate(dnase1l3_CCAT = str_count(amplicon_reference, "CCAT")) %>%
+  mutate(dnase1l3_TGGG = str_count(amplicon_reference, "TGGG")) %>%
+  mutate(dnase1l3_CTGG = str_count(amplicon_reference, "CTGG")) %>%
+  mutate(dnase1l3_CAGG = str_count(amplicon_reference, "CAGG")) %>%
+  mutate(dnase1l3_TTGG = str_count(amplicon_reference, "TTGG")) %>%
+  mutate(dnase1l3_AGGG = str_count(amplicon_reference, "AGGG")) %>%
+  mutate(dnase1l3_ATGG = str_count(amplicon_reference, "ATGG"))
+
+dnase1l3_sum <- rowSums(reference_amplicons[,3:14])
+
+amplicons_motifs <- cbind(reference_amplicons, dnase1l3_sum)
+
+ggplot(amplicons_motifs %>%
+         filter(!assay_name %in% var_amplicons) %>%
+         mutate(assay_name = fct_reorder(assay_name, dnase1l3_sum)), 
+       aes(x = dnase1l3_sum, y = assay_name))+
+  geom_col()+
+  theme_bw()+
+  labs( x = "Number of DNAse1L3 CC motifs in target amplicon", y = "ddPCR assay",
+        title = "Frequency of CC motifs in target reference amplicons")
+
+ggplot(amplicons_motifs %>%
+         filter(assay_name %in% top_CC_assays) %>%
+         arrange(assay_name), aes(x = dnase1l3_sum, y = assay_name))+
+  geom_col()+
+  theme_bw()+
+  labs( x = "Number of DNAse1L3 CC motifs in target amplicon", y = "ddPCR amplicon",
+        title = "Frequency of CC motifs in reference and variant amplicons")
+
+
+
+
+#############################################################
+# Plotting graphs for translational meeting
+#############################################################
+
+cfdna_sample <- 14116
+parents <- "20RG-148G0076"
+
+# Just want the maternal variant graph
+
+plot_rmd_graph <- function(cfdna_sample, parents) {
+  
+  # Get the sample variant fraction information
+  variant_cfdna_sample <- bespoke_cohort_analysed %>%
+    filter(r_number == cfdna_sample) %>%
+    select(r_number, Molecules_variant, variant_assay,
+           Molecules_reference, AcceptedDroplets_Variant_assay) %>%
+    pivot_longer(
+      cols = !c(r_number, variant_assay, AcceptedDroplets_Variant_assay),
+      names_to = "Target",
+      values_to = "count"
+    ) %>%
+    rename(assay = variant_assay, AcceptedDroplets = AcceptedDroplets_Variant_assay) %>%
+    mutate(identity = "cfDNA") %>%
+    select(r_number, assay, AcceptedDroplets, identity, Target, count)
+  
+  # Get the sample fetal fraction informatio
+  ff_cfdna_sample <- bespoke_cohort_analysed %>%
+    filter(r_number == cfdna_sample) %>%
+    select(r_number, ff_assay, AcceptedDroplets_FetalFrac, Molecules_maternal,
+           Molecules_paternal) %>%
+    pivot_longer(
+      cols = !c(r_number, ff_assay, AcceptedDroplets_FetalFrac),
+      names_to = "Target",
+      values_to = "count"
+    ) %>%
+    rename(assay = ff_assay, AcceptedDroplets = AcceptedDroplets_FetalFrac) %>%
+    mutate(identity = "cfDNA") %>%
+    select(r_number, assay, AcceptedDroplets, identity, Target, count)
+  
+  # Get the parental control information
+  ddpcr_control_tbl_ff_no_id <- pivotted_controls_ff %>%
+    left_join(control_table_ff %>%
+                select(Worksheet_well, ff_assay), by = "Worksheet_well",
+              .groups="drop") %>%
+    # Remove duplicate columns and rename to be compatible with functions
+    rename(AcceptedDroplets_FetalFrac = AcceptedDroplets_ff_allele1)
+  
+  # Specify whether maternal or paternal
+  ddpcr_control_tbl_ff_id <- ddpcr_control_tbl_ff_no_id %>%
+    left_join(controls %>%
+                select(Sample, identity), by = "Sample",
+              .groups="drop") %>%
+    filter(Sample %in% parents)
+  
+  # Calculate the molecules for each target type (maternal or paternal)
+  ddpcr_control_tbl_ff_id_molecules <- ddpcr_control_tbl_ff_id %>%
+    mutate(Positives_maternal = case_when(
+      identity == "paternal gDNA" ~pmin(Positives_ff_allele1, Positives_ff_allele2),
+      identity == "maternal gDNA" ~ pmax(Positives_ff_allele1, Positives_ff_allele2))) %>%
+    mutate(Positives_paternal = case_when(
+      identity == "paternal gDNA" ~pmax(Positives_ff_allele1, Positives_ff_allele2),
+      identity == "maternal gDNA" ~ pmin(Positives_ff_allele1, Positives_ff_allele2))) %>% 
+    mutate(Molecules_maternal = Poisson_correct(AcceptedDroplets_FetalFrac,Positives_maternal)) %>%
+    mutate(Molecules_paternal = Poisson_correct(AcceptedDroplets_FetalFrac,Positives_paternal))
+  
+  ddpcr_control_tbl_var_id <- ddpcr_control_tbl_var %>%
+    left_join(controls %>%
+                select(Sample, identity), by = "Sample",
+              .groups="drop") %>%
+    filter(Sample %in% parents)
+  
+  # Get the parental control variant fraction information
+  control_variant_all <- ddpcr_control_tbl_var_id %>%
+    select(Worksheet_well, Molecules_variant, variant_assay, AcceptedDroplets_Variant_assay,
+           Molecules_reference, identity) %>%
+    pivot_longer(
+      cols = !c(Worksheet_well, variant_assay, AcceptedDroplets_Variant_assay, identity),
+      names_to = "Target",
+      values_to = "count"
+    ) %>%
+    rename(r_number = Worksheet_well, assay = variant_assay,
+           AcceptedDroplets = AcceptedDroplets_Variant_assay) %>%
+    select(r_number, assay, AcceptedDroplets, identity, Target, count) %>%
+    arrange(identity)
+  
+  # Get the parental control ff information
+  control_ff_all <- ddpcr_control_tbl_ff_id_molecules %>%
+    select(Worksheet_well, ff_assay, AcceptedDroplets_FetalFrac, Molecules_maternal,
+           Molecules_paternal, identity) %>%
+    pivot_longer(
+      cols = !c(Worksheet_well, ff_assay, AcceptedDroplets_FetalFrac, identity),
+      names_to = "Target",
+      values_to = "count") %>%
+    rename(r_number = Worksheet_well, assay = ff_assay, 
+           AcceptedDroplets = AcceptedDroplets_FetalFrac) %>%
+    select(r_number, assay, AcceptedDroplets, identity, Target, count) %>%
+    # Arrange by identity so that the head and tail step works
+    arrange(identity)
+  
+  ## Head and tail it to select one well only for maternal and paternal
+  control_ff <- head(control_ff_all, n = 2)
+  control_variant <- head(control_variant_all, n = 2)
+  
+  # Bind the tables
+  plot_table_cfdna_sample <- rbind(control_ff, control_variant, ff_cfdna_sample, variant_cfdna_sample) %>%
+    mutate(r_number = as.character(r_number))%>%
+    mutate(id = paste(r_number, assay)) %>%
+    mutate(Cpd = count/AcceptedDroplets) %>%
+    mutate(count_max = Poisson_max(Cpd, AcceptedDroplets)) %>%
+    mutate(count_min = Poisson_min(Cpd, AcceptedDroplets)) %>%
+    mutate(new_target = case_when(
+      Target == "Molecules_maternal" ~"Maternal SNP",
+      Target == "Molecules_paternal" ~"Paternal SNP",
+      Target == "Molecules_variant" ~"Variant allele",
+      Target == "Molecules_reference" ~"Reference allele")) %>%
+    mutate(assay_type = case_when(
+      new_target %in% c("Paternal SNP", "Maternal SNP") ~"fetal_fraction",
+      new_target %in% c("Variant allele", "Reference allele") ~"variant_fraction")) %>%
+    mutate(case = cfdna_sample)
+  
+  # Make them factors to define the order in the plot
+  plot_table_cfdna_sample$new_target <- factor(plot_table_cfdna_sample$new_target, levels = c("Maternal SNP",
+                                                                                              "Paternal SNP",
+                                                                                              "Reference allele",
+                                                                                              "Variant allele"))
+  
+  plot_table_cfdna_sample$identity <- factor(plot_table_cfdna_sample$identity, levels = c("maternal gDNA",
+                                                                                          "paternal gDNA", "cfDNA"))
+  
+  plot_table_cfdna_sample$assay_type <- factor(plot_table_cfdna_sample$assay_type, levels = c("fetal_fraction",
+                                                                                              "variant_fraction"))
+  
+  plot_table_cfdna_sample <- plot_table_cfdna_sample%>%
+    arrange(assay_type, identity, new_target)
+  
+  # Plot the results
+  rmd_plot <- ggplot(plot_table_cfdna_sample, aes(x = identity, y = count, fill = new_target))+
+    geom_col(position = position_dodge(width = 0.9), colour="black", alpha = 0.6)+
+    
+    scale_fill_manual(values = c("#99FFFF", "#FFCC99", "#3366FF", "#FF0000"))+
+    geom_errorbar(aes(ymin = count_min, ymax = count_max, width = 0.3), position = position_dodge(width = 0.9))+
+    theme_bw()+
+    theme(axis.text=element_text(size=15), axis.title = element_text(size=18),
+          legend.position = "bottom", legend.title = element_blank(),
+          panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+    labs(x = "", y = "Molecules", title = paste("Sample:", cfdna_sample, " ", "Variant assay:", 
+                                                variant_cfdna_sample$assay, "  ",
+                                                "Fetal fraction assay:", ff_cfdna_sample$assay))
+  
+  return(rmd_plot)
+}
+
+
+# ABCD1
+plot_rmd_graph(19397, "18G10773")
+# TCOF
+plot_rmd_graph(14116, "20RG-148G0076")
+# COL4A5
+plot_rmd_graph(12945, "18G10521")
+# IDS
+plot_rmd_graph(19611, "21RG-027G0070")
+# MAGED2
+plot_rmd_graph(20980, "21RG-027G0010")
+
+#############################################################
 
 #############################################################
 # Export csvs with time stamps
@@ -1325,9 +1996,14 @@ write.csv(sickle_cell_unblinded,
                         format(current_time, "%Y%m%d_%H%M%S"), ".csv"),
           row.names = FALSE)
 
-write.csv(bespoke_cohort_unblinded, 
-          file = paste0("analysis_outputs/bespoke_cohort_unblinded", 
+write.csv(sickle_cell_blinded %>%
+            filter(r_number != 13262), 
+          file = paste0("analysis_outputs/sickle_cell_cohort_analysed_blinded", 
                         format(current_time, "%Y%m%d_%H%M%S"), ".csv"),
           row.names = FALSE)
 
 
+write.csv(bespoke_cohort_unblinded, 
+          file = paste0("analysis_outputs/bespoke_cohort_unblinded", 
+                        format(current_time, "%Y%m%d_%H%M%S"), ".csv"),
+          row.names = FALSE)
