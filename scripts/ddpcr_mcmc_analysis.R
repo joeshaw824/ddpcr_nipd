@@ -22,11 +22,12 @@
 # Z_Y	= number of droplets positive for paternal allele
 
 # Load necessary packages
+library(tidyverse)
 # cmdstanr required for running stan models
 library(cmdstanr)
-# bayesplot required for diagnostic modelling
+# bayesplot and posterior required for diagnostic modelling
 library(bayesplot)
-library(tidyverse)
+library(posterior)
 
 # Load functions
 source("functions/ddpcr_nipd_functions.R")
@@ -161,10 +162,7 @@ recessive_mcmc_calls <- recessive_with_fits %>%
 # Extract the probabilities that the fetus is homozygous reference (pG[1]),
 # heterozygous (pG[2]) and homozygous variant (pG[3]).
 
-run_1413 <- c(20238, 30206, 30068)
-
 sickle_with_fits <- ddpcr_data_mcmc %>%
-  filter(r_number %in% run_1413) %>%
   nest(data = n_K:Z_Y) %>%
   mutate(
     data    = map(data, as.list),
@@ -188,8 +186,6 @@ sickle_mcmc_calls <- sickle_with_fits %>%
     p_G3 > 0.95 ~"homozygous variant",
     p_G1 < 0.95 & p_G2 < 0.95 & p_G2 < 0.95 ~"no call"
   ))
-
-view(sickle_mcmc_calls)
 
 #############################################################
 # Compare to SPRT
@@ -274,31 +270,65 @@ mcmc_vs_sprt_outcomes <- left_join(
   by = "r_number"
 )
 
-view(mcmc_vs_sprt_outcomes)
-
 #############################################################
 # Diagnostic plotting
 #############################################################
 
-?mcmc_scatter()
+# Use this web address: https://mc-stan.org/cmdstanr/reference/cmdstanr-package.html
+# Looks like the URL that Tristan sent uses stanr, whereas we/he use cmdstanr.
+# You can still use bayesplot with cmdstanr, but you'll need to follow the 
+# cmdstanr specific tutorial in the link above.
 
-test <- dominant_with_fits[1,5]
+## Use one sample only.
+ddpcr_data_mcmc %>%
+  filter(r_number == 19261)
 
-nuts_params(dominant_with_fits[1,5])
+# Data for one sample
+data_19261 <- list(n_K = 254853, n_Z = 240083, K_N = 2159, K_M = 2282, Z_X = 4352, Z_Y = 457)
+data_19711 <- list(n_K = 361743, n_Z = 372037, K_N =   1129, K_M = 1009, Z_X = 2494, Z_Y = 116)
 
-?nuts_params()
+data_all <- dominant_with_fits$data
 
-dominant_with_fits[1, 5]
+# Run the single sample according to the code upstream
+fit_19261 <- dominant_model$sample(
+  data = data_19261,
+  init = initialise_chains_dominant,
+  step_size = 0.2,
+  parallel_chains = parallel::detectCores())
 
-nuts_params(dominant_model, pars = NULL, inc_warmup = FALSE)
+fit_19711 <- dominant_model$sample(
+  data = data_19711,
+  init = initialise_chains_dominant,
+  step_size = 0.2,
+  parallel_chains = parallel::detectCores())
 
-log_posterior()
 
-fit     = map(data, ~ dominant_model$sample(data = .,
-                                            init = initialise_chains_dominant,
-                                            step_size = 0.2,
-                                            parallel_chains = parallel::detectCores()))
-?map()
+# Run all dominant samples
+fit_dominant_all <- dominant_model$sample(
+  data = data_all,
+  init = initialise_chains_dominant,
+  step_size = 0.2,
+  parallel_chains = parallel::detectCores())
+
+# In order to plot some graphs it looks like you have to convert to a 
+# stanfit object
+stanfit_19261 <- rstan::read_stan_csv(fit_19261$output_files())
+stanfit_19711 <- rstan::read_stan_csv(fit_19711$output_files())
+
+lp_stanfit_19261 <- log_posterior(stanfit_19261)
+
+posterior_19261 <- as.array(stanfit_19261)
+posterior_19711 <- as.array(stanfit_19711)
+
+np_stanfit_19261 <- nuts_params(stanfit_19261)
+np_stanfit_19711 <- nuts_params(stanfit_19711)
+
+mcmc_parcoord(stanfit_19711, np = np_stanfit_19711)
+
+plot_1 <- mcmc_pairs(posterior_19711, np = np_stanfit_19711, pars = c("rho","M_K","M_Z"))
+plot_2 <- mcmc_pairs(posterior_19261, np = np_stanfit_19261, pars = c("rho","M_K","M_Z"))
+
+mcmc_trace(posterior_19711, pars = "M_K", np = np_stanfit_19711)
 
 #############################################################
 # Output csvs
