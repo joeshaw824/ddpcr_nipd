@@ -37,6 +37,7 @@ snp_calc <- snp_panel %>%
   mutate(p_AA = frequency_A^2) %>%
   mutate(p_BB = frequency_B^2) %>%
   mutate(p_AB = 2*(frequency_A*frequency_B)) %>%
+  # Check it all adds up to 1.
   mutate(check = p_AA + p_BB + p_AB) %>%
   # Calculate the probability of each parental genotype combination. Mother first, then father.
   mutate(p_AA_AA = p_AA*p_AA) %>%
@@ -53,7 +54,7 @@ snp_calc <- snp_panel %>%
   
   # Calculate the probability of an uninformative result with each parental genotype combination.
   
-  # Probability is 0 for a type 2 SNP.
+  # Probability is 1 for a type 2 SNP.
   mutate(p_AA_AA_uninf = p_AA_AA * 1) %>%
   # If dad is heterozygous there's a 50% chance the fetus won't inherit the paternal-specific allele.
   # Note this step differs depending on whether you are dealing with prenatal testing (fetus inherits one paternal allele)
