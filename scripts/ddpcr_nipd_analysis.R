@@ -137,8 +137,8 @@ ddpcr_data_mcmc <- ddpcr_data_tbl %>%
                 n_Z = AcceptedDroplets_FetalFrac,
                 Z_X = Positives_maternal,
                 Z_Y = Positives_paternal) %>%
-  arrange(Inheritance, variant_assay) %>%
-  select(r_number, Inheritance, variant_assay, n_K, n_Z, 
+  arrange(Inheritance_chromosomal, Inheritance_pattern, variant_assay) %>%
+  select(r_number, Inheritance_chromosomal, Inheritance_pattern, variant_assay, n_K, n_Z, 
          K_N, K_M, n_Z, Z_X, Z_Y)
 
 #############################################################
@@ -181,7 +181,7 @@ control_table_var <- left_join(
     select(Worksheet_well, Sample, Target),
   # Second table
   ddpcr_target_panel %>%
-    select(Assay, Inheritance, Target) %>%
+    select(Assay, Inheritance_chromosomal, Inheritance_pattern, Target) %>%
     # Rename the assay column to avoid clash with fetal fraction assay
     rename(variant_assay = Assay),
   # Join by
@@ -203,7 +203,7 @@ control_table_ff <- left_join(
 # Get the control information for the control wells tested with a variant assay
 ddpcr_control_tbl_var <- pivotted_controls_var %>%
   left_join(control_table_var %>%
-              select(Worksheet_well, Inheritance, variant_assay), by = "Worksheet_well",
+              select(Worksheet_well, Inheritance_chromosomal, Inheritance_pattern, variant_assay), by = "Worksheet_well",
             .groups="drop") %>%
   # Remove duplicate columns and rename to be compatible with functions
   rename(AcceptedDroplets_Variant_assay = AcceptedDroplets_variant) %>%
@@ -339,13 +339,14 @@ ddpcr_nipd_unblinded <- left_join(
 samples_failing_qc <- c(13262, 20763, 20810)
 
 sickle_cell_unblinded <- ddpcr_nipd_unblinded %>%
+  filter(variant_assay == "HBB c.20A>T") %>%
   # Add in a column for the overall prediction based on the data.
   mutate(overall_prediction = ifelse(r_number %in% samples_failing_qc, "no call", SPRT_prediction))
   
 # Ammend the dataframe for the sample from a twin pregnancy (20915).
   
-sickle_cell_analysed$SPRT_prediction[sickle_cell_analysed$r_number == 20915] <- "twin pregnancy"
-sickle_cell_analysed$overall_prediction[sickle_cell_analysed$r_number == 20915] <- "twin pregnancy"
+sickle_cell_unblinded$SPRT_prediction[sickle_cell_unblinded$r_number == 20915] <- "twin pregnancy"
+sickle_cell_unblinded$overall_prediction[sickle_cell_unblinded$r_number == 20915] <- "twin pregnancy"
 
 #############################################################
 # Sickle cell gDNA analysis
@@ -1341,6 +1342,43 @@ ggplot(autosomal_cohort_imbalance %>%
   geom_smooth(se = FALSE, method = "lm")
 
 #############################################################
+# ROC curve analysis
+############################################################
+
+# This part is for plotting ROC curves for the sickle cell 
+# disease data. The starting csv has the "unbalanced" status
+# of each sample as a Boolean vector (TRUE/FALSE) which
+# I had to add manually.
+
+test_roc <- read.csv("analysis_outputs/mcmc_sprt_roc.csv")
+
+sprt_roc <- test_roc %>%
+  arrange(desc(Likelihood_ratio)) %>%
+  mutate(true_positive_rate = cumsum(unbalanced)/sum(unbalanced)) %>%
+  mutate(false_positive_rate = cumsum(!unbalanced)/sum(!unbalanced)) %>%
+  mutate(analysis_type = "sprt")%>%
+  select(analysis_type, true_positive_rate, false_positive_rate)
+
+mcmc_roc <- test_roc %>%
+  mutate(hom_call = pmax(p_G1, p_G3)) %>%
+  arrange(desc(hom_call)) %>%
+  mutate(true_positive_rate = cumsum(unbalanced)/sum(unbalanced)) %>%
+  mutate(false_positive_rate = cumsum(!unbalanced)/sum(!unbalanced)) %>%
+  mutate(analysis_type = "mcmc") %>%
+  select(analysis_type, true_positive_rate, false_positive_rate)
+
+total_roc <- rbind(sprt_roc, mcmc_roc)
+
+ggplot(total_roc, aes(x = false_positive_rate, y = true_positive_rate, colour = analysis_type))+
+  geom_line(size = 2)+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  geom_abline(linetype = "dashed")+
+  ylim(0, 1)+
+  xlim(0,1)+
+  labs(x = "False positive rate", y = "True positive rate", title = "Sickle cell disease ddPCR cohort ROC curve")
+
+#############################################################
 # Export csvs with time stamps
 #############################################################
 
@@ -1350,3 +1388,8 @@ write.csv(ddpcr_nipd_unblinded,
           file = paste0("analysis_outputs/ddpcr_nipd_unblinded", 
                         format(current_time, "%Y%m%d_%H%M%S"), ".csv"),
           row.names = FALSE)
+
+
+
+
+

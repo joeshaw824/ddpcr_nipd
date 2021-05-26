@@ -163,6 +163,7 @@ recessive_mcmc_calls <- recessive_with_fits %>%
 # heterozygous (pG[2]) and homozygous variant (pG[3]).
 
 sickle_with_fits <- ddpcr_data_mcmc %>%
+  filter(variant_assay == "HBB c.20A>T") %>%
   nest(data = n_K:Z_Y) %>%
   mutate(
     data    = map(data, as.list),
