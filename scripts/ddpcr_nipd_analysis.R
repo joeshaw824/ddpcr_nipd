@@ -4,7 +4,12 @@
 ## Joseph.Shaw@gosh.nhs.uk
 ## Analysis script for prediction of fetal genotypes from 
 ## cfDNA testing using ddPCR for maternally-inherited
-## variants.
+## variants. This includes modules for analysis of ddPCR data
+## using the sequential probability ratio test (SPRT) (Lo et al,
+## 2008; PMID:  17664418), and via MonteCarlo Markov Chain 
+## (MCMC) analysis (Caswell et al, 2020; PMID:  32533152).
+## The MCMC analysis section  is compiled from scripts and
+## models supplied by Tristan Snowsill (Exeter).
 #############################################################
 
 #############################################################
@@ -13,6 +18,11 @@
 
 ## Load necessary packages
 library(tidyverse)
+# cmdstanr required for running stan models
+library(cmdstanr)
+# bayesplot and posterior required for MCMC diagnostic modelling
+library(bayesplot)
+library(posterior)
 
 ## Set working directory
 setwd("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/ddPCR_R_Analysis/ddpcr_nipd")
@@ -119,30 +129,7 @@ ddpcr_data_tbl <- pivotted_ddpcr %>%
   mutate(Positives_paternal = pmin(Positives_ff_allele1, Positives_ff_allele2))
 
 #############################################################
-# Prepare data for Exeter MCMC pipeline
-#############################################################
-
-# n_K	= number of droplets tested for variant assay
-# K_M	= number of droplets positive for variant (mutant) allele
-# K_N	= number of droplets positive for normal (reference) allele
-# n_Z	= number of droplets tested for fetal fraction assay
-# Z_X	= number of droplets positive for maternal homozygous allele
-# Z_Y	= number of droplets positive for paternal allele
-
-ddpcr_data_mcmc <- ddpcr_data_tbl %>%
-  dplyr::rename(r_number = Sample,
-                n_K = AcceptedDroplets_Variant_assay,
-                K_M = Positives_variant,
-                K_N = Positives_reference,
-                n_Z = AcceptedDroplets_FetalFrac,
-                Z_X = Positives_maternal,
-                Z_Y = Positives_paternal) %>%
-  arrange(Inheritance_chromosomal, Inheritance_pattern, variant_assay) %>%
-  select(r_number, Inheritance_chromosomal, Inheritance_pattern, variant_assay, n_K, n_Z, 
-         K_N, K_M, n_Z, Z_X, Z_Y)
-
-#############################################################
-# Read in gDNA data and wrangle
+# Wrangle gDNA data into shape
 #############################################################
 
 # Get single well controls only without NTC
@@ -342,11 +329,378 @@ sickle_cell_unblinded <- ddpcr_nipd_unblinded %>%
   filter(variant_assay == "HBB c.20A>T") %>%
   # Add in a column for the overall prediction based on the data.
   mutate(overall_prediction = ifelse(r_number %in% samples_failing_qc, "no call", SPRT_prediction))
-  
+
 # Ammend the dataframe for the sample from a twin pregnancy (20915).
-  
+
 sickle_cell_unblinded$SPRT_prediction[sickle_cell_unblinded$r_number == 20915] <- "twin pregnancy"
 sickle_cell_unblinded$overall_prediction[sickle_cell_unblinded$r_number == 20915] <- "twin pregnancy"
+
+#############################################################
+# Perform MCMC analysis
+#############################################################
+#########################
+# Prepare data
+#########################
+
+# n_K	= number of droplets tested for variant assay
+# K_M	= number of droplets positive for variant (mutant) allele
+# K_N	= number of droplets positive for normal (reference) allele
+# n_Z	= number of droplets tested for fetal fraction assay
+# Z_X	= number of droplets positive for maternal homozygous allele
+# Z_Y	= number of droplets positive for paternal allele
+
+ddpcr_data_mcmc <- ddpcr_data_tbl %>%
+  dplyr::rename(r_number = Sample,
+                n_K = AcceptedDroplets_Variant_assay,
+                K_M = Positives_variant,
+                K_N = Positives_reference,
+                n_Z = AcceptedDroplets_FetalFrac,
+                Z_X = Positives_maternal,
+                Z_Y = Positives_paternal) %>%
+  arrange(Inheritance_chromosomal, Inheritance_pattern, variant_assay) %>%
+  select(r_number, Inheritance_chromosomal, Inheritance_pattern, variant_assay, n_K, n_Z, 
+         K_N, K_M, n_Z, Z_X, Z_Y)
+
+
+
+# Compile the models
+
+dominant_model <- cmdstan_model("models/nipt_dominant.stan")
+
+x_linked_model <- cmdstan_model("models/nipt_x_linked.stan")
+
+recessive_model <- cmdstan_model("models/nipt_recessive.stan")
+
+# Intiialise the chains
+
+initialise_chains_dominant <- function() list(rho = runif(1, 0.1, 0.5), 
+                                              M_K = runif(1, 0.1, 0.5), 
+                                              M_Z = runif(1, 0.1, 0.5))
+
+initialise_chains_xlinked <- function() list(rho = rbeta(1, 4, 32),
+                                             M_K = abs(rnorm(1, sd = 0.05)),
+                                             M_Z = abs(rnorm(1, sd = 0.05)))
+
+
+initialise_chains_recessive <- function() list(rho = runif(1, 0.1, 0.5),
+                                               M_K = runif(1, 0.1, 0.5),
+                                               M_Z = runif(1, 0.1, 0.5))
+
+# Specify which assays are bi-allelic
+biallelic_assays <- c("ADAR c.2997 G>T", "RNASEH2C c.205C>T",
+                      "FGFR3 c.1138G>A", "ADA c.556G>A", "PMM2 c.691G>A", "HBB c.20A>T")
+
+#########################
+# Dominant conditions
+#########################
+
+# Add on fits and extract the probabilities that the fetus is heterozygous (pG[1])
+# and homozygous reference (pG[2]).
+dominant_with_fits <- ddpcr_data_mcmc %>%
+  filter(Inheritance_chromosomal == "autosomal" & !variant_assay %in% biallelic_assays) %>%
+  nest(data = n_K:Z_Y) %>%
+  mutate(
+    data    = map(data, as.list),
+    fit     = map(data, ~ dominant_model$sample(data = .,
+                                                init = initialise_chains_dominant,
+                                                step_size = 0.2,
+                                                parallel_chains = parallel::detectCores())),
+    results = map(fit,  ~ setNames(pivot_wider(.$summary(c("pG", "rho"), "mean"),
+                                               names_from = "variable",
+                                               values_from = "mean"),
+                                   c("p_G1", "p_G2", "rho_est")))
+  ) %>%
+  unnest_wider(results)
+
+dominant_mcmc_calls <- dominant_with_fits %>%
+  select(-c(data, fit)) %>%
+  dplyr::rename(fetal_fraction = rho_est) %>%
+  mutate(mcmc_prediction = case_when(
+    p_G1 > 0.95 ~"heterozygous",
+    p_G2 > 0.95 ~"homozygous reference",
+    p_G1 < 0.95 & p_G2 < 0.95 ~"no call"))
+
+#########################
+# X-linked Conditions
+#########################
+
+# Add on fits and extract the probabilities that the fetus is hemizygous reference (p_G0)
+# and hemizygous variant (p_G1).
+
+x_linked_with_fits <- ddpcr_data_mcmc %>%
+  filter(Inheritance_chromosomal == "x_linked") %>%
+  nest(data = n_K:Z_Y) %>%
+  mutate(
+    data    = map(data, as.list),
+    fit     = map(data, ~ x_linked_model$sample(data = .,
+                                                init = initialise_chains_xlinked,
+                                                step_size = 0.2,
+                                                parallel_chains = parallel::detectCores())),
+    results = map(fit,  ~ setNames(pivot_wider(.$summary(c("pG", "rho"), "mean"),
+                                               names_from = "variable",
+                                               values_from = "mean"),
+                                   c("p_G0", "p_G1", "rho_est")))
+  ) %>%
+  unnest_wider(results)
+
+x_linked_mcmc_calls <- x_linked_with_fits %>%
+  select(-c(data, fit)) %>%
+  dplyr::rename(fetal_fraction = rho_est) %>%
+  mutate(mcmc_prediction = case_when(
+    p_G0 > 0.95 ~"hemizygous reference",
+    p_G1 > 0.95 ~"hemizygous variant",
+    p_G0 < 0.95 & p_G1 < 0.95 ~"no call"))
+
+#########################
+# Rare recessive conditions
+#########################
+
+# Extract the probabilities that the fetus is homozygous reference (pG[1]),
+# heterozygous (pG[2]) and homozygous variant (pG[3]).
+
+recessive_with_fits <- ddpcr_data_mcmc %>%
+  filter(variant_assay %in% biallelic_assays & variant_assay != "HBB c.20A>T") %>%
+  nest(data = n_K:Z_Y) %>%
+  mutate(
+    data    = map(data, as.list),
+    fit     = map(data, ~ recessive_model$sample(data = .,
+                                                 init = initialise_chains_recessive,
+                                                 step_size = 0.2,
+                                                 parallel_chains = parallel::detectCores())),
+    results = map(fit,  ~ setNames(pivot_wider(.$summary(c("pG", "rho"), "mean"),
+                                               names_from = "variable",
+                                               values_from = "mean"),
+                                   c("p_G1", "p_G2", "p_G3", "rho_est")))
+  ) %>%
+  unnest_wider(results)
+
+recessive_mcmc_calls <- recessive_with_fits %>%
+  select(-c(data, fit)) %>%
+  dplyr::rename(fetal_fraction = rho_est) %>%
+  mutate(mcmc_prediction = case_when(
+    p_G1 > 0.95 ~"homozygous reference",
+    p_G2 > 0.95 ~"heterozygous",
+    p_G3 > 0.95 ~"homozygous variant",
+    p_G1 < 0.95 & p_G2 < 0.95 & p_G2 < 0.95 ~"no call"
+  ))
+
+#########################
+# Sickle cell disease
+#########################
+
+# Extract the probabilities that the fetus is homozygous reference (pG[1]),
+# heterozygous (pG[2]) and homozygous variant (pG[3]).
+
+sickle_with_fits <- ddpcr_data_mcmc %>%
+  filter(variant_assay == "HBB c.20A>T") %>%
+  nest(data = n_K:Z_Y) %>%
+  mutate(
+    data    = map(data, as.list),
+    fit     = map(data, ~ recessive_model$sample(data = .,
+                                                 init = initialise_chains_recessive,
+                                                 step_size = 0.2,
+                                                 parallel_chains = parallel::detectCores())),
+    results = map(fit,  ~ setNames(pivot_wider(.$summary(c("pG", "rho"), "mean"),
+                                               names_from = "variable",
+                                               values_from = "mean"),
+                                   c("p_G1", "p_G2", "p_G3", "rho_est")))
+  ) %>%
+  unnest_wider(results)
+
+sickle_mcmc_calls <- sickle_with_fits %>%
+  select(-c(data, fit)) %>%
+  dplyr::rename(fetal_fraction = rho_est) %>%
+  mutate(mcmc_prediction = case_when(
+    p_G1 > 0.95 ~"homozygous reference",
+    p_G2 > 0.95 ~"heterozygous",
+    p_G3 > 0.95 ~"homozygous variant",
+    p_G1 < 0.95 & p_G2 < 0.95 & p_G2 < 0.95 ~"no call"
+  ))
+
+#############################################################
+# Compare MCMC to SPRT
+#############################################################
+
+# Compare to the SPRT results
+
+x_linked_comparison <- left_join(
+  # First table
+  x_linked_mcmc_calls,
+  # Second table
+  ddpcr_nipd_unblinded %>%
+    mutate(r_number = as.character(r_number))%>%
+    filter(Inheritance_chromosomal == "x_linked") %>%
+    select(r_number,Likelihood_ratio, SPRT_prediction), 
+  # Join by
+  by = "r_number")
+
+dominant_comparison <- left_join(
+  # First table
+  dominant_mcmc_calls,
+  # Second table
+  ddpcr_nipd_unblinded %>%
+    mutate(r_number = as.character(r_number))%>%
+    filter(Inheritance_chromosomal == "autosomal") %>%
+    select(r_number, Likelihood_ratio, SPRT_prediction), 
+  # Join by
+  by = "r_number")
+
+rare_recessive_comparison <- left_join(
+  # First table
+  recessive_mcmc_calls,
+  # Second table
+  ddpcr_nipd_unblinded %>%
+    mutate(r_number = as.character(r_number))%>%
+    filter(Inheritance_chromosomal == "autosomal") %>%
+    select(r_number, Likelihood_ratio, SPRT_prediction), 
+  # Join by
+  by = "r_number")
+
+scd_comparison <- left_join(
+  # First table
+  sickle_mcmc_calls,
+  # Second table
+  ddpcr_nipd_unblinded %>%
+    filter(variant_assay == "HBB c.20A>T") %>%
+    mutate(r_number = as.character(r_number))%>%
+    select(r_number, Likelihood_ratio, SPRT_prediction), 
+  # Join by
+  by = "r_number")
+
+# Format the columns the same and bind together
+mcmc_vs_sprt <- rbind(x_linked_comparison %>%
+                        mutate(p_G2 = "") %>%
+                        mutate(p_G3 = "") %>%
+                        select(r_number, Inheritance_chromosomal, variant_assay, fetal_fraction, 
+                               p_G0, p_G1, p_G2,  p_G3, Likelihood_ratio, mcmc_prediction,  
+                               SPRT_prediction),
+                      dominant_comparison %>%
+                        mutate(p_G0 = "") %>%
+                        mutate(p_G3 = "") %>%
+                        select(r_number, Inheritance_chromosomal, variant_assay, fetal_fraction, 
+                               p_G0, p_G1, p_G2,  p_G3, Likelihood_ratio, mcmc_prediction,  
+                               SPRT_prediction),
+                      rare_recessive_comparison %>%
+                        mutate(p_G0 = "") %>%
+                        select(r_number, Inheritance_chromosomal, variant_assay, fetal_fraction, 
+                               p_G0, p_G1, p_G2,  p_G3, Likelihood_ratio, mcmc_prediction,  
+                               SPRT_prediction),
+                      scd_comparison %>%
+                        mutate(p_G0 = "") %>%
+                        select(r_number, Inheritance_chromosomal, variant_assay, fetal_fraction, 
+                               p_G0, p_G1, p_G2,  p_G3, Likelihood_ratio, mcmc_prediction,  
+                               SPRT_prediction)) %>%
+  mutate(concordant = ifelse(mcmc_prediction == SPRT_prediction,
+                             "yes", "no"))
+
+#############################################################
+# ROC curve analysis
+############################################################
+
+# This part is for plotting ROC curves for the sickle cell 
+# disease data.
+
+mcmc_vs_sprt_scd <- left_join(
+  scd_comparison,
+  RAPID_biobank %>%
+    mutate(r_number = as.character(r_number)) %>%
+    select(r_number, mutation_genetic_info_fetus),
+  by = "r_number") %>%
+  # Remove twin pregnancy, sample without outcome and HbAC case
+  filter(!r_number %in% c(30230, 20915, 17004)) %>%
+  # Convert invasive results to binary outcomes
+  mutate(unbalanced = case_when(
+    mutation_genetic_info_fetus %in% c("HbSS", "HbAA") ~"TRUE",
+    mutation_genetic_info_fetus == "HbAS" ~"FALSE")) %>%
+  # Convert "unbalanced" column to Boolean vector
+  mutate(unbalanced = as.logical(unbalanced)) %>%
+  # Convert the MCMC calls to a binary outcome
+  mutate(mcmc_hom_call = pmax(p_G1, p_G3))
+
+sprt_roc <- mcmc_vs_sprt_scd %>%
+  arrange(desc(Likelihood_ratio)) %>%
+  mutate(true_positive_rate = cumsum(unbalanced)/sum(unbalanced)) %>%
+  mutate(false_positive_rate = cumsum(!unbalanced)/sum(!unbalanced)) %>%
+  mutate(analysis_type = "sprt")%>%
+  select(analysis_type, true_positive_rate, false_positive_rate)
+
+mcmc_roc <- mcmc_vs_sprt_scd %>%
+  arrange(desc(mcmc_hom_call)) %>%
+  mutate(true_positive_rate = cumsum(unbalanced)/sum(unbalanced)) %>%
+  mutate(false_positive_rate = cumsum(!unbalanced)/sum(!unbalanced)) %>%
+  mutate(analysis_type = "mcmc") %>%
+  select(analysis_type, true_positive_rate, false_positive_rate)
+
+total_roc <- rbind(sprt_roc, mcmc_roc)
+
+ggplot(total_roc, aes(x = false_positive_rate, y = true_positive_rate))+
+  geom_line(size = 2, alpha = 0.2)+
+  facet_wrap(~analysis_type)+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  geom_abline(linetype = "dashed")+
+  ylim(0, 1)+
+  xlim(0,1)+
+  labs(x = "False positive rate", y = "True positive rate", title = "Sickle cell disease ddPCR cohort ROC curve")
+
+############################################################
+# MCMC diagnostic plotting
+#############################################################
+
+# Use this web address: https://mc-stan.org/cmdstanr/reference/cmdstanr-package.html
+# Looks like the URL that Tristan sent uses stanr, whereas we/he use cmdstanr.
+# You can still use bayesplot with cmdstanr, but you'll need to follow the 
+# cmdstanr specific tutorial in the link above.
+
+## Use one sample only.
+ddpcr_data_mcmc %>%
+  filter(r_number == 19261)
+
+# Data for one sample
+data_19261 <- list(n_K = 254853, n_Z = 240083, K_N = 2159, K_M = 2282, Z_X = 4352, Z_Y = 457)
+data_19711 <- list(n_K = 361743, n_Z = 372037, K_N =   1129, K_M = 1009, Z_X = 2494, Z_Y = 116)
+
+data_all <- dominant_with_fits$data
+
+# Run the single sample according to the code upstream
+fit_19261 <- dominant_model$sample(
+  data = data_19261,
+  init = initialise_chains_dominant,
+  step_size = 0.2,
+  parallel_chains = parallel::detectCores())
+
+fit_19711 <- dominant_model$sample(
+  data = data_19711,
+  init = initialise_chains_dominant,
+  step_size = 0.2,
+  parallel_chains = parallel::detectCores())
+
+# Run all dominant samples
+fit_dominant_all <- dominant_model$sample(
+  data = data_all,
+  init = initialise_chains_dominant,
+  step_size = 0.2,
+  parallel_chains = parallel::detectCores())
+
+# In order to plot some graphs it looks like you have to convert to a 
+# stanfit object
+stanfit_19261 <- rstan::read_stan_csv(fit_19261$output_files())
+stanfit_19711 <- rstan::read_stan_csv(fit_19711$output_files())
+
+lp_stanfit_19261 <- log_posterior(stanfit_19261)
+
+posterior_19261 <- as.array(stanfit_19261)
+posterior_19711 <- as.array(stanfit_19711)
+
+np_stanfit_19261 <- nuts_params(stanfit_19261)
+np_stanfit_19711 <- nuts_params(stanfit_19711)
+
+mcmc_parcoord(stanfit_19711, np = np_stanfit_19711)
+
+plot_1 <- mcmc_pairs(posterior_19711, np = np_stanfit_19711, pars = c("rho","M_K","M_Z"))
+plot_2 <- mcmc_pairs(posterior_19261, np = np_stanfit_19261, pars = c("rho","M_K","M_Z"))
+
+mcmc_trace(posterior_19711, pars = "M_K", np = np_stanfit_19711)
 
 #############################################################
 # Sickle cell gDNA analysis
@@ -1342,43 +1696,6 @@ ggplot(autosomal_cohort_imbalance %>%
   geom_smooth(se = FALSE, method = "lm")
 
 #############################################################
-# ROC curve analysis
-############################################################
-
-# This part is for plotting ROC curves for the sickle cell 
-# disease data. The starting csv has the "unbalanced" status
-# of each sample as a Boolean vector (TRUE/FALSE) which
-# I had to add manually.
-
-test_roc <- read.csv("analysis_outputs/mcmc_sprt_roc.csv")
-
-sprt_roc <- test_roc %>%
-  arrange(desc(Likelihood_ratio)) %>%
-  mutate(true_positive_rate = cumsum(unbalanced)/sum(unbalanced)) %>%
-  mutate(false_positive_rate = cumsum(!unbalanced)/sum(!unbalanced)) %>%
-  mutate(analysis_type = "sprt")%>%
-  select(analysis_type, true_positive_rate, false_positive_rate)
-
-mcmc_roc <- test_roc %>%
-  mutate(hom_call = pmax(p_G1, p_G3)) %>%
-  arrange(desc(hom_call)) %>%
-  mutate(true_positive_rate = cumsum(unbalanced)/sum(unbalanced)) %>%
-  mutate(false_positive_rate = cumsum(!unbalanced)/sum(!unbalanced)) %>%
-  mutate(analysis_type = "mcmc") %>%
-  select(analysis_type, true_positive_rate, false_positive_rate)
-
-total_roc <- rbind(sprt_roc, mcmc_roc)
-
-ggplot(total_roc, aes(x = false_positive_rate, y = true_positive_rate, colour = analysis_type))+
-  geom_line(size = 2)+
-  theme_bw()+
-  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
-  geom_abline(linetype = "dashed")+
-  ylim(0, 1)+
-  xlim(0,1)+
-  labs(x = "False positive rate", y = "True positive rate", title = "Sickle cell disease ddPCR cohort ROC curve")
-
-#############################################################
 # Export csvs with time stamps
 #############################################################
 
@@ -1389,7 +1706,8 @@ write.csv(ddpcr_nipd_unblinded,
                         format(current_time, "%Y%m%d_%H%M%S"), ".csv"),
           row.names = FALSE)
 
-
-
-
+write.csv(mcmc_vs_sprt_outcomes, 
+          file = paste0("analysis_outputs/mcmc_vs_sprt_outcomes", 
+                        format(current_time, "%Y%m%d_%H%M%S"), ".csv"),
+          row.names = FALSE)
 
