@@ -335,6 +335,9 @@ sickle_cell_unblinded <- ddpcr_nipd_unblinded %>%
 sickle_cell_unblinded$SPRT_prediction[sickle_cell_unblinded$r_number == 20915] <- "twin pregnancy"
 sickle_cell_unblinded$overall_prediction[sickle_cell_unblinded$r_number == 20915] <- "twin pregnancy"
 
+nrow(sickle_cell_unblinded %>%
+       filter(overall_prediction != "no call"))
+
 #############################################################
 # Perform MCMC analysis
 #############################################################
@@ -493,6 +496,7 @@ recessive_mcmc_calls <- recessive_with_fits %>%
 
 sickle_with_fits <- ddpcr_data_mcmc %>%
   filter(variant_assay == "HBB c.20A>T") %>%
+  filter(r_number %in% c(30113, 20611)) %>%
   nest(data = n_K:Z_Y) %>%
   mutate(
     data    = map(data, as.list),
@@ -1297,8 +1301,7 @@ ggplot(amplicons_motifs %>%
 # results for ddPCR, including parental gDNA controls. The amount of 
 # information on this plot can be modified to suit user preference.
 
-plot_rmd_graph <- function(cfdna_sample, parents, number_parents) {
-  
+plot_rmd_graph <- function(cfdna_sample, maternal, paternal){
   # Get the sample variant fraction information
   variant_cfdna_sample <- ddpcr_data_analysed %>%
     filter(r_number == cfdna_sample) %>%
@@ -1340,7 +1343,7 @@ plot_rmd_graph <- function(cfdna_sample, parents, number_parents) {
     left_join(controls %>%
                 select(Sample, identity), by = "Sample",
               .groups="drop") %>%
-    filter(Sample %in% parents)
+    filter(Sample == maternal | Sample == paternal)
   
   # Calculate the molecules for each target type (maternal or paternal)
   ddpcr_control_tbl_ff_id_molecules <- ddpcr_control_tbl_ff_id %>%
@@ -1357,7 +1360,7 @@ plot_rmd_graph <- function(cfdna_sample, parents, number_parents) {
     left_join(controls %>%
                 select(Sample, identity), by = "Sample",
               .groups="drop") %>%
-    filter(Sample %in% parents)
+    filter(Sample == maternal | Sample == paternal)
   
   # Get the parental control variant fraction information
   control_variant_all <- ddpcr_control_tbl_var_id %>%
@@ -1370,8 +1373,7 @@ plot_rmd_graph <- function(cfdna_sample, parents, number_parents) {
     ) %>%
     rename(r_number = Worksheet_well, assay = variant_assay,
            AcceptedDroplets = AcceptedDroplets_Variant_assay) %>%
-    select(r_number, assay, AcceptedDroplets, identity, Target, count) %>%
-    arrange(identity)
+    select(r_number, assay, AcceptedDroplets, identity, Target, count)
   
   # Get the parental control ff information
   control_ff_all <- ddpcr_control_tbl_ff_id_molecules %>%
@@ -1383,18 +1385,32 @@ plot_rmd_graph <- function(cfdna_sample, parents, number_parents) {
       values_to = "count") %>%
     rename(r_number = Worksheet_well, assay = ff_assay, 
            AcceptedDroplets = AcceptedDroplets_FetalFrac) %>%
-    select(r_number, assay, AcceptedDroplets, identity, Target, count) %>%
-    # Arrange by identity so that the head and tail step works
-    arrange(identity)
+    select(r_number, assay, AcceptedDroplets, identity, Target, count)
   
-  # Head and tail it to select one well only for maternal and paternal
-  # You can alter this step if you want more parental replicates displayed
   
-  control_ff <- rbind(head(control_ff_all, n = number_parents), tail(control_ff_all, n = number_parents))
-  control_variant <- rbind(head(control_variant_all, n = number_parents), tail(control_variant_all, n = number_parents))
+  # Split the parental data and select only one well from each
+  # If no paternal sample is available, this should just return and
+  # empty tibble.
+  
+  maternal_ff <- head(control_ff_all %>%
+                        filter(identity == "maternal gDNA") %>%
+                        arrange(r_number), n = 2)
+  
+  paternal_ff <- head(control_ff_all %>%
+                        filter(identity == "paternal gDNA") %>%
+                        arrange(r_number), n = 2)
+  
+  maternal_var <- head(control_variant_all %>%
+                         filter(identity == "maternal gDNA") %>%
+                         arrange(r_number), n = 2)
+  
+  paternal_var <- head(control_variant_all %>%
+                         filter(identity == "paternal gDNA") %>%
+                         arrange(r_number), n = 2)
   
   # Bind the tables
-  plot_table_cfdna_sample <- rbind(control_ff, control_variant, ff_cfdna_sample, variant_cfdna_sample) %>%
+  plot_table_cfdna_sample <- rbind(maternal_ff, paternal_ff, maternal_var, paternal_var,
+                                   ff_cfdna_sample, variant_cfdna_sample) %>%
     mutate(r_number = as.character(r_number))%>%
     mutate(id = paste(r_number, assay)) %>%
     mutate(Cpd = count/AcceptedDroplets) %>%
@@ -1425,6 +1441,30 @@ plot_rmd_graph <- function(cfdna_sample, parents, number_parents) {
   plot_table_cfdna_sample <- plot_table_cfdna_sample%>%
     arrange(assay_type, identity, new_target)
   
+  
+  # Add the information for the plot subtitle
+  sprt_result <- as.character(mcmc_vs_sprt %>% 
+                                filter(r_number == cfdna_sample) %>%
+                                select(SPRT_prediction))
+  
+  mcmc_result <- as.character(mcmc_vs_sprt %>%
+                                filter(r_number == cfdna_sample) %>%
+                                select(mcmc_prediction))
+  
+  # Fetal fraction result
+  ff_result <- as.character(round(ddpcr_nipd_unblinded %>% 
+                                    filter(r_number == cfdna_sample) %>%
+                                    select(Fetal_fraction_percent), digits = 1))
+  
+  # Variant fraction result
+  vf_result <- as.character(round(ddpcr_nipd_unblinded %>% 
+                                    filter(r_number == cfdna_sample) %>%
+                                    select(Variant_fraction_percent), digits = 1))
+  
+  sprt_result_subtitle <- paste0("SPRT: ", sprt_result, "   ", "MCMC: ", mcmc_result, 
+                                 "   ", "Fetal fraction: ", ff_result, "%", 
+                                 "   ", "Variant fraction: ", vf_result, "%")
+  
   # Plot the results
   rmd_plot <- ggplot(plot_table_cfdna_sample, aes(x = identity, y = count, fill = new_target))+
     geom_col(position = position_dodge(width = 0.9), colour="black", alpha = 0.6)+
@@ -1438,35 +1478,16 @@ plot_rmd_graph <- function(cfdna_sample, parents, number_parents) {
           panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
     labs(x = "", y = "Molecules", title = paste("Sample:", cfdna_sample, " ", "Variant assay:", 
                                                 variant_cfdna_sample$assay, "  ",
-                                                "Fetal fraction assay:", ff_cfdna_sample$assay))
+                                                "Fetal fraction assay:", ff_cfdna_sample$assay),
+         subtitle = paste(sprt_result_subtitle))
   
   return(rmd_plot)
 }
 
-# For subtitle
-#sprt_result <- as.character(sickle_cell_analysed %>% 
-#filter(r_number == cfdna_sample) %>%
-#select(SPRT_prediction))
-
-#mcmc_result <- as.character(sickle_mcmc_calls %>%
-#filter(r_number == cfdna_sample) %>%
-#select(mcmc_prediction))
-
-# Fetal fraction result
-#ff_result <- as.character(round(sickle_cell_analysed %>% 
-#filter(r_number == cfdna_sample) %>%
-#select(Fetal_fraction_percent), digits = 1))
-
-# Variant fraction result
-#vf_result <- as.character(round(sickle_cell_analysed %>% 
-#filter(r_number == cfdna_sample) %>%
-#select(Variant_fraction_percent), digits = 1))
-
-#sprt_result_subtitle <- paste0("SPRT: ", sprt_result, "   ", "MCMC: ", mcmc_result, 
-#"   ", "Fetal fraction: ", ff_result, "%", 
-#"   ", "Variant fraction: ", vf_result, "%")
-
-#subtitle = paste(sprt_result_subtitle)
+# Examples
+#plot_rmd_graph(30113, "21RG-126G0134", "")
+#plot_rmd_graph(20611, "21RG-126G0140", "")
+#plot_rmd_graph(13519, "20RG-307G0060", "20RG-307G0062")
 
 #############################################################
 # Plotting graphs of sample cohorts
@@ -1710,4 +1731,3 @@ write.csv(mcmc_vs_sprt_outcomes,
           file = paste0("analysis_outputs/mcmc_vs_sprt_outcomes", 
                         format(current_time, "%Y%m%d_%H%M%S"), ".csv"),
           row.names = FALSE)
-
