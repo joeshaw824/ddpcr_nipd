@@ -187,6 +187,11 @@ dataPath <- "data/ddPCR_SNP_genotyping/"
 
 ddpcr_files <- list.files(dataPath)
 
+snp_panel_24 <- c(unique(snp_calc %>%
+  # Selct only the first 24 SNPs
+  filter(GOSH_ID_ds < 25) %>%
+  select(dbSNP)))
+
 #Empty data frame
 SNP_data <- data.frame()
 
@@ -213,5 +218,42 @@ SNP_data_table <- SNP_data %>%
     names_from = c(Sample, Label),
     values_from = Copies_per_ul)
 
+SNP_data_plotting <- SNP_data %>%
+  select(Sample, Target, TargetType, Concentration) %>%
+  left_join(ddpcr_target_panel %>%
+              select(Target, Assay), by = "Target") %>%
+  # Convert the concentration column to a numeric and convert "no call" to zero
+  mutate(Copies_per_ul = as.integer(ifelse(Concentration == "No Call", 0, Concentration))) %>%
+  # Add fluorophores
+  mutate(Label = case_when(
+    TargetType == "Ch1Unknown" ~ "FAM",
+    TargetType == "Ch2Unknown" ~ "VIC")) %>%
+  select(!c(Target, Concentration, TargetType)) %>%
+  pivot_wider(id_cols = c(Sample,Assay),
+              names_from = Label,
+              values_from = Copies_per_ul) %>%
+  mutate(genotype = case_when(
+    FAM > 50 & VIC < 50 ~"hom FAM",
+    FAM > 50 & VIC > 50 ~"het",
+    FAM < 50 & VIC > 50 ~"hom VIC",
+  ))
+
+# Plots Fluidigm-like graphs of different genotype clusters
+ggplot(SNP_data_plotting, aes(x = FAM, y = VIC, colour = genotype))+
+  geom_point()+
+  facet_wrap(~Sample)
+
+ggplot(SNP_data_plotting, aes(x = Assay, y = genotype, colour = genotype))+
+  geom_point(size = 3, alpha = 0.7)+
+  theme_bw()+
+  facet_wrap(~Sample)+
+  labs(x = "")
+
+# Individual plots
+ggplot(SNP_data_plotting %>%
+        filter(Sample == "21RG-083G0126"), aes(x = genotype, y = Assay, colour = genotype))+
+  geom_point(size = 3, alpha = 0.7)+
+  theme_bw()
 
 
+     
