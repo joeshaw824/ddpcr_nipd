@@ -656,6 +656,9 @@ ggplot(total_roc, aes(x = false_positive_rate, y = true_positive_rate))+
 # You can still use bayesplot with cmdstanr, but you'll need to follow the 
 # cmdstanr specific tutorial in the link above.
 
+# This section is not finished yet.
+
+
 ## Use one sample only.
 ddpcr_data_mcmc %>%
   filter(r_number == 19261)
@@ -663,6 +666,7 @@ ddpcr_data_mcmc %>%
 # Data for one sample
 data_19261 <- list(n_K = 254853, n_Z = 240083, K_N = 2159, K_M = 2282, Z_X = 4352, Z_Y = 457)
 data_19711 <- list(n_K = 361743, n_Z = 372037, K_N =   1129, K_M = 1009, Z_X = 2494, Z_Y = 116)
+data_12945 <- list(n_K = 367794, n_Z = 336160, K_N =   1728 , K_M = 1798, Z_X = 8123, Z_Y = 281)
 
 data_all <- dominant_with_fits$data
 
@@ -679,6 +683,12 @@ fit_19711 <- dominant_model$sample(
   step_size = 0.2,
   parallel_chains = parallel::detectCores())
 
+fit_12945 <- x_linked_model$sample(
+  data = data_12945,
+  init = initialise_chains_xlinked,
+  step_size = 0.2,
+  parallel_chains = parallel::detectCores())
+
 # Run all dominant samples
 fit_dominant_all <- dominant_model$sample(
   data = data_all,
@@ -688,23 +698,39 @@ fit_dominant_all <- dominant_model$sample(
 
 # In order to plot some graphs it looks like you have to convert to a 
 # stanfit object
-stanfit_19261 <- rstan::read_stan_csv(fit_19261$output_files())
+stanfit_12945 <- rstan::read_stan_csv(fit_12945$output_files())
 stanfit_19711 <- rstan::read_stan_csv(fit_19711$output_files())
 
-lp_stanfit_19261 <- log_posterior(stanfit_19261)
+lp_stanfit_12945 <- log_posterior(stanfit_12945)
 
-posterior_19261 <- as.array(stanfit_19261)
+posterior_12945 <- as.array(stanfit_12945)
 posterior_19711 <- as.array(stanfit_19711)
 
-np_stanfit_19261 <- nuts_params(stanfit_19261)
+np_stanfit_12945 <- nuts_params(stanfit_12945)
 np_stanfit_19711 <- nuts_params(stanfit_19711)
 
-mcmc_parcoord(stanfit_19711, np = np_stanfit_19711)
+mcmc_parcoord(stanfit_12945, np = np_stanfit_12945)
 
 plot_1 <- mcmc_pairs(posterior_19711, np = np_stanfit_19711, pars = c("rho","M_K","M_Z"))
 plot_2 <- mcmc_pairs(posterior_19261, np = np_stanfit_19261, pars = c("rho","M_K","M_Z"))
 
-mcmc_trace(posterior_19711, pars = "M_K", np = np_stanfit_19711)
+mcmc_trace(posterior_12945, pars = "rho", np = stanfit_12945)
+
+mcmc_trace(posterior_cp, pars = "tau", np = np_cp)
+
+x_linked_test <- ddpcr_data_mcmc %>%
+  filter(Inheritance_chromosomal == "x_linked") %>%
+  nest(data = n_K:Z_Y) %>%
+  mutate(data = map(data, as.list))
+
+x_linked_fit_test <- map(x_linked_test$data, ~ x_linked_model$sample(data = .,
+                                                init = initialise_chains_xlinked,
+                                                step_size = 0.2,
+                                                parallel_chains = parallel::detectCores()))
+
+# In order to plot some graphs it looks like you have to convert to a 
+# stanfit object
+stanfit_x_linked <- rstan::read_stan_csv(x_linked_fit_test$output_files())
 
 #############################################################
 # Sickle cell gDNA analysis

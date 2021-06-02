@@ -2,8 +2,8 @@
 ## ddPCR SNP panel analysis
 ## May 2021
 ## Joseph.Shaw@gosh.nhs.uk 
-## This script is for calculating the probability of the 
-## ddPCR SNP panel being uninformative for fetal fraction.
+## These scripts deal with the ddPCR SNP panel used for 
+## determining the fetal fraction of cfDNA.
 ## This panel was originally described by Camunas-Soler et
 ## al (2018) (PMID: 29097507)
 #############################################################
@@ -13,6 +13,13 @@
 #############################################################
 
 library(tidyverse)
+
+## Set working directory
+setwd("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/ddPCR_R_Analysis/ddpcr_nipd")
+
+# Load resources
+controls <- readr::read_csv("resources/controls.csv")
+ddpcr_target_panel <- readr::read_csv("resources/ddpcr_target_panel.csv") 
 
 snp_panel <- read.csv("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/ddPCR SNP Panel/Camunas_Soler_panel_47_GnomAD_frequencies.csv")
 
@@ -172,3 +179,81 @@ ggplot(snp_calc, aes(x = GOSH_ID_ds, y = frequency_B))+
   labs(x = "SNPs", y = "GnomAD minor allele frequency", title = "GnomAD minor allele frequencies of Camunas-Soler et al (2018) ddPCR SNP panel")+
   theme_bw()
 
+#############################################################
+# Collating parental SNP genotypes
+#############################################################
+
+dataPath <- "data/ddPCR_SNP_genotyping/"
+
+ddpcr_files <- list.files(dataPath)
+
+snp_panel_24 <- c(unique(snp_calc %>%
+  # Selct only the first 24 SNPs
+  filter(GOSH_ID_ds < 25) %>%
+  select(dbSNP)))
+
+#Empty data frame
+SNP_data <- data.frame()
+
+# Read and collate each worksheet csv
+for (dataFile in ddpcr_files){
+  tmp_dat <- read_csv(paste0(dataPath,dataFile), col_names = TRUE)
+  SNP_data <-rbind(SNP_data, tmp_dat)
+  rm(tmp_dat)
+}
+
+SNP_data_table <- SNP_data %>%
+  select(Sample, Target, TargetType, Concentration) %>%
+  left_join(ddpcr_target_panel %>%
+              select(Target, Assay), by = "Target") %>%
+  # Convert the concentration column to a numeric and convert "no call" to zero
+  mutate(Copies_per_ul = as.integer(ifelse(Concentration == "No Call", 0, Concentration))) %>%
+  # Add fluorophores
+  mutate(Label = case_when(
+    TargetType == "Ch1Unknown" ~ "FAM",
+    TargetType == "Ch2Unknown" ~ "VIC")) %>%
+  select(!c(Target, Concentration, TargetType)) %>%
+  pivot_wider(
+    id_cols = Assay,
+    names_from = c(Sample, Label),
+    values_from = Copies_per_ul)
+
+SNP_data_plotting <- SNP_data %>%
+  select(Sample, Target, TargetType, Concentration) %>%
+  left_join(ddpcr_target_panel %>%
+              select(Target, Assay), by = "Target") %>%
+  # Convert the concentration column to a numeric and convert "no call" to zero
+  mutate(Copies_per_ul = as.integer(ifelse(Concentration == "No Call", 0, Concentration))) %>%
+  # Add fluorophores
+  mutate(Label = case_when(
+    TargetType == "Ch1Unknown" ~ "FAM",
+    TargetType == "Ch2Unknown" ~ "VIC")) %>%
+  select(!c(Target, Concentration, TargetType)) %>%
+  pivot_wider(id_cols = c(Sample,Assay),
+              names_from = Label,
+              values_from = Copies_per_ul) %>%
+  mutate(genotype = case_when(
+    FAM > 50 & VIC < 50 ~"hom FAM",
+    FAM > 50 & VIC > 50 ~"het",
+    FAM < 50 & VIC > 50 ~"hom VIC",
+  ))
+
+# Plots Fluidigm-like graphs of different genotype clusters
+ggplot(SNP_data_plotting %>%
+         filter(Sample != "21RG-070G0033"), aes(x = FAM, y = VIC, colour = genotype))+
+  geom_point()+
+  facet_wrap(~Sample)
+
+ggplot(SNP_data_plotting, aes(x = Assay, y = genotype, colour = genotype))+
+  geom_point(size = 3, alpha = 0.7)+
+  theme_bw()+
+  facet_wrap(~Sample)+
+  labs(x = "")
+
+# Individual plots
+ggplot(SNP_data_plotting %>%
+        filter(Sample == "21RG-083G0126"), aes(x = genotype, y = Assay, colour = genotype))+
+  geom_point(size = 3, alpha = 0.7)+
+  theme_bw()
+
+     
