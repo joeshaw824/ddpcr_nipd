@@ -239,7 +239,8 @@ SNP_data_plotting <- SNP_data %>%
   ))
 
 # Plots Fluidigm-like graphs of different genotype clusters
-ggplot(SNP_data_plotting, aes(x = FAM, y = VIC, colour = genotype))+
+ggplot(SNP_data_plotting %>%
+         filter(Sample != "21RG-070G0033"), aes(x = FAM, y = VIC, colour = genotype))+
   geom_point()+
   facet_wrap(~Sample)
 
@@ -254,6 +255,5 @@ ggplot(SNP_data_plotting %>%
         filter(Sample == "21RG-083G0126"), aes(x = genotype, y = Assay, colour = genotype))+
   geom_point(size = 3, alpha = 0.7)+
   theme_bw()
-
 
      
