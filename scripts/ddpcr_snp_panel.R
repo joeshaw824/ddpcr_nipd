@@ -107,6 +107,8 @@ snp_24_type1and3 <- snp_calc %>%
   mutate(uninformative_1_in  = 1/chance_uninformative) %>%
   select(population, chance_uninformative, uninformative_1_in)
 
+mean(snp_24_type1and3$uninformative_1_in)
+
 # Check the probability of the 24 SNP panel being uninformative when using parental gDNA 
 # (type 1 SNPs only) 
 snp_24_type1_only <- snp_calc %>%
@@ -125,6 +127,7 @@ snp_24_type1_only <- snp_calc %>%
   mutate(uninformative_1_in  = 1/chance_uninformative) %>%
   select(population, chance_uninformative, uninformative_1_in)
 
+mean(snp_24_type1_only$uninformative_1_in)
 
 #############################################################
 # Uninformativeness of 40 SNP panel
@@ -149,6 +152,7 @@ snp_40_type1and3 <- snp_calc %>%
   mutate(uninformative_1_in  = 1/chance_uninformative) %>%
   select(population, chance_uninformative, uninformative_1_in)
 
+mean(snp_40_type1and3$uninformative_1_in)
 
 # Check the probability of the 40 SNP panel being uninformative when using using parental gDNA 
 # (type 1 SNPs only)
@@ -168,6 +172,8 @@ snp_40_type1_only <- snp_calc %>%
            rs1544724 * rs3760269 * rs7233004 * rs4801945 * rs271981) %>%
   mutate(uninformative_1_in  = 1/chance_uninformative) %>%
   select(population, chance_uninformative, uninformative_1_in)
+
+mean(snp_40_type1_only$uninformative_1_in)
 
 #############################################################
 # Plot graph
@@ -240,9 +246,14 @@ SNP_data_plotting <- SNP_data %>%
 
 # Plots Fluidigm-like graphs of different genotype clusters
 ggplot(SNP_data_plotting %>%
-         filter(Sample != "21RG-070G0033"), aes(x = FAM, y = VIC, colour = genotype))+
+         filter(!is.na(genotype)) %>%
+         filter(!Sample %in% c("21RG-070G0033", "20611", "30113") ), aes(x = FAM, y = VIC, colour = genotype))+
   geom_point()+
-  facet_wrap(~Sample)
+  facet_wrap(~Sample)+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  labs(x = "FAM target copies/ul", y = "VIC target copies/ul",
+       title = "SNP Genotyping for Parental Samples")
 
 ggplot(SNP_data_plotting, aes(x = Assay, y = genotype, colour = genotype))+
   geom_point(size = 3, alpha = 0.7)+

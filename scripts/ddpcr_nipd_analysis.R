@@ -1342,7 +1342,7 @@ plot_rmd_graph <- function(cfdna_sample, maternal, paternal){
     mutate(identity = "cfDNA") %>%
     select(r_number, assay, AcceptedDroplets, identity, Target, count)
   
-  # Get the sample fetal fraction informatio
+  # Get the sample fetal fraction information
   ff_cfdna_sample <- ddpcr_data_analysed %>%
     filter(r_number == cfdna_sample) %>%
     select(r_number, ff_assay, AcceptedDroplets_FetalFrac, Molecules_maternal,
