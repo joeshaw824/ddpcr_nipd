@@ -107,6 +107,8 @@ snp_24_type1and3 <- snp_calc %>%
   mutate(uninformative_1_in  = 1/chance_uninformative) %>%
   select(population, chance_uninformative, uninformative_1_in)
 
+mean(snp_24_type1and3$uninformative_1_in)
+
 # Check the probability of the 24 SNP panel being uninformative when using parental gDNA 
 # (type 1 SNPs only) 
 snp_24_type1_only <- snp_calc %>%
@@ -125,6 +127,7 @@ snp_24_type1_only <- snp_calc %>%
   mutate(uninformative_1_in  = 1/chance_uninformative) %>%
   select(population, chance_uninformative, uninformative_1_in)
 
+mean(snp_24_type1_only$uninformative_1_in)
 
 #############################################################
 # Uninformativeness of 40 SNP panel
@@ -149,6 +152,7 @@ snp_40_type1and3 <- snp_calc %>%
   mutate(uninformative_1_in  = 1/chance_uninformative) %>%
   select(population, chance_uninformative, uninformative_1_in)
 
+mean(snp_40_type1and3$uninformative_1_in)
 
 # Check the probability of the 40 SNP panel being uninformative when using using parental gDNA 
 # (type 1 SNPs only)
@@ -168,6 +172,8 @@ snp_40_type1_only <- snp_calc %>%
            rs1544724 * rs3760269 * rs7233004 * rs4801945 * rs271981) %>%
   mutate(uninformative_1_in  = 1/chance_uninformative) %>%
   select(population, chance_uninformative, uninformative_1_in)
+
+mean(snp_40_type1_only$uninformative_1_in)
 
 #############################################################
 # Plot graph
@@ -204,6 +210,7 @@ for (dataFile in ddpcr_files){
 
 SNP_data_table <- SNP_data %>%
   select(Sample, Target, TargetType, Concentration) %>%
+  filter(Sample != "NTC") %>%
   left_join(ddpcr_target_panel %>%
               select(Target, Assay), by = "Target") %>%
   # Convert the concentration column to a numeric and convert "no call" to zero
@@ -240,9 +247,14 @@ SNP_data_plotting <- SNP_data %>%
 
 # Plots Fluidigm-like graphs of different genotype clusters
 ggplot(SNP_data_plotting %>%
-         filter(Sample != "21RG-070G0033"), aes(x = FAM, y = VIC, colour = genotype))+
+         filter(!is.na(genotype)) %>%
+         filter(!Sample %in% c("21RG-070G0033", "20611", "30113") ), aes(x = FAM, y = VIC, colour = genotype))+
   geom_point()+
-  facet_wrap(~Sample)
+  facet_wrap(~Sample)+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  labs(x = "FAM target copies/ul", y = "VIC target copies/ul",
+       title = "SNP Genotyping for Parental Samples")
 
 ggplot(SNP_data_plotting, aes(x = Assay, y = genotype, colour = genotype))+
   geom_point(size = 3, alpha = 0.7)+
@@ -255,5 +267,78 @@ ggplot(SNP_data_plotting %>%
         filter(Sample == "21RG-083G0126"), aes(x = genotype, y = Assay, colour = genotype))+
   geom_point(size = 3, alpha = 0.7)+
   theme_bw()
+
+
+write.csv(SNP_data_plotting, "analysis_outputs/SNP_data_plotting.csv", row.names = FALSE)
+
+SNP_data_plotting %>%
+  filter(Assay == "rs2276702" & genotype == "hom FAM")
+
+#############################################################
+# Function for calculating fetal fraction for cfDNA samples
+#############################################################
+
+digital_snp <- function(cf_sample){
+  sample_snp_table <- SNP_data %>%
+  filter(Sample == cf_sample) %>%
+  select(Sample, Target, TargetType, Concentration, FractionalAbundance) %>%
+  left_join(ddpcr_target_panel %>%
+              select(Target, Assay), by = "Target") %>%
+  # Convert the concentration column to a numeric and convert "no call" to zero
+  mutate(Copies_per_ul = as.integer(ifelse(Concentration == "No Call", 0, Concentration))) %>%
+  
+  # Determine fetal fraction (assuming it is between 1 and 20%)
+  dplyr::rename(Fraction_a = FractionalAbundance) %>%
+  mutate(Fraction_b = 100 - Fraction_a) %>%
+  mutate(minor_fraction = pmin(Fraction_b, Fraction_a)) %>%
+  mutate(fetal_fraction = case_when(
+    minor_fraction > 1 & minor_fraction < 20 ~minor_fraction)) %>%
+  
+  # Filter to get one row per well
+  filter(TargetType == "Ch1Unknown") %>%
+  
+  select(c(Assay, fetal_fraction))
+
+  mean_ff <- mean(sample_snp_table$fetal_fraction)
+  
+  return(sample_snp_table)
+}
+
+
+view(digital_snp("21RG-070G0019"))
+
+new_samples <- c("21RG-070G0019", "21RG-084G0062", "21RG-070G0024", "21RG-112G0098",
+                 "21RG-112G0102")
+
+snp_table_new <- SNP_data %>%
+  filter(Sample %in% new_samples) %>%
+  select(Sample, Target, TargetType, Concentration, FractionalAbundance) %>%
+  left_join(ddpcr_target_panel %>%
+              select(Target, Assay), by = "Target") %>%
+  # Convert the concentration column to a numeric and convert "no call" to zero
+  mutate(Copies_per_ul = as.integer(ifelse(Concentration == "No Call", 0, Concentration))) %>%
+  
+  # Determine fetal fraction (assuming it is between 1 and 20%)
+  dplyr::rename(Fraction_a = FractionalAbundance) %>%
+  mutate(Fraction_b = 100 - Fraction_a) %>%
+  mutate(minor_fraction = pmin(Fraction_b, Fraction_a)) %>%
+  mutate(fetal_fraction = case_when(
+    minor_fraction > 1 & minor_fraction < 20 ~minor_fraction)) %>%
+  
+  # Filter to get one row per well
+  filter(TargetType == "Ch1Unknown") %>%
+  
+  filter(!is.na(fetal_fraction)) %>%
+  
+  select(c(Sample, Assay, fetal_fraction)) %>%
+  arrange(Sample)
+
+
+view(snp_table_new)
+
+snp_table_new %>%
+  select(Sample, fetal_fraction) %>%
+  group_by(Sample) %>% 
+  summarise_all(median)
 
      

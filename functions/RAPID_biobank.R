@@ -10,6 +10,11 @@
 # 1 - Loading the biobank database
 #############################################################
 
+# Load necessary packages
+library(tidyverse)
+library(readxl)
+library(lubridate)
+
 biobank_filepath <- "I:/Genetics/RAPID/Biobank Library/AA current biobank/"
 
 # Use filename pattern recognition with a wildcard for the date to select the current biobank.
@@ -167,7 +172,6 @@ RAPID_biobank <- read_excel(paste0(biobank_filepath,biobank_current),
   # Add sample type to allow easy exclusion of partner samples when searching.
   mutate(sample_type = ifelse(startsWith(study_id, "Partner"), "Partner", "Pregnant woman"))
 
-
 #############################################################
 # 2 - Searching the biobank database
 #############################################################
@@ -183,7 +187,7 @@ RAPID_biobank <- read_excel(paste0(biobank_filepath,biobank_current),
 # The search_biobank function allows you to input various strings that you want to search
 # for and then uses grep to find matches in the relevant columns, before filtering and
 # and returning the results table. Search terms can be input as a character vector.
-# grep defaults to ignore.case = FALSE, so search terms can be in any case.
+# grep is set to ignore.case = TRUE, so search terms can be in any case.
 
 # Example: search_biobank(c("sma ", "spinal", "atrophy", "smn1"))
 # Example: search_biobank(c("CF", "cftr", "delta508", "cystic fibrosis"))
@@ -194,7 +198,7 @@ search_biobank <- function(search_terms) {
                              c(RAPID_biobank$indication, RAPID_biobank$mutation_genetic_info_fetus,
                                RAPID_biobank$risk, RAPID_biobank$confirmed_diagnosis,
                                RAPID_biobank$additional_comments, RAPID_biobank$maternal_mutation,
-                               RAPID_biobank$paternal_mutation), value=TRUE))
+                               RAPID_biobank$paternal_mutation), value=TRUE, ignore.case = TRUE))
   
   search_results <- RAPID_biobank %>%
     filter(indication %in% search_hits 
@@ -213,18 +217,20 @@ search_biobank <- function(search_terms) {
   return(search_results)
 }
 
-
 #############################################################
 # 3 - Checking sample locations
 #############################################################
 
 # Plot the locations of the plasma tubes
 
-# ggplot(RAPID_biobank %>%
-         #filter(Plasma_location_tray_number %in% c(53, 54, 55, 56)), aes(x = Plasma_location_X, y = Plasma_location_Y))+
-  #geom_point(size = 3, alpha = 0.4)+
-  #facet_wrap(~Plasma_location_tray_number)+
-  #theme_bw()+
-  #scale_y_continuous(minor_breaks = seq(0.5 , 40.5, 1), breaks = seq(0, 40, 10))+
-  #scale_x_continuous(minor_breaks = seq(0.5 , 10.5, 1), breaks = seq(0, 10, 5))+
- #theme(panel.grid.major = element_line(colour="white", size=0.5))
+ggplot(RAPID_biobank %>%
+         filter(Plasma_location_tray_number %in% c(45)), aes(x = Plasma_location_X, y = Plasma_location_Y))+
+  geom_point(size = 3, alpha = 0.4)+
+  facet_wrap(~Plasma_location_tray_number)+
+  theme_bw()+
+  scale_y_continuous(minor_breaks = seq(0.5 , 40.5, 1), breaks = seq(0, 40, 10))+
+  scale_x_continuous(minor_breaks = seq(0.5 , 10.5, 1), breaks = seq(0, 10, 5))+
+ theme(panel.grid.major = element_line(colour="white", size=0.5))
+
+
+

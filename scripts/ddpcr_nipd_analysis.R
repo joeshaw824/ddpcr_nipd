@@ -338,6 +338,22 @@ sickle_cell_unblinded$overall_prediction[sickle_cell_unblinded$r_number == 20915
 nrow(sickle_cell_unblinded %>%
        filter(overall_prediction != "no call"))
 
+#########################
+# Phase 3 analysis
+#########################
+
+phase_3_samples <- c(14182, 19868, 20238, 20611, 
+                     20874, 30063, 30068, 30113, 30142, 
+                     30173, 30206, 30228, 30230)
+
+
+phase_3_results <- sickle_cell_unblinded %>%
+  filter(r_number %in% phase_3_samples)
+
+ggplot(phase_3_results, aes(x = SPRT_prediction, y = Molecules_difference))+
+  geom_jitter(size = 3, alpha = 0.5)+
+  theme_bw()
+
 #############################################################
 # Perform MCMC analysis
 #############################################################
@@ -1342,7 +1358,7 @@ plot_rmd_graph <- function(cfdna_sample, maternal, paternal){
     mutate(identity = "cfDNA") %>%
     select(r_number, assay, AcceptedDroplets, identity, Target, count)
   
-  # Get the sample fetal fraction informatio
+  # Get the sample fetal fraction information
   ff_cfdna_sample <- ddpcr_data_analysed %>%
     filter(r_number == cfdna_sample) %>%
     select(r_number, ff_assay, AcceptedDroplets_FetalFrac, Molecules_maternal,
@@ -1753,7 +1769,19 @@ write.csv(ddpcr_nipd_unblinded,
                         format(current_time, "%Y%m%d_%H%M%S"), ".csv"),
           row.names = FALSE)
 
+write.csv(sickle_cell_unblinded, 
+          file = paste0("analysis_outputs/sickle_cell_unblinded", 
+                        format(current_time, "%Y%m%d_%H%M%S"), ".csv"),
+          row.names = FALSE)
+
+write.csv(ddpcr_nipd_unblinded %>%
+            filter(variant_assay != "HBB c.20A>T"), 
+          file = paste0("analysis_outputs/bespoke_cohort_unblinded", 
+                        format(current_time, "%Y%m%d_%H%M%S"), ".csv"),
+          row.names = FALSE)
+
 write.csv(mcmc_vs_sprt_outcomes, 
           file = paste0("analysis_outputs/mcmc_vs_sprt_outcomes", 
                         format(current_time, "%Y%m%d_%H%M%S"), ".csv"),
           row.names = FALSE)
+
