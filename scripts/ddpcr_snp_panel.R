@@ -186,7 +186,7 @@ ggplot(snp_calc, aes(x = GOSH_ID_ds, y = frequency_B))+
   theme_bw()
 
 #############################################################
-# Collating parental SNP genotypes
+# Collating SNP genotypes
 #############################################################
 
 dataPath <- "data/ddPCR_SNP_genotyping/"
@@ -272,7 +272,7 @@ ggplot(SNP_data_plotting %>%
 write.csv(SNP_data_plotting, "analysis_outputs/SNP_data_plotting.csv", row.names = FALSE)
 
 SNP_data_plotting %>%
-  filter(Assay == "rs2276702" & genotype == "hom FAM")
+  filter(Assay == "rs9290003" & genotype == "hom VIC")
 
 #############################################################
 # Function for calculating fetal fraction for cfDNA samples
@@ -304,11 +304,8 @@ digital_snp <- function(cf_sample){
   return(sample_snp_table)
 }
 
-
-view(digital_snp("21RG-070G0019"))
-
-new_samples <- c("21RG-070G0019", "21RG-084G0062", "21RG-070G0024", "21RG-112G0098",
-                 "21RG-112G0102")
+new_samples <- c("21RG-112G0065", "21RG-112G0027", "21RG-112G0029", "21RG-112G0098",
+                 "21RG-112G0102", "21RG-112G0034")
 
 snp_table_new <- SNP_data %>%
   filter(Sample %in% new_samples) %>%
@@ -331,14 +328,77 @@ snp_table_new <- SNP_data %>%
   filter(!is.na(fetal_fraction)) %>%
   
   select(c(Sample, Assay, fetal_fraction)) %>%
-  arrange(Sample)
-
+  arrange(Assay)
 
 view(snp_table_new)
 
-snp_table_new %>%
+# Find the median fetal fraction for each sample.
+median_ff <- snp_table_new %>%
   select(Sample, fetal_fraction) %>%
   group_by(Sample) %>% 
   summarise_all(median)
 
+ggplot(snp_table_new, aes(x = Assay, y = fetal_fraction))+
+  geom_point()+
+  facet_wrap(~Sample)+
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))+
+  ylim(0, 10)
+
+
+#############################################################
+# Compare pre-amplification and non-pre-amplification results
+#############################################################
+
+get_minor_fractions <- function(dataframe){
+  new_dataframe <- dataframe %>%
+    dplyr::rename(r_number = Sample,
+                  fraction_a = FractionalAbundance,
+                  fractionmax_a = PoissonFractionalAbundanceMax,
+                  fractionmin_a = PoissonFractionalAbundanceMin) %>%
+    
+    mutate(fraction_b = 100 - fraction_a,
+           fractionmax_b = 100 - fractionmin_a,
+           fractionmin_b = 100 - fractionmax_a,
+           
+           minor_fraction = pmin(fraction_a, fraction_b),
+           minor_fractionmax = pmin(fractionmax_a, fractionmax_b),
+           minor_fractionmin = pmin(fractionmin_a, fractionmin_b)) %>%
+    
+    left_join(ddpcr_target_panel %>%
+                select(Target, Assay),
+                by = "Target") %>%
+    
+    select(c(r_number, Target, Assay, minor_fraction, minor_fractionmax, minor_fractionmin))
+  
+  return(new_dataframe)
+}
+
+pre_amplification_fractions <- get_minor_fractions(SNP_data %>%
+                      filter(Sample != "NTC" & TargetType == "Ch1Unknown")) %>%
+  # Rename the columns to allow graph plotting
+  dplyr::rename(preamp_minor_fraction = minor_fraction,
+                preamp_minor_fractionmax = minor_fractionmax,
+                preamp_minor_fractionmin = minor_fractionmin)
+
+non_preamp_fractions <- get_minor_fractions(ddpcr_data_merged_samples %>%
+                                              filter(Sample %in% phase3_samples & TargetType == "Ch1Unknown"))
+
+
+# Plot graph for paper supplementary information.
+ggplot(inner_join(non_preamp_fractions, pre_amplification_fractions, 
+                  by = c("r_number", "Assay")),
+       aes(x = preamp_minor_fraction, y = minor_fraction))+
+  geom_point(size = 3)+
+  geom_errorbarh(aes(xmin = preamp_minor_fractionmin, xmax = preamp_minor_fractionmax,
+                     height = 0.1), alpha = 0.5)+
+  geom_errorbar(aes(ymin = minor_fractionmin, ymax = minor_fractionmax,
+                     width = 0.1), alpha = 0.5)+
+  labs(x = "Fetal-specific fraction - pre-amplified cfDNA (%)",
+       y = "Fetal-specific fraction - original cfDNA (%)",
+       title = "Fetal-specific fraction in cfDNA measured with and without pre-amplification")+
+  geom_abline(linetype = "dashed")+
+  theme_bw()+
+  xlim(0, 12)+
+  ylim(0, 12)
+  
      
