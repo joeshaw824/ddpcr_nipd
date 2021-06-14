@@ -165,12 +165,17 @@ RAPID_biobank <- read_excel(paste0(biobank_filepath,biobank_current),
                               #Reorganisation_notes
                               "text")) %>%
   # Convert gestation into numeric form
-  mutate(gestation_days_as_weeks = gestation_days/7) %>%
-  mutate(Gestation_total_weeks = gestation_weeks + gestation_days_as_weeks) %>%
-  mutate(Partner_sample_available = ifelse(paste0("Partner",study_id) %in% study_id, "Yes", "No")) %>%
-  mutate(year = year(date_of_blood_sample)) %>%
-  # Add sample type to allow easy exclusion of partner samples when searching.
-  mutate(sample_type = ifelse(startsWith(study_id, "Partner"), "Partner", "Pregnant woman"))
+  mutate(gestation_days_as_weeks = gestation_days/7,
+         Gestation_total_weeks = gestation_weeks + gestation_days_as_weeks,
+         
+         # Print the gestation in the way that fetal medicine units write it
+         # I.e. "12+5" as 12 weeks and 5 days
+         gestation_character = paste0(as.character(gestation_weeks), "+", as.character(gestation_days)),
+         Partner_sample_available = ifelse(paste0("Partner",study_id) %in% study_id, "Yes", "No"),
+         year = year(date_of_blood_sample),
+         
+         # Add sample type to allow easy exclusion of partner samples when searching.
+         sample_type = ifelse(startsWith(study_id, "Partner"), "Partner", "Pregnant woman"))
 
 #############################################################
 # 2 - Searching the biobank database
