@@ -36,7 +36,7 @@ source("functions/ddPCR_nipd_functions.R")
 source("functions/RAPID_biobank.R")
 
 #############################################################
-# Read in cfDNA data and wrangle into shape
+# Read in ddPCR data and wrangle cfDNA data into shape
 #############################################################
 
 ## Load in all the csv files exported from QuantaSoft.
@@ -453,7 +453,7 @@ phase3_samples <- c("14182", "19868", "20238", "20611",
                      "20874", "30063", "30068", "30113", "30142", 
                      "30206", "30228", "30230", "30078", "30065", 
                     "13402", "20939", "30215", "18713", "30203",
-                    "12973")
+                    "12973", "30215", "30203")
 
 ddpcr_analysed <- left_join(
   ddpcr_sprt_analysed,
@@ -502,9 +502,12 @@ scd_paper_table <- ddpcr_nipd_unblinded %>%
                 "MCMC prediction" = mcmc_prediction,
                 "Confirmed fetal genotype" = mutation_genetic_info_fetus)
 
-colnames(RAPID_biobank)
-
 write.csv(scd_paper_table, "analysis_outputs/scd_paper_table.csv", row.names = FALSE)
+
+phase3_gestations <- RAPID_biobank %>%
+  mutate(r_number = as.character(r_number)) %>%
+  filter(r_number %in% phase3_samples & gestation_weeks < 15) %>%
+  select(r_number, gestation_weeks, gestation_days, gestation_character, Gestation_total_weeks)
 
 #########################
 # RMD plot function
@@ -786,32 +789,42 @@ phase3_results <- left_join(ddpcr_nipd_unblinded %>%
 
 # Compare molecules detected by ddPCR to molecules expected from Qubit
 # Error bars are too small to see so aren't plotted
-ggplot(phase3_results, aes(x = expected_copies_from_Qubit, Molecules_variant_assay))+
-  geom_point(size = 3, alpha = 0.5)+
+amplifiability_plot <- ggplot(phase3_results, aes(x = expected_copies_from_Qubit, Molecules_variant_assay))+
+  geom_point(size = 3)+
   theme_bw()+
   xlim(0, 51000)+
   ylim(0, 51000)+
   geom_abline(linetype = "dashed")+
-  no_gridlines
+  no_gridlines+
+  labs(x = "Expected molecules from Qubit reading", y = "Molecules detected by ddPCR",
+       title = "Expected versus observed molecular counts for the HBB c.20A>T ddPCR assay")
 
+ggsave(filename = "plots/amplifiability_plot.png", plot =  amplifiability_plot, dpi = 300)
 
 # Plot the molecules of total cfDNA and cffDNA per millilitre plasma
-ggplot(phase3_results, aes(x = Gestation_total_weeks, y = ff_locus_molecules_ml))+
-  geom_point()+
+total_cfDNA_plot <- ggplot(phase3_results, aes(x = Gestation_total_weeks, y = ff_locus_molecules_ml))+
   geom_errorbar(aes(ymin = ff_locus_molecules_ml_min, ymax = ff_locus_molecules_ml_max))+
+  geom_point()+
   theme_bw()+
   xlim(0, 40)+
   no_gridlines+
-  labs(x = "Gestation (weeks)", y = "Total copies per millilitre plasma")
+  labs(x = "Gestation (weeks)", y = "Total haploid genome equivalents per millilitre plasma (GE/ml)",
+       tile = "Total cfDNA by gestation")
+
+ggsave(filename = "plots/total_cfDNA_plot.png", plot =  total_cfDNA_plot, dpi = 300)
 
 # Plot the molecules of fetal-specific cffDNA per millilitre plasma
-ggplot(phase3_results, aes(x = Gestation_total_weeks, y = fetal_specific_molecules_ml))+
+cffDNA_plot <- ggplot(phase3_results, aes(x = Gestation_total_weeks, y = fetal_specific_molecules_ml))+
   geom_point()+
   geom_errorbar(aes(ymin = fetal_specific_molecules_ml_min, ymax = fetal_specific_molecules_ml_max))+
   theme_bw()+
   xlim(0, 40)+
+  scale_y_continuous(breaks = seq(0, 300, by = 50))+
   no_gridlines+
-  labs(x = "Gestation (weeks)", y = "Fetal-specific copies per millilitre plasma")
+  labs(x = "Gestation (weeks)", y = "Fetal-specific haploid genome equivalents per millilitre plasma (GE/ml)",
+       title = "Fetal-specific cfDNA by gestation")
+
+ggsave(filename = "plots/cffDNA_plot.png", plot = cffDNA_plot, dpi = 300)
 
 #########################
 # HbAS Variability
@@ -823,47 +836,89 @@ phase3_parents <- c("21RG-062G0108", "21RG-062G0111", "21RG-083G0112", "21RG-083
                     "21RG-103G0115", "21RG-103G0117", "21RG-103G0118", "21RG-103G0119", 
                     "21RG-120G0092", "21RG-120G0097", "21RG-120G0099", "21RG-120G0103",
                     "21RG-126G0140", "21RG-126G0134", "21RG-126G0124", "21RG-126G0126",
-                    "21RG-120G0077", "21RG-126G0131")
+                    "21RG-120G0077", "21RG-126G0131", "21RG-138G0159", "21RG-138G0155")
 
-phase3_parents_merged <- ddpcr_data %>%
-  filter(Sample %in% phase3_parents & is.na(CopiesPer20uLWell) & Target %in% c("HbS", "HbA")
-         & TargetType == "Ch1Unknown") 
+wells_to_select <- c("21-1116.csv_C02", "21-1116.csv_D02", "21-1116.csv_G02", "21-1116.csv_H02",
+                     "21-1116.csv_H03", "21-1116.csv_A04", "21-1116.csv_D04", "21-1116.csv_E04",
+                     "21-1116.csv_E05", "21-1116.csv_F05", "21-1116.csv_A06", "21-1116.csv_B06",
+                     "21-1116.csv_C06", "21-1413.csv_G03", "21-1413.csv_H03", "21-1413.csv_A04",
+                     "21-1413.csv_B04", "21-1413.csv_C04", "21-1413.csv_D04", "21-1413.csv_E06",
+                     "21-1413.csv_F06", "21-1413.csv_E06", "21-1413.csv_H06", "21-1413.csv_A07",
+                     "21-1413.csv_B07", "21-1413.csv_A09", "21-1413.csv_B09", "21-1413.csv_D09",
+                     "21-1413.csv_E09", "21-1413.csv_F09", "21-1227.csv_F02", "21-1227.csv_G02",
+                     "21-1227.csv_A03", "21-1227.csv_B03", "21-1227.csv_C03", "21-1227.csv_H04",
+                     "21-1227.csv_A05", "21-1227.csv_C05", "21-1227.csv_D05", "21-1227.csv_B07",
+                     "21-1227.csv_D07", "21-1227.csv_E07", "21-1227.csv_F07", "21-1227.csv_D09",
+                     "21-1227.csv_E09", "21-1227.csv_G09", "21-1227.csv_H09", "21-1705.csv_G04",
+                     "21-1705.csv_H04", "21-1705.csv_B05", "21-1705.csv_C05", "21-1863.csv_G07",
+                     "21-1863.csv_H07", "21-1863.csv_A08", "21-1863.csv_B08", "21-1863.csv_C08",
+                     "21-1863.csv_E08", "21-1863.csv_F08", "21-1863.csv_H08", "21-1863.csv_A09",
+                     "21-1946.csv_E08", "21-1946.csv_F08", "21-1946.csv_C09","21-1946.csv_D09")
 
-
-phase3_parents_merged_diff <- ddpcr_data %>%
-  filter(Sample %in% phase3_parents & is.na(CopiesPer20uLWell) & Target %in% c("HbS", "HbA")) %>%
+parents_downsampled <- ddpcr_data %>%
+  filter(Worksheet_well %in% wells_to_select) %>%
   mutate(worksheet_sample = paste0(Worksheet, "_", Sample)) %>%
-  select(worksheet_sample, Sample, Target, Positives, AcceptedDroplets) %>%
-  pivot_wider(id_cols = c(worksheet_sample, Sample),
-            names_from = Target,
-            values_from = c(AcceptedDroplets, Positives)) %>%
-  select(-AcceptedDroplets_HbA) %>%
+  group_by(worksheet_sample, Target) %>% 
+  summarise(Positives = sum(Positives),
+            AcceptedDroplets = sum(AcceptedDroplets),
+            .groups="drop") %>%
+  pivot_wider(id_cols = worksheet_sample,
+              names_from = Target,
+              values_from = c(AcceptedDroplets, Positives)) %>%
   mutate(molecules_HbS = Poisson_correct(AcceptedDroplets_HbS, Positives_HbS),
          molecules_HbA = Poisson_correct(AcceptedDroplets_HbS, Positives_HbA),
-         molecules_total = molecules_HbS + molecules_HbA,
-         molecules_difference = pmax(molecules_HbS, molecules_HbA) - pmin(molecules_HbS, molecules_HbA))
+         Molecules_variant_assay = molecules_HbS + molecules_HbA,
+         molecules_difference = pmax(molecules_HbS, molecules_HbA) - pmin(molecules_HbS, molecules_HbA),
+         variant_fraction = (molecules_HbS / (molecules_HbS+molecules_HbA))*100,
+         sample_type = "gDNA",
+         genotype = "het gDNA")
 
-
-view(phase3_parents_merged_diff)
-
-ggplot(phase3_parents_merged, aes(Sample, y = FractionalAbundance))+
-  geom_point(size = 3)+
-  geom_errorbar(aes(ymin = PoissonFractionalAbundanceMin, ymax = PoissonFractionalAbundanceMax))+
+ggplot(parents_downsampled, aes(x = worksheet_sample, y = variant_fraction))+
+  geom_point()+
   theme_bw()+
-  theme(axis.text.x=element_blank())+
+  ylim(40, 60)+
+  theme(axis.text.x = element_blank())
+
+parents_downsampled_bind <- parents_downsampled %>%
+  dplyr::rename(r_number = worksheet_sample,
+                mcmc_prediction = genotype,
+                Molecules_difference = molecules_difference,
+                Variant_fraction_percent = variant_fraction) %>%
+  select(r_number, mcmc_prediction, Molecules_variant_assay, sample_type, Molecules_difference,
+         Variant_fraction_percent)
+
+cfDNA_compare <- phase3_results %>%
+  filter(r_number != "20238") %>%
+  mutate(sample_type = "cfDNA") %>%
+  select(r_number, mcmc_prediction, Molecules_variant_assay, sample_type, Molecules_difference,
+         Variant_fraction_percent)
+
+# Bind cfDNA and genomic DNA results together
+for_graph <- rbind(cfDNA_compare, parents_downsampled_bind)
+
+# Plot for supplementary information
+ggplot(for_graph, aes(x = mcmc_prediction, y = Variant_fraction_percent))+
+  geom_jitter(size = 3)+
+  theme_bw()+
+  no_gridlines+
   ylim(45, 55)+
-  geom_hline(yintercept = 50, linetype = "dashed")
+  geom_hline(yintercept = 51, linetype = "dashed")+
+  geom_hline(yintercept = 48.9, linetype = "dashed")
 
-parents_test <- ddpcr_control_tbl_var %>%
-  filter(Sample %in% phase3_parents) %>%
-  mutate(molecules_difference = pmax(Molecules_variant, Molecules_reference) - 
-           pmin(Molecules_variant, Molecules_reference))
+ggplot(phase3_parents_merged, aes(x = worksheet_sample, y = FractionalAbundance_HbS))+
+  geom_point(size = 3)+
+  geom_errorbar(aes(ymin = PoissonFractionalAbundanceMin_HbS, ymax = PoissonFractionalAbundanceMax_HbS))+
+  theme_bw()+
+  ylim(40, 60)+
+  theme(axis.text.x = element_blank())+
+  geom_hline(yintercept = 50, linetype = "dashed")+
+  no_gridlines
 
-
-ggplot(parents_test, aes(x = , y = molecules_difference))+
-  geom_boxplot()
-
-median(parents_test$molecules_difference)
+ggplot(phase3_results %>%
+  filter(r_number != "20238"), aes(x = mcmc_prediction, y = Molecules_difference))+
+  geom_jitter()+
+  geom_hline(yintercept = 300, linetype = "dashed")+
+  geom_hline(yintercept = 400, linetype = "dashed")
 
 #########################
 # Collating SNP genotypes
@@ -888,10 +943,6 @@ for (dataFile in ddpcr_files){
   SNP_data <-rbind(SNP_data, tmp_dat)
   rm(tmp_dat)
 }
-
-
-view(SNP_data)
-
 
 #########################
 # Compare pre-amplification and non-pre-amplification results
@@ -931,10 +982,12 @@ pre_amplification_fractions <- get_minor_fractions(SNP_data %>%
 non_preamp_fractions <- get_minor_fractions(ddpcr_data_merged_samples %>%
                                               filter(Sample %in% phase3_samples & TargetType == "Ch1Unknown"))
 
+
+ff_comparison <- inner_join(non_preamp_fractions, pre_amplification_fractions, 
+           by = c("r_number", "Assay"))
+
 # Plot graph for paper supplementary information.
-ggplot(inner_join(non_preamp_fractions, pre_amplification_fractions, 
-                  by = c("r_number", "Assay")),
-       aes(x = preamp_minor_fraction, y = minor_fraction))+
+preamp_comparison_plot <- ggplot(ff_comparison, aes(x = preamp_minor_fraction, y = minor_fraction))+
   geom_point(size = 3)+
   geom_errorbarh(aes(xmin = preamp_minor_fractionmin, xmax = preamp_minor_fractionmax,
                      height = 0.1), alpha = 0.5)+
@@ -942,11 +995,18 @@ ggplot(inner_join(non_preamp_fractions, pre_amplification_fractions,
                     width = 0.1), alpha = 0.5)+
   labs(x = "Fetal-specific fraction - pre-amplified cfDNA (%)",
        y = "Fetal-specific fraction - original cfDNA (%)",
-       title = "Fetal-specific fraction in cfDNA measured with and without pre-amplification")+
+       title = "Fetal-specific fraction in cfDNA measured by ddPCR with and without pre-amplification")+
   geom_abline(linetype = "dashed")+
   theme_bw()+
   xlim(0, 12)+
-  ylim(0, 12)
+  ylim(0, 12)+
+  no_gridlines+
+  # Add on the Pearson correlation coefficient
+  annotate(geom="text", x=11, y=1, label= paste0("r = ", round(cor(ff_comparison$minor_fraction, 
+                                                                  ff_comparison$preamp_minor_fraction, 
+                                                                  method = "pearson"), digits = 2), size = 6))
+
+ggsave(filename = "plots/preamp_comparison_plot.png", plot =  preamp_comparison_plot, dpi = 300)
 
 #############################################################
 # ROC curve analysis
@@ -955,22 +1015,18 @@ ggplot(inner_join(non_preamp_fractions, pre_amplification_fractions,
 # This part is for plotting ROC curves for the sickle cell 
 # disease data.
 
-mcmc_vs_sprt_scd <- left_join(
-  scd_comparison,
-  RAPID_biobank %>%
-    mutate(r_number = as.character(r_number)) %>%
-    select(r_number, mutation_genetic_info_fetus),
-  by = "r_number") %>%
-  # Remove twin pregnancy, sample without outcome and HbAC case
-  filter(!r_number %in% c(30230, 20915, 17004)) %>%
+mcmc_vs_sprt_scd <- phase3_results %>%
   # Convert invasive results to binary outcomes
   mutate(unbalanced = case_when(
     mutation_genetic_info_fetus %in% c("HbSS", "HbAA") ~"TRUE",
-    mutation_genetic_info_fetus == "HbAS" ~"FALSE")) %>%
-  # Convert "unbalanced" column to Boolean vector
-  mutate(unbalanced = as.logical(unbalanced)) %>%
-  # Convert the MCMC calls to a binary outcome
-  mutate(mcmc_hom_call = pmax(p_G1, p_G3))
+    mutation_genetic_info_fetus == "HbAS" ~"FALSE"),
+    
+    # Convert "unbalanced" column to Boolean vector
+    unbalanced = as.logical(unbalanced),
+    # Convert the MCMC calls to a binary outcome
+    mcmc_hom_call = pmax(p_G1, p_G3)) %>%
+  select(r_number, Likelihood_ratio, mcmc_hom_call, unbalanced) %>%
+  filter(!is.na(unbalanced))
 
 sprt_roc <- mcmc_vs_sprt_scd %>%
   arrange(desc(Likelihood_ratio)) %>%
@@ -1196,12 +1252,9 @@ LOD_data_even_longer <- LOD_data_longer %>%
     Sample %in% c("SS 12%", "AA 12%") ~"12%",
     Sample %in% c("0") ~"0%"))
 
-
-view(LOD_data_longer)
-
 # Plot the results for presentation
 ggplot(LOD_data_even_longer %>%
-         filter(Input_molecules %in% c(12000)), aes(x = Sample, y = molecules, fill = Target))+
+         filter(Input_molecules %in% c(9000)), aes(x = Sample, y = molecules, fill = Target))+
   geom_col(width = 0.5, position = position_dodge(width =0.5), colour = "black", alpha = 0.6)+
   geom_errorbar(aes(ymin = Molecules_min, ymax = Molecules_max), width = .2, position=position_dodge(width=0.5))+
   scale_fill_manual(values=c("#3366FF", "#FF0000"), labels= c("Reference", "Variant"))+
@@ -1210,7 +1263,7 @@ ggplot(LOD_data_even_longer %>%
         plot.title = element_text(size=20), legend.position = "bottom", legend.title = element_blank(),
         panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
   labs(x = "", y = "Molecules detected by ddPCR")+
-  ylim(0, 8000)+
+  ylim(0, 7000)+
   scale_x_discrete(labels=c("12%","10%","8%","6%","4%","2%","0%",
                             "2%","4%","6%","8%","10%","12%"))
 

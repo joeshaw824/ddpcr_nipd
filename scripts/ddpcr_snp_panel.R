@@ -107,7 +107,7 @@ snp_24_type1and3 <- snp_calc %>%
   mutate(uninformative_1_in  = 1/chance_uninformative) %>%
   select(population, chance_uninformative, uninformative_1_in)
 
-mean(snp_24_type1and3$uninformative_1_in)
+(median(snp_24_type1and3$chance_uninformative))*100
 
 # Check the probability of the 24 SNP panel being uninformative when using parental gDNA 
 # (type 1 SNPs only) 
