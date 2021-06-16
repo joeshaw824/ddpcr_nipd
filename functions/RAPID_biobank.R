@@ -215,8 +215,9 @@ search_biobank <- function(search_terms) {
            | paternal_mutation %in% search_hits) %>%
     # Only show samples which were not discarded in the reorganisation process
     filter(r_number > 10444) %>%
-    select(r_number, study_id, site, maternal_DOB, indication, mutation_genetic_info_fetus,
-           confirmed_diagnosis, additional_comments, maternal_mutation,
+    select(r_number, study_id, site, date_of_blood_sample, maternal_DOB, indication, 
+           mutation_genetic_info_fetus,confirmed_diagnosis, 
+           additional_comments, maternal_mutation,
            paternal_mutation, tubes_plasma_current)
   
   return(search_results)

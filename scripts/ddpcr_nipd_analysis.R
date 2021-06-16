@@ -452,8 +452,7 @@ ddpcr_mcmc_analysed <- ddpcr_with_fits %>%
 phase3_samples <- c("14182", "19868", "20238", "20611", 
                      "20874", "30063", "30068", "30113", "30142", 
                      "30206", "30228", "30230", "30078", "30065", 
-                    "13402", "20939", "30215", "18713", "30203",
-                    "12973", "30215", "30203")
+                    "13402", "20939", "30215", "30203")
 
 ddpcr_analysed <- left_join(
   ddpcr_sprt_analysed,
@@ -483,11 +482,13 @@ scd_paper_table <- ddpcr_nipd_unblinded %>%
   
   # Round the percentages
   mutate(Fetal_fraction_percent = round(Fetal_fraction_percent, 1),
-         Variant_fraction_percent = round(Variant_fraction_percent, 1)) %>%
+         Variant_fraction_percent = round(Variant_fraction_percent, 1),
+         "Predicted fetal genotype" = ifelse(r_number == "20238", "Inconclusive", mcmc_prediction)) %>%
   select(sample_code, r_number, Partner_sample_available,
          gestation_character, ff_assay, Fetal_fraction_percent, 
          Variant_fraction_percent, Molecules_ff_assay, Molecules_variant_assay,
-         SPRT_prediction, mcmc_prediction, mutation_genetic_info_fetus) %>%
+         Molecules_difference, SPRT_prediction, mcmc_prediction, 
+         "Predicted fetal genotype", mutation_genetic_info_fetus) %>%
 
   # Rename the column headings
   dplyr::rename("Sample" = sample_code,
@@ -498,16 +499,16 @@ scd_paper_table <- ddpcr_nipd_unblinded %>%
                 "Variant fraction (%)" = Variant_fraction_percent,
                 "Molecules detected (fetal fraction ddPCR)" = Molecules_ff_assay,
                 "Molecules detected (variant fraction ddPCR)"  = Molecules_variant_assay,
-                "SPRT prediction" = SPRT_prediction,
-                "MCMC prediction" = mcmc_prediction,
+                "SPRT result" = SPRT_prediction,
+                "MCMC result" = mcmc_prediction,
                 "Confirmed fetal genotype" = mutation_genetic_info_fetus)
 
 write.csv(scd_paper_table, "analysis_outputs/scd_paper_table.csv", row.names = FALSE)
 
-phase3_gestations <- RAPID_biobank %>%
-  mutate(r_number = as.character(r_number)) %>%
-  filter(r_number %in% phase3_samples & gestation_weeks < 15) %>%
-  select(r_number, gestation_weeks, gestation_days, gestation_character, Gestation_total_weeks)
+# Example
+calc_LR_autosomal(0.04, 0.53, 10000)
+calc_LR_autosomal(0.15, 0.53, 10000)
+
 
 #########################
 # RMD plot function
@@ -784,8 +785,13 @@ phase3_results <- left_join(ddpcr_nipd_unblinded %>%
                     # All wells had 5ul cfDNA input, 1ng is 1000 pg and 1 haploid human genome weighs 3.3pg
                     expected_copies_from_Qubit = ((cfDNA_Qubit * num_wells_variant_assay *5)*1000)/3.3,
                     
+                    # Calculate the total cfDNA extracted
+                    total_cfDNA_ng = cfDNA_Qubit * cfDNA_vol,
+                    
                     # Amplification ratio is the observed over expected counts
                     amplifcation_ratio = (Molecules_variant_assay / expected_copies_from_Qubit)*100)
+
+median(phase3_results$amplifcation_ratio)
 
 # Compare molecules detected by ddPCR to molecules expected from Qubit
 # Error bars are too small to see so aren't plotted
@@ -800,6 +806,10 @@ amplifiability_plot <- ggplot(phase3_results, aes(x = expected_copies_from_Qubit
        title = "Expected versus observed molecular counts for the HBB c.20A>T ddPCR assay")
 
 ggsave(filename = "plots/amplifiability_plot.png", plot =  amplifiability_plot, dpi = 300)
+
+min(phase3_results$ff_locus_molecules_ml)
+view(phase3_results %>%
+       select(r_number, fetal_specific_molecules_ml, total_cfDNA_ng))
 
 # Plot the molecules of total cfDNA and cffDNA per millilitre plasma
 total_cfDNA_plot <- ggplot(phase3_results, aes(x = Gestation_total_weeks, y = ff_locus_molecules_ml))+
@@ -867,17 +877,16 @@ parents_downsampled <- ddpcr_data %>%
               values_from = c(AcceptedDroplets, Positives)) %>%
   mutate(molecules_HbS = Poisson_correct(AcceptedDroplets_HbS, Positives_HbS),
          molecules_HbA = Poisson_correct(AcceptedDroplets_HbS, Positives_HbA),
+         molecules_HbS_max = Poisson_max((molecules_HbS / AcceptedDroplets_HbS), AcceptedDroplets_HbS),
+         molecules_HbS_min = Poisson_min((molecules_HbS / AcceptedDroplets_HbS), AcceptedDroplets_HbS),
+         Variant_fraction_max_percent = (Poisson_fraction_max(molecules_HbS_max , molecules_HbA))*100,
+         Variant_fraction_min_percent = (Poisson_fraction_min(molecules_HbS_min, molecules_HbA))*100,
          Molecules_variant_assay = molecules_HbS + molecules_HbA,
          molecules_difference = pmax(molecules_HbS, molecules_HbA) - pmin(molecules_HbS, molecules_HbA),
          variant_fraction = (molecules_HbS / (molecules_HbS+molecules_HbA))*100,
+         
          sample_type = "gDNA",
          genotype = "het gDNA")
-
-ggplot(parents_downsampled, aes(x = worksheet_sample, y = variant_fraction))+
-  geom_point()+
-  theme_bw()+
-  ylim(40, 60)+
-  theme(axis.text.x = element_blank())
 
 parents_downsampled_bind <- parents_downsampled %>%
   dplyr::rename(r_number = worksheet_sample,
@@ -885,16 +894,43 @@ parents_downsampled_bind <- parents_downsampled %>%
                 Molecules_difference = molecules_difference,
                 Variant_fraction_percent = variant_fraction) %>%
   select(r_number, mcmc_prediction, Molecules_variant_assay, sample_type, Molecules_difference,
-         Variant_fraction_percent)
+         Variant_fraction_percent, Variant_fraction_max_percent, Variant_fraction_min_percent)
 
 cfDNA_compare <- phase3_results %>%
-  filter(r_number != "20238") %>%
   mutate(sample_type = "cfDNA") %>%
   select(r_number, mcmc_prediction, Molecules_variant_assay, sample_type, Molecules_difference,
-         Variant_fraction_percent)
+         Variant_fraction_percent, Variant_fraction_max_percent, Variant_fraction_min_percent)
 
 # Bind cfDNA and genomic DNA results together
-for_graph <- rbind(cfDNA_compare, parents_downsampled_bind)
+for_graph <- rbind(cfDNA_compare, parents_downsampled_bind) %>%
+  mutate(x_axis_label = case_when(
+    mcmc_prediction == "heterozygous" & r_number != "20238" ~"het cfDNA",
+    r_number == "20238" ~"inconclusive",
+    mcmc_prediction == "homozygous reference" ~"hom ref cfDNA",
+    mcmc_prediction == "homozygous variant" ~"hom var cfDNA",
+    mcmc_prediction == "het gDNA" ~"het gDNA"),
+    
+    balanced_or_not = case_when(
+      mcmc_prediction == "heterozygous" & r_number != "20238" ~"het cfDNA",
+      r_number == "20238" ~"unbalanced",
+      mcmc_prediction == "homozygous reference" ~"unbalanced",
+      mcmc_prediction == "homozygous variant" ~"unbalanced",
+      mcmc_prediction == "het gDNA" ~"het gDNA"))
+
+# Make them factors to define the order in the plot
+for_graph$x_axis_label <- factor(for_graph$x_axis_label, levels = c("hom ref cfDNA","inconclusive",
+                                                                    "het gDNA", "het cfDNA", 
+                                                                    "hom var cfDNA"))
+for_graph$balanced_or_not <- factor(for_graph$balanced_or_not, levels = c("het gDNA", "het cfDNA",
+                                                                          "unbalanced"))
+
+for_graph2 <- for_graph %>%
+  arrange(x_axis_label, Variant_fraction_percent) %>%
+  mutate(try_this = as.numeric(row.names(for_graph)))
+
+for_graph3 <- for_graph %>%
+  arrange(balanced_or_not, Molecules_difference) %>%
+  mutate(try_this = as.numeric(row.names(for_graph)))
 
 # Plot for supplementary information
 ggplot(for_graph, aes(x = mcmc_prediction, y = Variant_fraction_percent))+
@@ -904,6 +940,37 @@ ggplot(for_graph, aes(x = mcmc_prediction, y = Variant_fraction_percent))+
   ylim(45, 55)+
   geom_hline(yintercept = 51, linetype = "dashed")+
   geom_hline(yintercept = 48.9, linetype = "dashed")
+
+# Downsampling plot
+downsampling_plot <- ggplot(for_graph, aes(x = sample_type, y = Molecules_variant_assay))+
+  geom_boxplot()+
+  theme_bw()+
+  no_gridlines+
+  ylim(0, 35000)+
+  labs(y = "Total molecules detected by HBB c.20A>T ddPCR", x = "",
+       title = "Molecules detected by HBB c.20A>T ddPCR in cfDNA and down-sampled gDNA datasets")
+
+ggsave(filename = "plots/downsampling_plot.png", plot =  downsampling_plot, dpi = 300)
+
+ggplot(for_graph2, aes(x = try_this, y = Variant_fraction_percent, colour = x_axis_label))+
+  geom_point(size = 3)+
+  geom_errorbar(aes(ymin = Variant_fraction_min_percent, ymax = Variant_fraction_max_percent))+
+  scale_colour_manual(values=c("#0000FF", "#999999", "#000000", "#99CCFF", "#FF0000"))+
+  theme_bw()+
+  theme(axis.text.x = element_blank())+
+  ylim(42, 58)+
+  no_gridlines+
+  geom_hline(yintercept = 48.9, linetype = "dashed")+
+  geom_hline(yintercept = 51, linetype = "dashed")+
+  labs(x = "", y = "Variant fraction (%)")
+  
+# Molecules of difference plot
+molecules_difference_plot <- ggplot(for_graph3, aes(x = try_this, y = Molecules_difference, colour = x_axis_label))+
+  geom_point(size = 3)+
+  theme_bw()+
+  no_gridlines+
+  geom_hline(yintercept = 300, linetype = "dashed")
+
 
 ggplot(phase3_parents_merged, aes(x = worksheet_sample, y = FractionalAbundance_HbS))+
   geom_point(size = 3)+
@@ -919,6 +986,20 @@ ggplot(phase3_results %>%
   geom_jitter()+
   geom_hline(yintercept = 300, linetype = "dashed")+
   geom_hline(yintercept = 400, linetype = "dashed")
+
+
+RAPID_biobank %>%
+  filter(r_number %in% c(14980, 16179, 20966)) %>%
+  select(r_number, study_id)
+
+# After 30194
+to_extract <- RAPID_biobank %>%
+  filter(r_number %in% c(30251, 30252, 30257, 30258, 30232, 
+                         30233, 30216, 30217)) %>%
+  select(r_number, study_id, maternal_mutation, paternal_mutation, sample_type, 
+         tubes_plasma_current, tubes_blood_current)
+  
+write.csv(to_extract, "analysis_outputs/to_extract.csv", row.names = FALSE)
 
 #########################
 # Collating SNP genotypes
@@ -998,15 +1079,96 @@ preamp_comparison_plot <- ggplot(ff_comparison, aes(x = preamp_minor_fraction, y
        title = "Fetal-specific fraction in cfDNA measured by ddPCR with and without pre-amplification")+
   geom_abline(linetype = "dashed")+
   theme_bw()+
-  xlim(0, 12)+
-  ylim(0, 12)+
+  xlim(0, 8)+
+  ylim(0, 8)+
   no_gridlines+
   # Add on the Pearson correlation coefficient
-  annotate(geom="text", x=11, y=1, label= paste0("r = ", round(cor(ff_comparison$minor_fraction, 
+  annotate(geom="text", x=7, y=1, label= paste0("r = ", round(cor(ff_comparison$minor_fraction, 
                                                                   ff_comparison$preamp_minor_fraction, 
                                                                   method = "pearson"), digits = 2), size = 6))
 
 ggsave(filename = "plots/preamp_comparison_plot.png", plot =  preamp_comparison_plot, dpi = 300)
+
+#########################
+# Sickle cell disease limit of detection study
+#########################
+
+LOD_data <- read_csv("data/20-1557_LOD.csv", col_names = TRUE)
+
+LOD_data_longer <- LOD_data %>%
+  mutate(unique_identifier = paste(Input_molecules, Sample)) %>%
+  pivot_wider(id_cols = c(unique_identifier, Sample, Input_molecules, Mass_molecules, fetal_fraction),
+              names_from = Target,
+              values_from = c(AcceptedDroplets, Positives, FractionalAbundance, PoissonFractionalAbundanceMax, 
+                              PoissonFractionalAbundanceMin)) %>%
+  select(-c(AcceptedDroplets_HbS, FractionalAbundance_HbA, PoissonFractionalAbundanceMax_HbA, PoissonFractionalAbundanceMin_HbA)) %>%
+  rename(AcceptedDroplets_Variant_assay = AcceptedDroplets_HbA) %>%
+  mutate(HbS_molecules = Poisson_correct(AcceptedDroplets_Variant_assay, Positives_HbS)) %>%
+  mutate(HbA_molecules = Poisson_correct(AcceptedDroplets_Variant_assay, Positives_HbA)) %>%
+  mutate(molecules_difference = pmax(HbS_molecules, HbA_molecules) - pmin(HbS_molecules, HbA_molecules)) %>%
+  mutate(total_DNA_molecules = HbS_molecules + HbA_molecules) %>%
+  mutate(Reference_fraction = HbA_molecules / total_DNA_molecules) %>%
+  mutate(Variant_fraction = HbS_molecules / total_DNA_molecules) %>%
+  mutate(Over_represented_fraction = pmax(Reference_fraction, Variant_fraction)) %>%
+  mutate(Likelihood_ratio = calc_LR_autosomal(fetal_fraction, Over_represented_fraction, total_DNA_molecules)) %>%
+  mutate(SPRT_prediction = case_when(
+    Likelihood_ratio > 250 & Over_represented_fraction == Reference_fraction ~ "homozygous reference",
+    Likelihood_ratio > 250 & Over_represented_fraction == Variant_fraction ~ "homozygous variant",
+    Likelihood_ratio < (1/250) ~ "heterozygous",
+    Likelihood_ratio < 250 & Likelihood_ratio > (1/250) ~ "no call")) %>%
+  select(unique_identifier, molecules_difference)
+
+LOD_data_even_longer <- LOD_data_longer %>%
+  select(Sample, Mass_molecules, Input_molecules, HbS_molecules, HbA_molecules, AcceptedDroplets_Variant_assay) %>%
+  pivot_longer(cols = c(HbS_molecules, HbA_molecules), names_to = "Target", values_to = "molecules") %>%
+  # Order the factors
+  mutate(Sample = factor(Sample, levels = c("AA 12%", "AA 10%", "AA 8%", "AA 6%", "AA 4%","AA 2%",
+                                            "0%", "SS 2%", "SS 4%", "SS 6%", 
+                                            "SS 8%", "SS 10%", "SS 12%"))) %>%
+  mutate(Mass_molecules = factor(Mass_molecules, levels = c("9.9ng (~3,000 molecules)", "19.8ng (~6,000 molecules)",
+                                                            "29.7ng (~9,000 molecules)", "39.6ng (~12,000 molecules)"))) %>%
+  
+  # Add in the 95% Poisson confidence intervals
+  
+  # Calculate copies per droplet (cpd) for each allele
+  mutate(Cpd = molecules / AcceptedDroplets_Variant_assay) %>%
+  
+  # Calculate the 95% confidence intervals of the numbers of molecules for each allele
+  mutate(Molecules_max = Poisson_max(Cpd, AcceptedDroplets_Variant_assay)) %>%
+  mutate(Molecules_min = Poisson_min(Cpd, AcceptedDroplets_Variant_assay)) %>%
+  mutate(Percentage = case_when(
+    Sample %in% c("SS 2%", "AA 2%") ~"2%",
+    Sample %in% c("SS 4%", "AA 4%") ~"4%",
+    Sample %in% c("SS 6%", "AA 6%") ~"6%",
+    Sample %in% c("SS 8%", "AA 8%") ~"8%",
+    Sample %in% c("SS 10%", "AA 10%") ~"10%",
+    Sample %in% c("SS 12%", "AA 12%") ~"12%",
+    Sample %in% c("0") ~"0%"))
+
+# Plot the results for paper
+lod_plot <- ggplot(LOD_data_even_longer %>%
+                     filter(Input_molecules %in% c(9000)), aes(x = Sample, y = molecules, fill = Target))+
+  geom_col(width = 0.5, position = position_dodge(width =0.5), colour = "black", alpha = 0.6)+
+  geom_errorbar(aes(ymin = Molecules_min, ymax = Molecules_max), width = .2, position=position_dodge(width=0.5))+
+  scale_fill_manual(values=c("#3366FF", "#FF0000"), labels= c("Reference", "Variant"))+
+  theme_bw()+
+  theme(axis.text=element_text(size=10), axis.title = element_text(size=14), 
+        plot.title = element_text(size=20), legend.position = "bottom", legend.title = element_blank(),
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  labs(x = "", y = "Molecules detected by ddPCR")+
+  ylim(0, 7000)+
+  scale_x_discrete(labels=c("12%","10%","8%","6%","4%","2%","0%",
+                            "2%","4%","6%","8%","10%","12%"))
+
+ggsave(filename = "plots/lod_plot.png", plot =  lod_plot, dpi = 300)
+
+view(LOD_data_longer)
+
+# A different plot - not as nice to look at.
+ggplot(LOD_data_longer, aes(x = total_DNA_molecules, y = FractionalAbundance_HbS, colour = Sample))+
+  geom_point(size = 4)+
+  geom_pointrange(aes(ymin = PoissonFractionalAbundanceMin_HbS, ymax = PoissonFractionalAbundanceMax_HbS))+
+  geom_hline(yintercept=50, linetype="dashed", size = 1)
 
 #############################################################
 # ROC curve analysis
@@ -1195,84 +1357,6 @@ het_DNA_plot <- ggplot(het_gDNA_arranged, aes(x = Identifier, y = Variant_fracti
         panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
   labs(x = "", y = "Variant fractional abundance (%)")+
   theme(axis.text.x = element_text(angle = 90))
-
-#############################################################
-# Sickle cell disease limit of detection study (out of date)
-#############################################################
-
-LOD_data <- read_csv("data/20-1557_LOD.csv", col_names = TRUE)
-
-LOD_data_longer <- LOD_data %>%
-  mutate(unique_identifier = paste(Input_molecules, Sample)) %>%
-  pivot_wider(id_cols = c(unique_identifier, Sample, Input_molecules, Mass_molecules, fetal_fraction),
-              names_from = Target,
-              values_from = c(AcceptedDroplets, Positives, FractionalAbundance, PoissonFractionalAbundanceMax, 
-                              PoissonFractionalAbundanceMin)) %>%
-  select(-c(AcceptedDroplets_HbS, FractionalAbundance_HbA, PoissonFractionalAbundanceMax_HbA, PoissonFractionalAbundanceMin_HbA)) %>%
-  rename(AcceptedDroplets_Variant_assay = AcceptedDroplets_HbA) %>%
-  mutate(HbS_molecules = Poisson_correct(AcceptedDroplets_Variant_assay, Positives_HbS)) %>%
-  mutate(HbA_molecules = Poisson_correct(AcceptedDroplets_Variant_assay, Positives_HbA)) %>%
-  mutate(molecules_difference = pmax(HbS_molecules, HbA_molecules) - pmin(HbS_molecules, HbA_molecules)) %>%
-  mutate(total_DNA_molecules = HbS_molecules + HbA_molecules) %>%
-  mutate(Reference_fraction = HbA_molecules / total_DNA_molecules) %>%
-  mutate(Variant_fraction = HbS_molecules / total_DNA_molecules) %>%
-  mutate(Over_represented_fraction = pmax(Reference_fraction, Variant_fraction)) %>%
-  mutate(Likelihood_ratio = calc_LR_autosomal(fetal_fraction, Over_represented_fraction, total_DNA_molecules)) %>%
-  mutate(SPRT_prediction = case_when(
-    Likelihood_ratio > 250 & Over_represented_fraction == Reference_fraction ~ "homozygous reference",
-    Likelihood_ratio > 250 & Over_represented_fraction == Variant_fraction ~ "homozygous variant",
-    Likelihood_ratio < (1/250) ~ "heterozygous",
-    Likelihood_ratio < 250 & Likelihood_ratio > (1/250) ~ "no call")) %>%
-  select(unique_identifier, molecules_difference)
-
-LOD_data_even_longer <- LOD_data_longer %>%
-  select(Sample, Mass_molecules, Input_molecules, HbS_molecules, HbA_molecules, AcceptedDroplets_Variant_assay) %>%
-  pivot_longer(cols = c(HbS_molecules, HbA_molecules), names_to = "Target", values_to = "molecules") %>%
-  # Order the factors
-  mutate(Sample = factor(Sample, levels = c("AA 12%", "AA 10%", "AA 8%", "AA 6%", "AA 4%","AA 2%",
-                                            "0%", "SS 2%", "SS 4%", "SS 6%", 
-                                            "SS 8%", "SS 10%", "SS 12%"))) %>%
-  mutate(Mass_molecules = factor(Mass_molecules, levels = c("9.9ng (~3,000 molecules)", "19.8ng (~6,000 molecules)",
-                                                            "29.7ng (~9,000 molecules)", "39.6ng (~12,000 molecules)"))) %>%
-  
-  # Add in the 95% Poisson confidence intervals
-  
-  # Calculate copies per droplet (cpd) for each allele
-  mutate(Cpd = molecules / AcceptedDroplets_Variant_assay) %>%
-  
-  # Calculate the 95% confidence intervals of the numbers of molecules for each allele
-  mutate(Molecules_max = Poisson_max(Cpd, AcceptedDroplets_Variant_assay)) %>%
-  mutate(Molecules_min = Poisson_min(Cpd, AcceptedDroplets_Variant_assay)) %>%
-  mutate(Percentage = case_when(
-    Sample %in% c("SS 2%", "AA 2%") ~"2%",
-    Sample %in% c("SS 4%", "AA 4%") ~"4%",
-    Sample %in% c("SS 6%", "AA 6%") ~"6%",
-    Sample %in% c("SS 8%", "AA 8%") ~"8%",
-    Sample %in% c("SS 10%", "AA 10%") ~"10%",
-    Sample %in% c("SS 12%", "AA 12%") ~"12%",
-    Sample %in% c("0") ~"0%"))
-
-# Plot the results for presentation
-ggplot(LOD_data_even_longer %>%
-         filter(Input_molecules %in% c(9000)), aes(x = Sample, y = molecules, fill = Target))+
-  geom_col(width = 0.5, position = position_dodge(width =0.5), colour = "black", alpha = 0.6)+
-  geom_errorbar(aes(ymin = Molecules_min, ymax = Molecules_max), width = .2, position=position_dodge(width=0.5))+
-  scale_fill_manual(values=c("#3366FF", "#FF0000"), labels= c("Reference", "Variant"))+
-  theme_bw()+
-  theme(axis.text=element_text(size=10), axis.title = element_text(size=14), 
-        plot.title = element_text(size=20), legend.position = "bottom", legend.title = element_blank(),
-        panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
-  labs(x = "", y = "Molecules detected by ddPCR")+
-  ylim(0, 7000)+
-  scale_x_discrete(labels=c("12%","10%","8%","6%","4%","2%","0%",
-                            "2%","4%","6%","8%","10%","12%"))
-
-# A different plot - not as nice to look at.
-ggplot(LOD_data_longer, aes(x = total_DNA_molecules, y = FractionalAbundance_HbS, colour = Sample))+
-  geom_point(size = 4)+
-  geom_pointrange(aes(ymin = PoissonFractionalAbundanceMin_HbS, ymax = PoissonFractionalAbundanceMax_HbS))+
-  geom_hline(yintercept=50, linetype="dashed", size = 1)
-
 
 #############################################################
 # cfDNA genomic equivalents per ml plasma (GE/ml) (out of date)
