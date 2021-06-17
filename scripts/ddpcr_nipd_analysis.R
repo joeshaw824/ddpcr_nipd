@@ -452,7 +452,7 @@ ddpcr_mcmc_analysed <- ddpcr_with_fits %>%
 phase3_samples <- c("14182", "19868", "20238", "20611", 
                      "20874", "30063", "30068", "30113", "30142", 
                      "30206", "30228", "30230", "30078", "30065", 
-                    "13402", "20939", "30215", "30203")
+                    "13402", "20939", "30215", "30203", "12973")
 
 ddpcr_analysed <- left_join(
   ddpcr_sprt_analysed,
@@ -483,6 +483,7 @@ scd_paper_table <- ddpcr_nipd_unblinded %>%
   # Round the percentages
   mutate(Fetal_fraction_percent = round(Fetal_fraction_percent, 1),
          Variant_fraction_percent = round(Variant_fraction_percent, 1),
+         # Ammend this step to include the testing algorithm
          "Predicted fetal genotype" = ifelse(r_number == "20238", "Inconclusive", mcmc_prediction)) %>%
   select(sample_code, r_number, Partner_sample_available,
          gestation_character, ff_assay, Fetal_fraction_percent, 
@@ -504,11 +505,6 @@ scd_paper_table <- ddpcr_nipd_unblinded %>%
                 "Confirmed fetal genotype" = mutation_genetic_info_fetus)
 
 write.csv(scd_paper_table, "analysis_outputs/scd_paper_table.csv", row.names = FALSE)
-
-# Example
-calc_LR_autosomal(0.04, 0.53, 10000)
-calc_LR_autosomal(0.15, 0.53, 10000)
-
 
 #########################
 # RMD plot function
@@ -711,12 +707,14 @@ plot_rmd_graph <- function(cfdna_sample, maternal, paternal){
 #########################
 
 # Plot individual graphs for each sickle cell disease case
+rmd_13402 <- plot_rmd_graph(13402, "21RG-120G0077", "")
 rmd_14182 <- plot_rmd_graph(14182, "21RG-062G0108", "21RG-062G0111")
-rmd_30113 <- plot_rmd_graph(30113, "21RG-126G0134", "")
 rmd_19868 <- plot_rmd_graph(19868, "21RG-083G0126", "21RG-083G0132")
+rmd_30113 <- plot_rmd_graph(30113, "21RG-126G0134", "")
 rmd_20238 <- plot_rmd_graph(20238, "21RG-103G0120", "21RG-103G0122")
 rmd_20611 <- plot_rmd_graph(20611, "21RG-126G0140", "")
 rmd_20874 <- plot_rmd_graph(20874, "21RG-103G0118", "21RG-103G0119")
+rmd_20939 <- plot_rmd_graph(20939, "21RG-126G0131", "")
 rmd_30063 <- plot_rmd_graph(30063, "21RG-103G0115", "21RG-103G0117")
 rmd_30068 <- plot_rmd_graph(30068, "21RG-120G0099", "21RG-120G0103")
 rmd_30113 <- plot_rmd_graph(30113, "21RG-126G0134", "")
@@ -724,13 +722,35 @@ rmd_30142 <- plot_rmd_graph(30142, "21RG-083G0112",	"21RG-083G0120")
 rmd_30206 <- plot_rmd_graph(30206, "21RG-120G0092"	, "21RG-120G0097")
 rmd_30228 <- plot_rmd_graph(30228, "21RG-103G0061", "21RG-103G0062")
 rmd_30230 <- plot_rmd_graph(30230, "21RG-103G0120", "21RG-103G0122")
-rmd_30078 <- plot_rmd_graph(30078, "21RG-126G0124", "")
 rmd_30065 <- plot_rmd_graph(30065, "21RG-126G0126", "")
-rmd_13402 <- plot_rmd_graph(13402, "21RG-120G0077", "")
-rmd_20939 <- plot_rmd_graph(20939, "21RG-126G0131", "")
+rmd_30078 <- plot_rmd_graph(30078, "21RG-126G0124", "")
+rmd_30203 <- plot_rmd_graph(30203, "21RG-138G0155", "")
+rmd_30215 <- plot_rmd_graph(30215, "21RG-138G0159", "")
 
+# Save plots in a composite pdf
+pdf(file = "plots/scd_cohort_individual_plots.pdf", onefile = TRUE, 
+    width=10, height=6)
+rmd_13402
+rmd_14182
+rmd_19868
+rmd_20238
+rmd_20611
+rmd_20874
+rmd_20939
+rmd_30063
+rmd_30065
+rmd_30068
+rmd_30078
+rmd_30113
+rmd_30142
+rmd_30203
+rmd_30206
+rmd_30215
+rmd_30228
+rmd_30230
+dev.off()
 
-# Save plots
+# Save plots individually using ggsave
 ggsave(filename = "plots/rmd_14182.png", plot =  rmd_14182, dpi = 300)
 ggsave(filename = "plots/rmd_30113.png", plot =  rmd_30113, dpi = 300)
 ggsave(filename = "plots/rmd_19868.png", plot =  rmd_19868, dpi = 300)
@@ -748,7 +768,6 @@ ggsave(filename = "plots/rmd_30078.png", plot =  rmd_30078, dpi = 300)
 ggsave(filename = "plots/rmd_30065.png", plot =  rmd_30065, dpi = 300)
 ggsave(filename = "plots/rmd_13402.png", plot =  rmd_13402, dpi = 300)
 ggsave(filename = "plots/rmd_20939.png", plot =  rmd_20939, dpi = 300)
-
 
 #########################
 # cfDNA Amplifiability
@@ -791,8 +810,6 @@ phase3_results <- left_join(ddpcr_nipd_unblinded %>%
                     # Amplification ratio is the observed over expected counts
                     amplifcation_ratio = (Molecules_variant_assay / expected_copies_from_Qubit)*100)
 
-median(phase3_results$amplifcation_ratio)
-
 # Compare molecules detected by ddPCR to molecules expected from Qubit
 # Error bars are too small to see so aren't plotted
 amplifiability_plot <- ggplot(phase3_results, aes(x = expected_copies_from_Qubit, Molecules_variant_assay))+
@@ -806,10 +823,6 @@ amplifiability_plot <- ggplot(phase3_results, aes(x = expected_copies_from_Qubit
        title = "Expected versus observed molecular counts for the HBB c.20A>T ddPCR assay")
 
 ggsave(filename = "plots/amplifiability_plot.png", plot =  amplifiability_plot, dpi = 300)
-
-min(phase3_results$ff_locus_molecules_ml)
-view(phase3_results %>%
-       select(r_number, fetal_specific_molecules_ml, total_cfDNA_ng))
 
 # Plot the molecules of total cfDNA and cffDNA per millilitre plasma
 total_cfDNA_plot <- ggplot(phase3_results, aes(x = Gestation_total_weeks, y = ff_locus_molecules_ml))+
@@ -840,13 +853,9 @@ ggsave(filename = "plots/cffDNA_plot.png", plot = cffDNA_plot, dpi = 300)
 # HbAS Variability
 #########################
 
-phase3_parents <- c("21RG-062G0108", "21RG-062G0111", "21RG-083G0112", "21RG-083G0120",
-                    "21RG-083G0126", "21RG-083G0132", "21RG-103G0061", "21RG-103G0062", 
-                    "21RG-103G0120", "21RG-103G0122", "21RG-103G0120", "21RG-103G0122", 
-                    "21RG-103G0115", "21RG-103G0117", "21RG-103G0118", "21RG-103G0119", 
-                    "21RG-120G0092", "21RG-120G0097", "21RG-120G0099", "21RG-120G0103",
-                    "21RG-126G0140", "21RG-126G0134", "21RG-126G0124", "21RG-126G0126",
-                    "21RG-120G0077", "21RG-126G0131", "21RG-138G0159", "21RG-138G0155")
+# The parental gDNA controls were tested at ~20ng per ddPCR well. In order to have an
+# equivalent dataset for comparison with cfDNA data, I have down-sampled the genomic controls
+# by selecting wells that bring the total molecules tested to ~9000 for each sample.
 
 wells_to_select <- c("21-1116.csv_C02", "21-1116.csv_D02", "21-1116.csv_G02", "21-1116.csv_H02",
                      "21-1116.csv_H03", "21-1116.csv_A04", "21-1116.csv_D04", "21-1116.csv_E04",
@@ -902,13 +911,13 @@ cfDNA_compare <- phase3_results %>%
          Variant_fraction_percent, Variant_fraction_max_percent, Variant_fraction_min_percent)
 
 # Bind cfDNA and genomic DNA results together
-for_graph <- rbind(cfDNA_compare, parents_downsampled_bind) %>%
+cfDNA_gDNA_bind <- rbind(cfDNA_compare, parents_downsampled_bind) %>%
   mutate(x_axis_label = case_when(
-    mcmc_prediction == "heterozygous" & r_number != "20238" ~"het cfDNA",
+    mcmc_prediction == "heterozygous" & r_number != "20238" ~"cfDNA (heterozygous)",
     r_number == "20238" ~"inconclusive",
-    mcmc_prediction == "homozygous reference" ~"hom ref cfDNA",
-    mcmc_prediction == "homozygous variant" ~"hom var cfDNA",
-    mcmc_prediction == "het gDNA" ~"het gDNA"),
+    mcmc_prediction == "homozygous reference" ~"cfDNA (homozygous reference)",
+    mcmc_prediction == "homozygous variant" ~"cfDNA (homozygous variant)",
+    mcmc_prediction == "het gDNA" ~"gDNA (heterozgous)"),
     
     balanced_or_not = case_when(
       mcmc_prediction == "heterozygous" & r_number != "20238" ~"het cfDNA",
@@ -917,32 +926,9 @@ for_graph <- rbind(cfDNA_compare, parents_downsampled_bind) %>%
       mcmc_prediction == "homozygous variant" ~"unbalanced",
       mcmc_prediction == "het gDNA" ~"het gDNA"))
 
-# Make them factors to define the order in the plot
-for_graph$x_axis_label <- factor(for_graph$x_axis_label, levels = c("hom ref cfDNA","inconclusive",
-                                                                    "het gDNA", "het cfDNA", 
-                                                                    "hom var cfDNA"))
-for_graph$balanced_or_not <- factor(for_graph$balanced_or_not, levels = c("het gDNA", "het cfDNA",
-                                                                          "unbalanced"))
-
-for_graph2 <- for_graph %>%
-  arrange(x_axis_label, Variant_fraction_percent) %>%
-  mutate(try_this = as.numeric(row.names(for_graph)))
-
-for_graph3 <- for_graph %>%
-  arrange(balanced_or_not, Molecules_difference) %>%
-  mutate(try_this = as.numeric(row.names(for_graph)))
-
-# Plot for supplementary information
-ggplot(for_graph, aes(x = mcmc_prediction, y = Variant_fraction_percent))+
-  geom_jitter(size = 3)+
-  theme_bw()+
-  no_gridlines+
-  ylim(45, 55)+
-  geom_hline(yintercept = 51, linetype = "dashed")+
-  geom_hline(yintercept = 48.9, linetype = "dashed")
 
 # Downsampling plot
-downsampling_plot <- ggplot(for_graph, aes(x = sample_type, y = Molecules_variant_assay))+
+downsampling_plot <- ggplot(cfDNA_gDNA_bind, aes(x = sample_type, y = Molecules_variant_assay))+
   geom_boxplot()+
   theme_bw()+
   no_gridlines+
@@ -952,54 +938,59 @@ downsampling_plot <- ggplot(for_graph, aes(x = sample_type, y = Molecules_varian
 
 ggsave(filename = "plots/downsampling_plot.png", plot =  downsampling_plot, dpi = 300)
 
-ggplot(for_graph2, aes(x = try_this, y = Variant_fraction_percent, colour = x_axis_label))+
-  geom_point(size = 3)+
-  geom_errorbar(aes(ymin = Variant_fraction_min_percent, ymax = Variant_fraction_max_percent))+
-  scale_colour_manual(values=c("#0000FF", "#999999", "#000000", "#99CCFF", "#FF0000"))+
+# Make the two new variables factors to define the order subsequent plots
+cfDNA_gDNA_bind$x_axis_label <- factor(cfDNA_gDNA_bind$x_axis_label, levels = c("cfDNA (homozygous reference)","inconclusive",
+                                                                    "gDNA (heterozgous)", 
+                                                                    "cfDNA (heterozygous)", 
+                                                                    "cfDNA (homozygous variant)"))
+
+cfDNA_gDNA_bind$balanced_or_not <- factor(cfDNA_gDNA_bind$balanced_or_not, levels = c("het gDNA", "het cfDNA", "unbalanced"))
+
+# Organise data for variant fraction plot
+variant_fraction_data <- cfDNA_gDNA_bind %>%
+  arrange(x_axis_label, Variant_fraction_percent) %>%
+  # Fix the order of samples
+  mutate(row_number = as.numeric(row.names(cfDNA_gDNA_bind)))
+
+# Variant fraction plot
+variant_fraction_plot <- ggplot(variant_fraction_data, aes(x = row_number, y = Variant_fraction_percent, colour = x_axis_label))+
+  geom_errorbar(colour = "black", aes(ymin = Variant_fraction_min_percent, ymax = Variant_fraction_max_percent))+
+  scale_fill_manual(values=c("#0000FF", "#999999", "#000000", "#99CCFF", "#FF0000"))+
+  geom_point(size = 4, aes(fill = x_axis_label), colour = "black", pch=21)+
   theme_bw()+
   theme(axis.text.x = element_blank())+
   ylim(42, 58)+
   no_gridlines+
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.title = element_blank(), 
+        legend.position = "bottom")+
   geom_hline(yintercept = 48.9, linetype = "dashed")+
   geom_hline(yintercept = 51, linetype = "dashed")+
-  labs(x = "", y = "Variant fraction (%)")
-  
+  labs(x = "", y = "Variant fraction (%)",
+       title = "Variant fraction in gDNA and cfDNA ddPCR results")
+
+ggsave(filename = "plots/variant_fraction_plot.png", plot = variant_fraction_plot, dpi = 300)
+
+# Organise data for molecules of difference plot
+molecules_difference_data <- cfDNA_gDNA_bind %>%
+  arrange(balanced_or_not, Molecules_difference) %>%
+  mutate(row_number = as.numeric(row.names(cfDNA_gDNA_bind)))
+
 # Molecules of difference plot
-molecules_difference_plot <- ggplot(for_graph3, aes(x = try_this, y = Molecules_difference, colour = x_axis_label))+
-  geom_point(size = 3)+
+molecules_difference_plot <- ggplot(molecules_difference_data, aes(x = row_number, y = Molecules_difference))+
+  scale_fill_manual(values=c("#0000FF", "#999999", "#000000", "#99CCFF", "#FF0000"))+
+  geom_point(size = 4, aes(fill = x_axis_label), colour = "black", pch=21)+
   theme_bw()+
   no_gridlines+
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.title = element_blank(),legend.position = "bottom")+
+  labs(x = "", y = "Molecules of difference",
+       title = "Molecules of difference in gDNA and cfDNA ddPCR results")+
   geom_hline(yintercept = 300, linetype = "dashed")
 
-
-ggplot(phase3_parents_merged, aes(x = worksheet_sample, y = FractionalAbundance_HbS))+
-  geom_point(size = 3)+
-  geom_errorbar(aes(ymin = PoissonFractionalAbundanceMin_HbS, ymax = PoissonFractionalAbundanceMax_HbS))+
-  theme_bw()+
-  ylim(40, 60)+
-  theme(axis.text.x = element_blank())+
-  geom_hline(yintercept = 50, linetype = "dashed")+
-  no_gridlines
-
-ggplot(phase3_results %>%
-  filter(r_number != "20238"), aes(x = mcmc_prediction, y = Molecules_difference))+
-  geom_jitter()+
-  geom_hline(yintercept = 300, linetype = "dashed")+
-  geom_hline(yintercept = 400, linetype = "dashed")
-
-
-RAPID_biobank %>%
-  filter(r_number %in% c(14980, 16179, 20966)) %>%
-  select(r_number, study_id)
-
-# After 30194
-to_extract <- RAPID_biobank %>%
-  filter(r_number %in% c(30251, 30252, 30257, 30258, 30232, 
-                         30233, 30216, 30217)) %>%
-  select(r_number, study_id, maternal_mutation, paternal_mutation, sample_type, 
-         tubes_plasma_current, tubes_blood_current)
-  
-write.csv(to_extract, "analysis_outputs/to_extract.csv", row.names = FALSE)
+ggsave(filename = "plots/molecules_difference_plot.png", plot = molecules_difference_plot, dpi = 300)
 
 #########################
 # Collating SNP genotypes
@@ -2064,12 +2055,6 @@ write.csv(mcmc_vs_sprt_outcomes,
           file = paste0("analysis_outputs/mcmc_vs_sprt_outcomes", 
                         format(current_time, "%Y%m%d_%H%M%S"), ".csv"),
           row.names = FALSE)
-
-
-
-
-
-
 
 
 ## Additional code (non essential)

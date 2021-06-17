@@ -221,8 +221,15 @@ SNP_data_plotting <- SNP_data %>%
   mutate(genotype = case_when(
     FAM > 50 & VIC < 50 ~"hom FAM",
     FAM > 50 & VIC > 50 ~"het",
-    FAM < 50 & VIC > 50 ~"hom VIC",
-  ))
+    FAM < 50 & VIC > 50 ~"hom VIC",)) %>%
+  filter(!is.na(genotype)) %>%
+  mutate(
+    fluorophore_VIC = case_when(
+      genotype != "hom FAM" ~"Yes",
+      genotype == "hom FAM" ~"No"),
+    fluorophore_FAM= case_when(
+      genotype != "hom VIC" ~"Yes",
+      genotype == "hom VIC" ~"No"))
 
 # Plots Fluidigm-like graphs of different genotype clusters
 ggplot(SNP_data_plotting %>%
@@ -235,7 +242,7 @@ ggplot(SNP_data_plotting %>%
   labs(x = "FAM target copies/ul", y = "VIC target copies/ul",
        title = "SNP Genotyping for Parental Samples")
 
-ggplot(SNP_data_plotting, aes(x = Assay, y = genotype, colour = genotype))+
+ggplot(SNP_data_plotting %>%, aes(x = genotype, y =  Assay, colour = genotype))+
   geom_point(size = 3, alpha = 0.7)+
   theme_bw()+
   facet_wrap(~Sample)+
