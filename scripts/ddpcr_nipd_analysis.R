@@ -281,6 +281,11 @@ ddpcr_sprt_analysed <- ddpcr_data_tbl %>%
          Over_represented_fraction_max_percent = pmax(Variant_fraction_max_percent, Reference_fraction_max_percent),
          Over_represented_fraction_min_percent = pmax(Variant_fraction_min_percent, Reference_fraction_min_percent),
          
+         # Calculate the over-represented fraction "deviation" from 50%
+         Over_represented_fraction_deviation = Over_represented_fraction_percent - 50,
+         Over_represented_fraction_deviation_max = Over_represented_fraction_max_percent - 50,
+         Over_represented_fraction_deviation_min = Over_represented_fraction_min_percent - 50,
+         
          # When calculating for the fetal fraction, the paternal fraction must be multiplied by 2.
          Fetal_fraction_max_percent = 200* (Poisson_fraction_max(Molecules_paternal_max, Molecules_maternal)),
          Fetal_fraction_min_percent = 200* (Poisson_fraction_min(Molecules_paternal_min, Molecules_maternal)),
@@ -295,7 +300,7 @@ ddpcr_sprt_analysed <- ddpcr_data_tbl %>%
            Inheritance_chromosomal == "autosomal" & Likelihood_ratio > LR_threshold & Over_represented_fraction == Reference_fraction ~ "homozygous reference",
            Inheritance_chromosomal == "autosomal" & Likelihood_ratio > LR_threshold & Over_represented_fraction == Variant_fraction ~ "homozygous variant",
            Inheritance_chromosomal == "autosomal" & Likelihood_ratio < (1/LR_threshold) ~ "heterozygous",
-           Inheritance_chromosomal == "autosomal" & Likelihood_ratio < LR_threshold & Likelihood_ratio > (1/LR_threshold) ~ "no call",
+           Inheritance_chromosomal == "autosomal" & Likelihood_ratio < LR_threshold & Likelihood_ratio > (1/LR_threshold) ~ "inconclusive",
            Inheritance_chromosomal == "x_linked" & Likelihood_ratio > LR_threshold & Over_represented_fraction == Reference_fraction ~ "hemizygous reference",
            Inheritance_chromosomal == "x_linked" & Likelihood_ratio > LR_threshold & Over_represented_fraction == Variant_fraction ~ "hemizygous variant",
            Inheritance_chromosomal == "x_linked" & Likelihood_ratio < LR_threshold ~ "no call"),
@@ -439,20 +444,11 @@ ddpcr_mcmc_analysed <- ddpcr_with_fits %>%
     Inheritance_chromosomal == "x_linked" & p_G0 < mcmc_threshold & p_G1 < mcmc_threshold ~"no call"))
 
 #############################################################
-# Sickle cell disease analysis for paper
+# Collation of results
 #############################################################
 
 # This stage joins the SPRT and MCMC results together, and then compares
 # them to the diagnostic results from RAPID Biobank.
-
-# "Phase 3" refers to the most recent phase of the ddPCR sickle cell disease project, when 
-# all samples were extracted using a 6ml protocol and the lab workflow was finalised
-# ("phase 1" was my MSc project in 2018, and "phase 2" was the work done in 2019 and 2020).
-
-phase3_samples <- c("14182", "19868", "20238", "20611", 
-                     "20874", "30063", "30068", "30113", "30142", 
-                     "30206", "30228", "30230", "30078", "30065", 
-                    "13402", "20939", "30215", "30203", "12973")
 
 ddpcr_analysed <- left_join(
   ddpcr_sprt_analysed,
@@ -468,13 +464,66 @@ ddpcr_nipd_unblinded <- left_join(
     filter(r_number %in% ddpcr_analysed$r_number) %>%
     select(r_number, study_id, gestation_weeks, gestation_days, Gestation_total_weeks, gestation_character, 
            date_of_blood_sample, vacutainer, mutation_genetic_info_fetus, Partner_sample_available, original_plasma_vol),
-  by = "r_number") %>%
-  # Place phase3 samples first as theyare being writte up first. Hopefully by organising the code
-  # this way it will allow minimal issues when plotting other cohorts.
-  mutate(in_phase3 = ifelse(r_number %in% phase3_samples, "TRUE", "FALSE")) %>%
-  arrange(desc(in_phase3), r_number) %>%
-  # Add on anonymous identifier for paper writeup
-  mutate(sample_code = paste0("cfDNA-", row.names(ddpcr_analysed)))
+  by = "r_number")
+
+
+ggplot(scd_ddpcr, aes(x = Fetal_fraction_percent, 
+                                                     y = Over_represented_fraction_deviation,
+                                                     colour = overall_prediction))+
+  geom_point()+
+  geom_errorbar(aes(ymin = Over_represented_fraction_deviation_min, ymax = Over_represented_fraction_deviation_max))+
+  geom_errorbarh(aes(xmin = Fetal_fraction_min_percent, xmax = Fetal_fraction_max_percent))+
+  ylim(0, 10)+
+  geom_abline(slope = 0.5, intercept = 0, linetype = "dashed")
+
+#############################################################
+# Sickle cell disease analysis for paper
+#############################################################
+
+# "Phase 3" refers to the most recent phase of the ddPCR sickle cell disease project, when 
+# all samples were extracted using a 6ml protocol and the lab workflow was finalised
+# ("phase 1" was my MSc project in 2018, and "phase 2" was the work done in 2019 and 2020).
+
+phase3_samples <- c("14182", "19868", "20238", "20611", 
+                     "20874", "30063", "30068", "30113", "30142", 
+                     "30206", "30228", "30230", "30078", "30065", 
+                    "13402", "20939", "30215", "30203", "12973")
+
+# Sickle cell disease samples to exlude:
+# 13262 - this sample had contamination
+# 17004 - this sample was actually HbAC
+# 20915 - this sample was from a twin pregnancy
+samples_to_exclude <- c(13262, 17004, 20915)
+
+
+scd_ddpcr <- ddpcr_nipd_unblinded %>%
+  filter(variant_assay == "HBB c.20A>T" & !r_number %in% samples_to_exclude) %>%
+  
+  # Create an "overall prediction" based on the results of the two
+  # statistical analyses and the technical data (see paper draft v7 figure 2)
+  
+  mutate(overall_prediction = case_when(
+    (SPRT_prediction == "heterozygous" | mcmc_prediction == "heterozygous") & Variant_fraction_percent > 48.9 &
+      Variant_fraction_percent < 51 &
+      Molecules_difference < 250 ~"heterozygous",
+    
+    (SPRT_prediction == "homozygous reference" | mcmc_prediction == "homozygous reference") & Variant_fraction_percent < 48.9 &
+      Molecules_difference > 300 ~"homozygous reference",
+    
+    (SPRT_prediction == "homozygous variant" | mcmc_prediction == "homozygous variant") & Variant_fraction_percent > 51 &
+      Molecules_difference > 300 ~"homozygous variant",
+    
+    TRUE ~"inconclusive"))
+
+# Adding anonymised "cfDNA" numbers for the paper is too much hassle when the 
+# format of the paper is not finalised, so you can ignore the next bit.
+
+# Place phase3 samples first as theyare being written up first. Hopefully by organising the code
+# this way it will allow minimal issues when plotting other cohorts.
+# mutate(in_phase3 = ifelse(r_number %in% phase3_samples, "TRUE", "FALSE")) %>%
+# arrange(desc(in_phase3), r_number) %>%
+# Add on anonymous identifier for paper writeup
+# mutate(sample_code = paste0("cfDNA-", row.names(ddpcr_analysed)))
 
 # Table
 scd_paper_table <- ddpcr_nipd_unblinded %>%
@@ -694,7 +743,7 @@ plot_rmd_graph <- function(cfdna_sample, maternal, paternal){
           legend.position = "bottom", legend.title = element_blank(),
           legend.text = element_text(size= 14),
           panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
-    labs(x = "", y = "Molecules", title = paste("Sample:", sample_id, " ", "Variant assay:", 
+    labs(x = "", y = "Molecules", title = paste("Sample:", r_number, " ", "Variant assay:", 
                                                 variant_cfdna_sample$assay, "  ",
                                                 "Fetal fraction assay:", ff_cfdna_sample$assay),
          subtitle = paste(sprt_result_subtitle))
@@ -899,32 +948,34 @@ parents_downsampled <- ddpcr_data %>%
 
 parents_downsampled_bind <- parents_downsampled %>%
   dplyr::rename(r_number = worksheet_sample,
-                mcmc_prediction = genotype,
+                overall_prediction = genotype,
                 Molecules_difference = molecules_difference,
                 Variant_fraction_percent = variant_fraction) %>%
-  select(r_number, mcmc_prediction, Molecules_variant_assay, sample_type, Molecules_difference,
+  select(r_number, overall_prediction, Molecules_variant_assay, sample_type, Molecules_difference,
          Variant_fraction_percent, Variant_fraction_max_percent, Variant_fraction_min_percent)
 
-cfDNA_compare <- phase3_results %>%
+cfDNA_compare <- scd_ddpcr %>%
   mutate(sample_type = "cfDNA") %>%
-  select(r_number, mcmc_prediction, Molecules_variant_assay, sample_type, Molecules_difference,
-         Variant_fraction_percent, Variant_fraction_max_percent, Variant_fraction_min_percent)
+  select(r_number, overall_prediction, Molecules_variant_assay, 
+         sample_type, Molecules_difference,
+         Variant_fraction_percent, Variant_fraction_max_percent, 
+         Variant_fraction_min_percent)
 
 # Bind cfDNA and genomic DNA results together
 cfDNA_gDNA_bind <- rbind(cfDNA_compare, parents_downsampled_bind) %>%
   mutate(x_axis_label = case_when(
-    mcmc_prediction == "heterozygous" & r_number != "20238" ~"cfDNA (heterozygous)",
-    r_number == "20238" ~"inconclusive",
-    mcmc_prediction == "homozygous reference" ~"cfDNA (homozygous reference)",
-    mcmc_prediction == "homozygous variant" ~"cfDNA (homozygous variant)",
-    mcmc_prediction == "het gDNA" ~"gDNA (heterozgous)"),
+    overall_prediction == "heterozygous" ~"cfDNA (heterozygous)",
+    overall_prediction == "homozygous reference" ~"cfDNA (homozygous reference)",
+    overall_prediction == "homozygous variant" ~"cfDNA (homozygous variant)",
+    overall_prediction == "het gDNA" ~"gDNA (heterozgous)",
+    overall_prediction == "inconclusive" ~ "inconclusive"),
     
     balanced_or_not = case_when(
-      mcmc_prediction == "heterozygous" & r_number != "20238" ~"het cfDNA",
-      r_number == "20238" ~"unbalanced",
-      mcmc_prediction == "homozygous reference" ~"unbalanced",
-      mcmc_prediction == "homozygous variant" ~"unbalanced",
-      mcmc_prediction == "het gDNA" ~"het gDNA"))
+      overall_prediction == "heterozygous" ~"het cfDNA",
+      overall_prediction == "homozygous reference" ~"unbalanced",
+      overall_prediction == "homozygous variant" ~"unbalanced",
+      overall_prediction == "het gDNA" ~"het gDNA",
+      overall_prediction == "inconclusive" ~ "inconclusive"))
 
 
 # Downsampling plot
@@ -939,12 +990,24 @@ downsampling_plot <- ggplot(cfDNA_gDNA_bind, aes(x = sample_type, y = Molecules_
 ggsave(filename = "plots/downsampling_plot.png", plot =  downsampling_plot, dpi = 300)
 
 # Make the two new variables factors to define the order subsequent plots
-cfDNA_gDNA_bind$x_axis_label <- factor(cfDNA_gDNA_bind$x_axis_label, levels = c("cfDNA (homozygous reference)","inconclusive",
+cfDNA_gDNA_bind$x_axis_label <- factor(cfDNA_gDNA_bind$x_axis_label, levels = c("cfDNA (homozygous reference)",
                                                                     "gDNA (heterozgous)", 
                                                                     "cfDNA (heterozygous)", 
-                                                                    "cfDNA (homozygous variant)"))
+                                                                    "cfDNA (homozygous variant)",
+                                                                    "inconclusive"))
 
-cfDNA_gDNA_bind$balanced_or_not <- factor(cfDNA_gDNA_bind$balanced_or_not, levels = c("het gDNA", "het cfDNA", "unbalanced"))
+cfDNA_gDNA_bind$balanced_or_not <- factor(cfDNA_gDNA_bind$balanced_or_not, levels = c("het gDNA", "het cfDNA", "unbalanced",
+                                                                               "inconclusive"))
+
+to_view <- scd_ddpcr %>%
+  filter(overall_prediction == "inconclusive") %>%
+  select(r_number, Variant_fraction_percent, Fetal_fraction_percent, Molecules_difference,
+         Likelihood_ratio, overall_prediction)
+
+
+ggplot(scd_ddpcr, aes( x= overall_prediction, y = mutation_genetic_info_fetus, colour = overall_prediction))+
+  geom_jitter()
+
 
 # Organise data for variant fraction plot
 variant_fraction_data <- cfDNA_gDNA_bind %>%
@@ -952,10 +1015,21 @@ variant_fraction_data <- cfDNA_gDNA_bind %>%
   # Fix the order of samples
   mutate(row_number = as.numeric(row.names(cfDNA_gDNA_bind)))
 
+
+ggplot(scd_ddpcr, aes(x = Fetal_fraction_percent, y = Variant_fraction_percent,
+                      colour = mutation_genetic_info_fetus))+
+  geom_point()+
+  ylim(43, 57)
+
+
+scd_ddpcr %>%
+  filter(is.na(mutation_genetic_info_fetus))%>%
+  select(r_number)
+
 # Variant fraction plot
 variant_fraction_plot <- ggplot(variant_fraction_data, aes(x = row_number, y = Variant_fraction_percent, colour = x_axis_label))+
   geom_errorbar(colour = "black", aes(ymin = Variant_fraction_min_percent, ymax = Variant_fraction_max_percent))+
-  scale_fill_manual(values=c("#0000FF", "#999999", "#000000", "#99CCFF", "#FF0000"))+
+  scale_fill_manual(values=c("#0000FF", "#000000", "#99CCFF", "#FF0000", "#999999"))+
   geom_point(size = 4, aes(fill = x_axis_label), colour = "black", pch=21)+
   theme_bw()+
   theme(axis.text.x = element_blank())+
@@ -979,7 +1053,7 @@ molecules_difference_data <- cfDNA_gDNA_bind %>%
 
 # Molecules of difference plot
 molecules_difference_plot <- ggplot(molecules_difference_data, aes(x = row_number, y = Molecules_difference))+
-  scale_fill_manual(values=c("#0000FF", "#999999", "#000000", "#99CCFF", "#FF0000"))+
+  scale_fill_manual(values=c("#0000FF", "#000000", "#99CCFF", "#FF0000", "#999999"))+
   geom_point(size = 4, aes(fill = x_axis_label), colour = "black", pch=21)+
   theme_bw()+
   no_gridlines+
@@ -988,7 +1062,8 @@ molecules_difference_plot <- ggplot(molecules_difference_data, aes(x = row_numbe
         legend.title = element_blank(),legend.position = "bottom")+
   labs(x = "", y = "Molecules of difference",
        title = "Molecules of difference in gDNA and cfDNA ddPCR results")+
-  geom_hline(yintercept = 300, linetype = "dashed")
+  geom_hline(yintercept = 300, linetype = "dashed")+
+  ylim(0, 5000)
 
 ggsave(filename = "plots/molecules_difference_plot.png", plot = molecules_difference_plot, dpi = 300)
 
@@ -1805,9 +1880,13 @@ ggplot(amplicons_motifs %>%
 
 # Plotting graphs of sample cohorts
 #############################################################
+# Sample cohort plots
+#############################################################
+
 
 # Plot the results of fetal fraction versus variant fraction, including inconclusive results.
-ggplot(sickle_cell_unblinded, aes(x = Fetal_fraction_percent, y = Variant_fraction_percent))+
+ggplot(ddpcr_nipd_unblinded %>%
+         filter(variant_assay == "HBB c.20A>T"), aes(x = Fetal_fraction_percent, y = Variant_fraction_percent))+
   geom_point(aes(shape = overall_prediction, alpha = overall_prediction), size = 4)+
   # Change the shape of the shapes displayed
   scale_shape_manual(values = c(15, 17, 18, 19, 19))+
@@ -1831,7 +1910,8 @@ ggplot(sickle_cell_unblinded, aes(x = Fetal_fraction_percent, y = Variant_fracti
             aes(label=Identifier, vjust = 1.5, hjust = 1.2))
 
 # Plot the results without calls or legend
-ggplot(sickle_cell_unblinded, aes(x = Fetal_fraction_percent, y = Variant_fraction_percent))+
+ggplot(ddpcr_nipd_unblinded %>%
+         filter(variant_assay == "HBB c.20A>T"), aes(x = Fetal_fraction_percent, y = Variant_fraction_percent))+
   geom_point(size = 8, alpha = 0.5)+
   # Change the shape of the shapes displayed
   geom_errorbarh(aes(xmin = Fetal_fraction_min_percent, xmax = Fetal_fraction_max_percent)) +
@@ -1843,9 +1923,8 @@ ggplot(sickle_cell_unblinded, aes(x = Fetal_fraction_percent, y = Variant_fracti
         legend.position = "none", legend.background = element_rect(fill="white"), 
         legend.title = element_blank(), legend.text = element_text(size= 15))+
   theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
-  labs(x = "Fetal fraction (%)", y = "Variant fraction (%)")+
-  ylim(42.5, 57.5)+
-  xlim(0, 22)
+  ylim(40, 60)+
+  labs(x = "Fetal fraction (%)", y = "Variant fraction (%)")
 
 
 # Empty plot without results
