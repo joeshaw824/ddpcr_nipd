@@ -204,7 +204,10 @@ SNP_data_table <- SNP_data %>%
     names_from = c(Sample, Label),
     values_from = Copies_per_ul)
 
+view(SNP_data_plotting)
+
 SNP_data_plotting <- SNP_data %>%
+  filter(Sample != "NTC") %>%
   select(Sample, Target, TargetType, Concentration) %>%
   left_join(ddpcr_target_panel %>%
               select(Target, Assay), by = "Target") %>%
@@ -230,6 +233,25 @@ SNP_data_plotting <- SNP_data %>%
     fluorophore_FAM= case_when(
       genotype != "hom VIC" ~"Yes",
       genotype == "hom VIC" ~"No"))
+
+
+sample_30065_SNP <- SNP_data_plotting %>%
+  filter(Sample %in% c("30065", "21RG-126G0126")) %>%
+  select(-c(fluorophore_VIC, fluorophore_FAM)) %>%
+  pivot_wider(
+    id_cols = Assay,
+    names_from = Sample,
+    values_from = c(FAM, VIC, genotype)) %>%
+  select(Assay, FAM_30065, VIC_30065, `FAM_21RG-126G0126`,
+         `VIC_21RG-126G0126`, genotype_30065, `genotype_21RG-126G0126`)
+
+write.csv(sample_30065_SNP, "analysis_outputs/sample_30065_SNP.csv", row.names = FALSE)
+
+
+
+?pivot_wider()
+
+
 
 # Plots Fluidigm-like graphs of different genotype clusters
 ggplot(SNP_data_plotting %>%
@@ -266,9 +288,10 @@ SNP_data_plotting %>%
 
 digital_snp <- function(cf_sample){
   sample_snp_table <- SNP_data %>%
-  filter(Sample == cf_sample) %>%
-  select(Sample, Target, TargetType, Concentration, FractionalAbundance) %>%
-  left_join(ddpcr_target_panel %>%
+    filter(Sample == cf_sample) %>%
+    select(Sample, Target, TargetType, Concentration, FractionalAbundance) %>%
+    
+    left_join(ddpcr_target_panel %>%
               select(Target, Assay), by = "Target") %>%
   # Convert the concentration column to a numeric and convert "no call" to zero
   mutate(Copies_per_ul = as.integer(ifelse(Concentration == "No Call", 0, Concentration))) %>%

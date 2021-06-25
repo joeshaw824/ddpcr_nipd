@@ -2,7 +2,7 @@
 ## ddPCR for Non Invasive Prenatal Diagnosis (NIPD)
 ## January 2021
 ## Joseph.Shaw@gosh.nhs.uk
-## Analysis script for prediction of fetal genotypes from 
+## This is an analysis script for the prediction of fetal genotypes from 
 ## cfDNA testing using ddPCR for maternally-inherited
 ## variants. This includes modules for analysis of ddPCR data
 ## using the sequential probability ratio test (SPRT) (Lo et al,
@@ -36,10 +36,13 @@ source("functions/ddPCR_nipd_functions.R")
 source("functions/RAPID_biobank.R")
 
 #############################################################
-# Read in ddPCR data and wrangle cfDNA data into shape
+# Read in ddPCR data 
 #############################################################
 
-## Load in all the csv files exported from QuantaSoft.
+# The data wrangling in this section is due to collating 
+# data acquired over 3 years with various lab workflows.
+
+# Load in all the csv files exported from QuantaSoft.
 
 dataPath <- "data/ddpcr_data/"
 
@@ -51,14 +54,19 @@ ddpcr_data <- data.frame()
 # Read and collate each worksheet csv
 for (dataFile in ddpcr_files){
   tmp_dat <- read_csv(paste0(dataPath,dataFile), col_names = TRUE)
-  # Add a worksheet identifier to make things easier later on.
+  # Add a worksheet identifier and a unique identifier for each
+  # well on each worksheet
   tmp_dat_ws <- tmp_dat %>%
-    mutate(Worksheet = dataFile) %>%
-    mutate(Worksheet_well = paste(Worksheet, Well, sep = "_"))
+    mutate(Worksheet = dataFile,
+           Worksheet_well = paste(Worksheet, Well, sep = "_"))
   ddpcr_data <-rbind(ddpcr_data, tmp_dat_ws)
   rm(tmp_dat_ws)
   rm(tmp_dat)
 }
+
+#########################
+# Wrangle cfDNA data into shape
+#########################
 
 # Remove single wells and controls
 ddpcr_data_merged_samples <- ddpcr_data %>%
@@ -70,7 +78,10 @@ ddpcr_data_merged_samples <- ddpcr_data %>%
   # which is the number of commas in "MergedWells" string plus one
   mutate(num_wells = str_count(MergedWells, ",")+1)
 
-# Reshape the data frame to sum all values by Target
+# Reshape the data frame to sum all values by Target.
+# Often cfDNA from the same sample was tested across
+# multiple worksheets and then must be summed together
+# for the analysis.
 ddpcr_data_reshape <- ddpcr_data_merged_samples %>% 
   group_by(Sample, Target) %>% 
   summarise(Positives = sum(Positives),
@@ -78,6 +89,8 @@ ddpcr_data_reshape <- ddpcr_data_merged_samples %>%
             num_wells = sum(num_wells),
             .groups="drop")
 
+# Add on the category for each ddPCR Target
+# Data model: 4 categories - variant, reference, ff_allele1 and ff_allele2
 ddpcr_with_target <- ddpcr_data_reshape %>% 
   left_join(ddpcr_target_panel %>%
               select(Target, Target_category), by = "Target")
@@ -89,6 +102,8 @@ pivotted_ddpcr <- ddpcr_with_target %>%
               values_from = c(AcceptedDroplets, Positives, num_wells))
 
 # Add on assay and inheritance pattern to the table.
+# Do this first by adding the information to the "variant" rows, then to
+# the "ff_allele1" rows.
 ref_table_var <- left_join(
   # First table
   ddpcr_with_target %>%
@@ -100,7 +115,7 @@ ref_table_var <- left_join(
     rename(variant_assay = Assay),
   # Join by
   by = "Target")
-  
+
 ref_table_ff <- left_join(
   # First table
   ddpcr_with_target %>%
@@ -121,35 +136,36 @@ ddpcr_data_tbl <- pivotted_ddpcr %>%
             .groups="drop") %>%
   
   # Remove any samples which haven't had both assays performed.
+  # This removes several samples which didn't have both assays performed
+  # for various reasons.
   filter(!is.na(Positives_variant) & !is.na(Positives_ff_allele1)) %>%
   
   # Remove duplicate columns and rename to be compatible with functions
   select(-c(AcceptedDroplets_ff_allele2, AcceptedDroplets_reference, num_wells_reference,
             num_wells_ff_allele2)) %>%
-  rename(AcceptedDroplets_FetalFrac = AcceptedDroplets_ff_allele1) %>%
-  rename(AcceptedDroplets_Variant_assay = AcceptedDroplets_variant) %>%
-  rename(num_wells_ff_assay = num_wells_ff_allele1) %>%
-  rename(num_wells_variant_assay = num_wells_variant) %>%
+  rename(AcceptedDroplets_FetalFrac = AcceptedDroplets_ff_allele1,
+         AcceptedDroplets_Variant_assay = AcceptedDroplets_variant,
+         num_wells_ff_assay = num_wells_ff_allele1,
+         num_wells_variant_assay = num_wells_variant) %>%
   
   # Determine the maternal and paternally-inherited alleles for the fetal fraction calculation
-  mutate(Positives_maternal = pmax(Positives_ff_allele1, Positives_ff_allele2)) %>%
-  mutate(Positives_paternal = pmin(Positives_ff_allele1, Positives_ff_allele2))
+  mutate(Positives_maternal = pmax(Positives_ff_allele1, Positives_ff_allele2),
+         Positives_paternal = pmin(Positives_ff_allele1, Positives_ff_allele2))
 
-#############################################################
+#########################
 # Wrangle gDNA data into shape
-#############################################################
+#########################
 
-# Get single well controls only without NTC
+# Get single well controls only without NTCs
 ddpcr_controls <- ddpcr_data %>%
-  filter(Sample %in% controls$Sample & Sample != "NTC" & !is.na(CopiesPer20uLWell))
+  filter(Sample %in% controls$Sample & Sample != "NTC" & substr(Well, 1, 1) != "M")
 
 ddpcr_controls_with_target <- ddpcr_controls %>% 
   left_join(ddpcr_target_panel %>%
               select(Target, Target_category), by = "Target")
 
 # No need to pivot to get one row per sample because we want the control
-# data as individual wells.
-# Use pivot_wider to get one row per well for each well tested with 
+# data as individual wells. Use pivot_wider to get one row per well for each well tested with 
 # a variant assay
 pivotted_controls_var <- ddpcr_controls_with_target %>%
   filter(Target_category %in% c("variant", "reference")) %>%
@@ -220,6 +236,12 @@ ddpcr_control_tbl_ff <- pivotted_controls_ff %>%
 # cfDNA SPRT analysis
 #############################################################
 
+# Samples to exlude:
+# 13262 - this sample had contamination
+# 17004 - this sample was actually HbAC
+# 20915 - this sample was from a twin pregnancy
+samples_to_exclude <- c(13262, 17004, 20915)
+
 # Set likelihood ratio threshold
 LR_threshold <- 250
 
@@ -233,9 +255,6 @@ ddpcr_sprt_analysed <- ddpcr_data_tbl %>%
          Molecules_reference = Poisson_correct(AcceptedDroplets_Variant_assay,Positives_reference),   
          Molecules_maternal = Poisson_correct(AcceptedDroplets_FetalFrac,Positives_maternal),
          Molecules_paternal = Poisson_correct(AcceptedDroplets_FetalFrac,Positives_paternal),
-         
-         # Find the difference between the numbers of molecules for each allele
-         Molecules_difference = abs(Molecules_reference - Molecules_variant),
          
          # Find the total number of molecules for each assay
          Molecules_variant_assay = Molecules_variant + Molecules_reference,
@@ -256,6 +275,14 @@ ddpcr_sprt_analysed <- ddpcr_data_tbl %>%
          # Calculate the fraction of the overrepresented allele
          Over_represented_fraction = pmax(Reference_fraction, Variant_fraction),
          Over_represented_fraction_percent = (pmax(Reference_fraction, Variant_fraction))*100,
+
+         # Find the difference between the numbers of molecules for each allele
+         Molecules_difference = abs(Molecules_reference - Molecules_variant),
+         
+         # Find the predicted difference between each allele if the fetus was homozygous
+         Molecules_difference_autosomal_predicted = Molecules_variant_assay * (Fetal_fraction/2),
+         
+         Molecules_observed_expected_ratio = Molecules_difference / Molecules_difference_autosomal_predicted,
          
          # Calculate the 95% confidence intervals of the numbers of molecules for each allele
          Molecules_variant_max = Poisson_max((Molecules_variant / AcceptedDroplets_Variant_assay), AcceptedDroplets_Variant_assay),
@@ -296,6 +323,7 @@ ddpcr_sprt_analysed <- ddpcr_data_tbl %>%
            Inheritance_chromosomal == "autosomal" ~ calc_LR_autosomal(Fetal_fraction, Over_represented_fraction, Molecules_variant_assay)),
          
          # Classify based on likelihood ratio threshold supplied
+         # Fetal genotype predictions are named consistently as "inconclusive", "heterozygous", "homozygous/hemizygous reference/variant"
          SPRT_prediction = case_when(
            Inheritance_chromosomal == "autosomal" & Likelihood_ratio > LR_threshold & Over_represented_fraction == Reference_fraction ~ "homozygous reference",
            Inheritance_chromosomal == "autosomal" & Likelihood_ratio > LR_threshold & Over_represented_fraction == Variant_fraction ~ "homozygous variant",
@@ -303,16 +331,15 @@ ddpcr_sprt_analysed <- ddpcr_data_tbl %>%
            Inheritance_chromosomal == "autosomal" & Likelihood_ratio < LR_threshold & Likelihood_ratio > (1/LR_threshold) ~ "inconclusive",
            Inheritance_chromosomal == "x_linked" & Likelihood_ratio > LR_threshold & Over_represented_fraction == Reference_fraction ~ "hemizygous reference",
            Inheritance_chromosomal == "x_linked" & Likelihood_ratio > LR_threshold & Over_represented_fraction == Variant_fraction ~ "hemizygous variant",
-           Inheritance_chromosomal == "x_linked" & Likelihood_ratio < LR_threshold ~ "no call"),
+           Inheritance_chromosomal == "x_linked" & Likelihood_ratio < LR_threshold ~ "inconclusive"),
          
          Call = ifelse(SPRT_prediction == "no call", "no call", "call"))
 
 #############################################################
 # cfDNA MCMC analysis
 #############################################################
-#########################
-# Prepare data
-#########################
+
+# Prepare ddPCR data for MCMC
 
 # n_K	= number of droplets tested for variant assay
 # K_M	= number of droplets positive for variant (mutant) allele
@@ -355,10 +382,6 @@ initialise_chains_xlinked <- function() list(rho = rbeta(1, 4, 32),
 initialise_chains_recessive <- function() list(rho = runif(1, 0.1, 0.5),
                                                M_K = runif(1, 0.1, 0.5),
                                                M_Z = runif(1, 0.1, 0.5))
-
-#########################
-# MCMC analysis
-#########################
 
 # Set probability threshold for accepting fetal genotype predictions
 mcmc_threshold <- 0.95
@@ -430,18 +453,18 @@ ddpcr_mcmc_analysed <- ddpcr_with_fits %>%
     # Dominant predictions
     Inheritance_chromosomal == "autosomal" & Inheritance_pattern == "dominant" & p_G1 > mcmc_threshold ~"heterozygous",
     Inheritance_chromosomal == "autosomal" & Inheritance_pattern == "dominant" & p_G2 > mcmc_threshold ~"homozygous reference",
-    Inheritance_chromosomal == "autosomal" & Inheritance_pattern == "dominant" & p_G1 < mcmc_threshold & p_G2 < mcmc_threshold ~"no call",
+    Inheritance_chromosomal == "autosomal" & Inheritance_pattern == "dominant" & p_G1 < mcmc_threshold & p_G2 < mcmc_threshold ~"inconclusive",
     
     # Recessive predictions
     Inheritance_chromosomal == "autosomal" & Inheritance_pattern == "recessive" & p_G1 > mcmc_threshold ~"homozygous reference",
     Inheritance_chromosomal == "autosomal" & Inheritance_pattern == "recessive" & p_G2 > mcmc_threshold ~"heterozygous",
     Inheritance_chromosomal == "autosomal" & Inheritance_pattern == "recessive" & p_G3 > mcmc_threshold ~"homozygous variant",
-    Inheritance_chromosomal == "autosomal" & Inheritance_pattern == "recessive" & p_G1 < mcmc_threshold & p_G2 < mcmc_threshold & p_G2 < mcmc_threshold ~"no call",
+    Inheritance_chromosomal == "autosomal" & Inheritance_pattern == "recessive" & p_G1 < mcmc_threshold & p_G2 < mcmc_threshold & p_G2 < mcmc_threshold ~"inconclusive",
     
     # X-linked predictions
     Inheritance_chromosomal == "x_linked" & p_G0 > mcmc_threshold ~"hemizygous reference",
     Inheritance_chromosomal == "x_linked" & p_G1 > mcmc_threshold ~"hemizygous variant",
-    Inheritance_chromosomal == "x_linked" & p_G0 < mcmc_threshold & p_G1 < mcmc_threshold ~"no call"))
+    Inheritance_chromosomal == "x_linked" & p_G0 < mcmc_threshold & p_G1 < mcmc_threshold ~"inconclusive"))
 
 #############################################################
 # Collation of results
@@ -463,18 +486,9 @@ ddpcr_nipd_unblinded <- left_join(
     mutate(r_number = as.character(r_number)) %>%
     filter(r_number %in% ddpcr_analysed$r_number) %>%
     select(r_number, study_id, gestation_weeks, gestation_days, Gestation_total_weeks, gestation_character, 
-           date_of_blood_sample, vacutainer, mutation_genetic_info_fetus, Partner_sample_available, original_plasma_vol),
+           date_of_blood_sample, vacutainer, mutation_genetic_info_fetus, Partner_sample_available, 
+           original_plasma_vol, tubes_plasma_current),
   by = "r_number")
-
-
-ggplot(scd_ddpcr, aes(x = Fetal_fraction_percent, 
-                                                     y = Over_represented_fraction_deviation,
-                                                     colour = overall_prediction))+
-  geom_point()+
-  geom_errorbar(aes(ymin = Over_represented_fraction_deviation_min, ymax = Over_represented_fraction_deviation_max))+
-  geom_errorbarh(aes(xmin = Fetal_fraction_min_percent, xmax = Fetal_fraction_max_percent))+
-  ylim(0, 10)+
-  geom_abline(slope = 0.5, intercept = 0, linetype = "dashed")
 
 #############################################################
 # Sickle cell disease analysis for paper
@@ -489,31 +503,59 @@ phase3_samples <- c("14182", "19868", "20238", "20611",
                      "30206", "30228", "30230", "30078", "30065", 
                     "13402", "20939", "30215", "30203", "12973")
 
-# Sickle cell disease samples to exlude:
-# 13262 - this sample had contamination
-# 17004 - this sample was actually HbAC
-# 20915 - this sample was from a twin pregnancy
-samples_to_exclude <- c(13262, 17004, 20915)
-
-
 scd_ddpcr <- ddpcr_nipd_unblinded %>%
   filter(variant_assay == "HBB c.20A>T" & !r_number %in% samples_to_exclude) %>%
   
   # Create an "overall prediction" based on the results of the two
   # statistical analyses and the technical data (see paper draft v7 figure 2)
   
-  mutate(overall_prediction = case_when(
-    (SPRT_prediction == "heterozygous" | mcmc_prediction == "heterozygous") & Variant_fraction_percent > 48.9 &
+  mutate(algorithm_prediction = case_when(
+    Molecules_variant_assay > 3000 & Variant_fraction_percent > 48.9 &
       Variant_fraction_percent < 51 &
       Molecules_difference < 250 ~"heterozygous",
     
-    (SPRT_prediction == "homozygous reference" | mcmc_prediction == "homozygous reference") & Variant_fraction_percent < 48.9 &
-      Molecules_difference > 300 ~"homozygous reference",
+    Molecules_variant_assay > 3000 & Variant_fraction_percent < 48.9 &
+      Molecules_difference > 250 ~"homozygous reference",
     
-    (SPRT_prediction == "homozygous variant" | mcmc_prediction == "homozygous variant") & Variant_fraction_percent > 51 &
-      Molecules_difference > 300 ~"homozygous variant",
+    Molecules_variant_assay > 3000 & Variant_fraction_percent > 51 &
+      Molecules_difference > 250 ~"homozygous variant",
     
     TRUE ~"inconclusive"))
+
+
+scd_ddpcr %>%
+       filter(Molecules_variant_assay > 5000)
+
+(15/82)*100
+
+(10/57)*100
+
+to_view <- scd_ddpcr %>%
+  filter(Molecules_variant_assay > 3000) %>%
+  select(r_number, Variant_fraction_percent, Fetal_fraction_percent, Molecules_variant_assay, 
+         Molecules_difference, Molecules_difference_autosomal_predicted,
+         SPRT_prediction, mcmc_prediction, algorithm_prediction, mutation_genetic_info_fetus) %>%
+  arrange(algorithm_prediction)
+
+view(to_view)
+
+ggplot(to_view, aes(x = SPRT_prediction, y = ))+
+  geom_bar()
+
+ggplot(scd_ddpcr, aes(x = Fetal_fraction_percent, 
+                      y = Over_represented_fraction_deviation,
+                      colour = overall_prediction))+
+  geom_point()+
+  geom_errorbar(aes(ymin = Over_represented_fraction_deviation_min, ymax = Over_represented_fraction_deviation_max))+
+  geom_errorbarh(aes(xmin = Fetal_fraction_min_percent, xmax = Fetal_fraction_max_percent))+
+  ylim(0, 10)+
+  geom_abline(slope = 0.5, intercept = 0, linetype = "dashed")
+
+
+ggplot(scd_ddpcr, aes(x = Molecules_difference, y = Molecules_difference_autosomal_predicted))+
+  geom_point(aes(colour = algorithm_prediction))+
+  xlim(0, 1500)+
+  theme(legend.position = "bottom")
 
 # Adding anonymised "cfDNA" numbers for the paper is too much hassle when the 
 # format of the paper is not finalised, so you can ignore the next bit.
@@ -716,7 +758,7 @@ plot_rmd_graph <- function(cfdna_sample, maternal, paternal){
   
   sample_id <- as.character(ddpcr_nipd_unblinded %>%
                               filter(r_number == cfdna_sample) %>%
-                              select(sample_code))
+                              select(r_number))
   
   # Fetal fraction result
   ff_result <- as.character(round(ddpcr_analysed %>% 
@@ -735,7 +777,6 @@ plot_rmd_graph <- function(cfdna_sample, maternal, paternal){
   # Plot the results
   rmd_plot <- ggplot(plot_table_cfdna_sample, aes(x = identity, y = count, fill = new_target))+
     geom_col(position = position_dodge(width = 0.9), colour="black", alpha = 0.6)+
-    
     scale_fill_manual(values = c("#99FFFF", "#FFCC99", "#3366FF", "#FF0000"))+
     geom_errorbar(aes(ymin = count_min, ymax = count_max, width = 0.3), position = position_dodge(width = 0.9))+
     theme_bw()+
@@ -743,7 +784,7 @@ plot_rmd_graph <- function(cfdna_sample, maternal, paternal){
           legend.position = "bottom", legend.title = element_blank(),
           legend.text = element_text(size= 14),
           panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
-    labs(x = "", y = "Molecules", title = paste("Sample:", r_number, " ", "Variant assay:", 
+    labs(x = "", y = "Molecules", title = paste("Sample:", sample_id, " ", "Variant assay:", 
                                                 variant_cfdna_sample$assay, "  ",
                                                 "Fetal fraction assay:", ff_cfdna_sample$assay),
          subtitle = paste(sprt_result_subtitle))
@@ -768,7 +809,7 @@ rmd_30063 <- plot_rmd_graph(30063, "21RG-103G0115", "21RG-103G0117")
 rmd_30068 <- plot_rmd_graph(30068, "21RG-120G0099", "21RG-120G0103")
 rmd_30113 <- plot_rmd_graph(30113, "21RG-126G0134", "")
 rmd_30142 <- plot_rmd_graph(30142, "21RG-083G0112",	"21RG-083G0120")
-rmd_30206 <- plot_rmd_graph(30206, "21RG-120G0092"	, "21RG-120G0097")
+rmd_30206 <- plot_rmd_graph(30206, "21RG-120G0092", "21RG-120G0097")
 rmd_30228 <- plot_rmd_graph(30228, "21RG-103G0061", "21RG-103G0062")
 rmd_30230 <- plot_rmd_graph(30230, "21RG-103G0120", "21RG-103G0122")
 rmd_30065 <- plot_rmd_graph(30065, "21RG-126G0126", "")
@@ -817,6 +858,56 @@ ggsave(filename = "plots/rmd_30078.png", plot =  rmd_30078, dpi = 300)
 ggsave(filename = "plots/rmd_30065.png", plot =  rmd_30065, dpi = 300)
 ggsave(filename = "plots/rmd_13402.png", plot =  rmd_13402, dpi = 300)
 ggsave(filename = "plots/rmd_20939.png", plot =  rmd_20939, dpi = 300)
+
+## Replace the NAs with ""
+## Could have a loop function to plot the graphs for the whole cohort
+# for i in table {
+# plot <- plot_rmd_graph(r_number, mat, pat)
+
+
+
+# Plot individual graphs for each bespoke case
+# X linked cases
+plot_rmd_graph(10280, "18G10515", "") # Needs ZFXY for control
+plot_rmd_graph(11928, "18G10519", "") # Needs ZFXY for control
+plot_rmd_graph(12585, "18G05794", "") # Needs ZFXY for control
+plot_rmd_graph(12945, "18G10521", "") # Needs ZFXY for control
+plot_rmd_graph(13625, "18G10690", "") # Needs ZFXY for control and variant assay at appropriate dilution
+plot_rmd_graph(13965, "18G10691", "")
+plot_rmd_graph(14247, "18G10693", "") # Needs ZFXY for control
+plot_rmd_graph(14917, "18G10694", "") # Needs ZFXY for control
+plot_rmd_graph(16319, "18G05795", "") # Needs ZFXY for control and variant assay at appropriate dilution
+plot_rmd_graph(16468, "18G10769", "") # Needs ZFXY for control and variant assay at appropriate dilution
+plot_rmd_graph(16881, "18G05796", "") # Needs ZFXY for control
+plot_rmd_graph(17667, "21RG-027G0004", "21RG-027G0006") # Need to pull dad's data through
+plot_rmd_graph(18164, "18G05797", "") # Needs ZFXY for control
+plot_rmd_graph(18385, "18G10771", "") # Needs ZFXY for control
+plot_rmd_graph(18891, "18G10772", "")
+plot_rmd_graph(19397, "18G10773", "") # Needs ZFXY for control
+plot_rmd_graph(19611, "21RG-027G0070", "21RG-027G0075")
+plot_rmd_graph(20817, "18G10522", "") # Needs ZFXY for control and variant assay at appropriate dilution
+plot_rmd_graph(20980, "21RG-027G0010", "21RG-027G0014")
+plot_rmd_graph(30030, "21RG-027G0017", "")
+
+# Dominant cases
+plot_rmd_graph(12990, "20RG-148G0079", "")
+plot_rmd_graph(13519, "20RG-307G0060", "20RG-307G0062")
+plot_rmd_graph(14116, "20RG-148G0076", "") 
+plot_rmd_graph(14142, "21RG-047G0089", "21RG-047G0093")
+plot_rmd_graph(14491, "20RG-148G0081", "")
+plot_rmd_graph(14522, "20RG-148G0075", "")
+plot_rmd_graph(19261, "20RG-307G0064", "20RG-307G0070")
+plot_rmd_graph(19711, "20RG-148G0080", "")
+
+# Recessive cases
+plot_rmd_graph(17531, "20RG-336G0056", "") # Need SNP data for control
+plot_rmd_graph(17841, "21RG-047G0111", "21RG-047G0112")
+plot_rmd_graph(19102, "20RG-336G0066", "") # Need SNP data for control
+
+# How many cases have plasma remaining?
+ddpcr_nipd_unblinded %>%
+  filter(variant_assay != "HBB c.20A>T") %>%
+  select(r_number, variant_assay, tubes_plasma_current)
 
 #########################
 # cfDNA Amplifiability
@@ -1091,6 +1182,15 @@ for (dataFile in ddpcr_files){
   rm(tmp_dat)
 }
 
+view(ddpcr_nipd_unblinded %>%
+  select(r_number, variant_assay, tubes_plasma_current))
+
+write.csv(ddpcr_nipd_unblinded, "analysis_outputs/ddpcr_nipd_unblinded.csv", row.names = FALSE)
+
+nrow(scd)
+(17/85)*100
+
+
 #########################
 # Compare pre-amplification and non-pre-amplification results
 #########################
@@ -1243,7 +1343,8 @@ ggplot(LOD_data_longer, aes(x = total_DNA_molecules, y = FractionalAbundance_HbS
 # This part is for plotting ROC curves for the sickle cell 
 # disease data.
 
-mcmc_vs_sprt_scd <- phase3_results %>%
+mcmc_vs_sprt_scd <- ddpcr_nipd_unblinded %>%
+  filter(variant_assay == "HBB c.20A>T" & !r_number %in% samples_to_exclude) %>%
   # Convert invasive results to binary outcomes
   mutate(unbalanced = case_when(
     mutation_genetic_info_fetus %in% c("HbSS", "HbAA") ~"TRUE",
@@ -1258,29 +1359,47 @@ mcmc_vs_sprt_scd <- phase3_results %>%
 
 sprt_roc <- mcmc_vs_sprt_scd %>%
   arrange(desc(Likelihood_ratio)) %>%
-  mutate(true_positive_rate = cumsum(unbalanced)/sum(unbalanced)) %>%
-  mutate(false_positive_rate = cumsum(!unbalanced)/sum(!unbalanced)) %>%
-  mutate(analysis_type = "sprt")%>%
-  select(analysis_type, true_positive_rate, false_positive_rate)
+  mutate(sprt_true_positive_rate = cumsum(unbalanced)/sum(unbalanced)) %>%
+  mutate(sprt_false_positive_rate = cumsum(!unbalanced)/sum(!unbalanced)) %>%
+  select(r_number, Likelihood_ratio, sprt_true_positive_rate, sprt_false_positive_rate, unbalanced)
 
 mcmc_roc <- mcmc_vs_sprt_scd %>%
   arrange(desc(mcmc_hom_call)) %>%
-  mutate(true_positive_rate = cumsum(unbalanced)/sum(unbalanced)) %>%
-  mutate(false_positive_rate = cumsum(!unbalanced)/sum(!unbalanced)) %>%
-  mutate(analysis_type = "mcmc") %>%
-  select(analysis_type, true_positive_rate, false_positive_rate)
+  mutate(mcmc_true_positive_rate = cumsum(unbalanced)/sum(unbalanced)) %>%
+  mutate(mcmc_false_positive_rate = cumsum(!unbalanced)/sum(!unbalanced)) %>%
+  select(r_number, mcmc_hom_call, mcmc_true_positive_rate, mcmc_false_positive_rate)
 
-total_roc <- rbind(sprt_roc, mcmc_roc)
+total_roc <- sprt_roc %>%
+  left_join(mcmc_roc,
+            by = "r_number") %>%
+  select(r_number, Likelihood_ratio, mcmc_hom_call, sprt_true_positive_rate,
+         mcmc_true_positive_rate, sprt_false_positive_rate, mcmc_false_positive_rate, unbalanced)
+
+
+ggplot(total_roc, aes(x = unbalanced, y = Likelihood_ratio))+
+  geom_jitter()+
+  scale_y_log10()+
+  geom_hline(yintercept = 250, linetype = "dashed")
+
+ggplot(total_roc, aes(x = unbalanced, y = mcmc_hom_call))+
+  geom_jitter()
+
+write.csv(sprt_roc, "analysis_outputs/sprt_roc.csv", row.names = FALSE)
+
+write.csv(mcmc_roc, "analysis_outputs/mcmc_roc.csv", row.names = FALSE)
+
 
 ggplot(total_roc, aes(x = false_positive_rate, y = true_positive_rate))+
-  geom_line(size = 2, alpha = 0.2)+
-  facet_wrap(~analysis_type)+
+  geom_line(size = 2, aes(colour = analysis_type))+
   theme_bw()+
+  facet_wrap(~analysis_type)+
   theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
   geom_abline(linetype = "dashed")+
   ylim(0, 1)+
   xlim(0,1)+
   labs(x = "False positive rate", y = "True positive rate", title = "Sickle cell disease ddPCR cohort ROC curve")
+
+view(total_roc)
 
 ############################################################
 # MCMC diagnostic plotting

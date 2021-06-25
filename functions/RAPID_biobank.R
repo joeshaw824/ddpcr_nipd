@@ -118,6 +118,8 @@ RAPID_biobank <- read_excel(paste0(biobank_filepath,biobank_current),
                               "date",
                               #additional_comments
                               "text",
+                              #report_acquired
+                              "text",
                               #Recruited_to_EACH
                               "text",
                               #study_name
