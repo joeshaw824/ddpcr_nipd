@@ -10,8 +10,6 @@
 
 # Load packages
 library(tidyverse)
-library(readxl)
-library(lubridate)
 
 #############################################################
 # ddPCR functions
