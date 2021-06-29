@@ -12,6 +12,15 @@
 ## models supplied by Tristan Snowsill (Exeter).
 #############################################################
 
+## Naming convention
+# For consistency, variables are named as: target_category_qualifier
+# Target examples: variant, reference, paternal, maternal, fetal, difference, 
+#                   major_allele, minor_allele, ff_assay, vf_assay, total
+# Category examples: molecules, fraction, percent, positives
+# Qualifier examples: max, min
+
+# Example: fetal_percent_max
+
 #############################################################
 # Load libraries and resources
 #############################################################
@@ -149,8 +158,8 @@ ddpcr_data_tbl <- pivotted_ddpcr %>%
          num_wells_variant_assay = num_wells_variant) %>%
   
   # Determine the maternal and paternally-inherited alleles for the fetal fraction calculation
-  mutate(Positives_maternal = pmax(Positives_ff_allele1, Positives_ff_allele2),
-         Positives_paternal = pmin(Positives_ff_allele1, Positives_ff_allele2))
+  mutate(maternal_positives = pmax(Positives_ff_allele1, Positives_ff_allele2),
+         paternal_positives = pmin(Positives_ff_allele1, Positives_ff_allele2))
 
 #########################
 # Wrangle gDNA data into shape
@@ -217,8 +226,8 @@ ddpcr_control_tbl_var <- pivotted_controls_var %>%
             .groups="drop") %>%
   # Remove duplicate columns and rename to be compatible with functions
   rename(AcceptedDroplets_Variant_assay = AcceptedDroplets_variant) %>%
-  mutate(Molecules_variant = Poisson_correct(AcceptedDroplets_Variant_assay,Positives_variant)) %>%
-  mutate(Molecules_reference = Poisson_correct(AcceptedDroplets_Variant_assay,Positives_reference))
+  mutate(variant_molecules = Poisson_correct(AcceptedDroplets_Variant_assay,Positives_variant),
+         reference_molecules = Poisson_correct(AcceptedDroplets_Variant_assay,Positives_reference))
 
 # Get the control information for the control wells tested with a fetal fraction assay
 ddpcr_control_tbl_ff <- pivotted_controls_ff %>%
@@ -227,10 +236,10 @@ ddpcr_control_tbl_ff <- pivotted_controls_ff %>%
             .groups="drop") %>%
   # Remove duplicate columns and rename to be compatible with functions
   rename(AcceptedDroplets_FetalFrac = AcceptedDroplets_ff_allele1) %>%
-  mutate(Positives_maternal = pmax(Positives_ff_allele1, Positives_ff_allele2)) %>%
-  mutate(Positives_paternal = pmin(Positives_ff_allele1, Positives_ff_allele2)) %>%
-  mutate(Molecules_maternal = Poisson_correct(AcceptedDroplets_FetalFrac,Positives_maternal)) %>%
-  mutate(Molecules_paternal = Poisson_correct(AcceptedDroplets_FetalFrac,Positives_paternal))
+  mutate(maternal_positives = pmax(Positives_ff_allele1, Positives_ff_allele2),
+         paternal_positives = pmin(Positives_ff_allele1, Positives_ff_allele2),
+         maternal_molecules = Poisson_correct(AcceptedDroplets_FetalFrac,maternal_positives),
+         paternal_molecules = Poisson_correct(AcceptedDroplets_FetalFrac,paternal_positives))
 
 #############################################################
 # cfDNA SPRT analysis
@@ -244,87 +253,130 @@ ddpcr_sprt_analysed <- ddpcr_data_tbl %>%
   # Have to specify dplyr for rename.
   dplyr::rename(r_number = Sample) %>%
   
-  # Perform Poisson correction to determine the total number of molecules detected for each species.
-  mutate(Molecules_variant = Poisson_correct(AcceptedDroplets_Variant_assay,Positives_variant), 
-         Molecules_reference = Poisson_correct(AcceptedDroplets_Variant_assay,Positives_reference),   
-         Molecules_maternal = Poisson_correct(AcceptedDroplets_FetalFrac,Positives_maternal),
-         Molecules_paternal = Poisson_correct(AcceptedDroplets_FetalFrac,Positives_paternal),
+  # Perform Poisson correction to determine the total number of molecules detected for each target.
+  mutate(variant_molecules = Poisson_correct(AcceptedDroplets_Variant_assay,Positives_variant), 
+         reference_molecules = Poisson_correct(AcceptedDroplets_Variant_assay,Positives_reference),   
          
-         # Find the total number of molecules for each assay
-         Molecules_variant_assay = Molecules_variant + Molecules_reference,
-         Molecules_ff_assay = Molecules_maternal + Molecules_paternal,
-         Molecules_total = Molecules_variant_assay + Molecules_ff_assay,
-         
-         # Calculate the fetal fraction
-         Fetal_fraction = calc_ff(Molecules_maternal, Molecules_paternal),
-         
-         # Convert to a percentage in case I want to print as a table later on (percentages are easier to look at than decimals)
-         Fetal_fraction_percent = Fetal_fraction*100,
+         vf_assay_molecules = variant_molecules + reference_molecules,
          
          # Calculate the fractional abundance of each allele
-         Reference_fraction = Molecules_reference / Molecules_variant_assay,
-         Variant_fraction = Molecules_variant / Molecules_variant_assay,
-         Variant_fraction_percent  = Variant_fraction * 100,
+         reference_fraction = reference_molecules / vf_assay_molecules,
+         variant_fraction = variant_molecules / vf_assay_molecules,
+         variant_percent  = variant_fraction * 100,
+         reference_percent  = reference_fraction * 100,
          
-         # Calculate the fraction of the overrepresented allele
-         Over_represented_fraction = pmax(Reference_fraction, Variant_fraction),
-         Over_represented_fraction_percent = (pmax(Reference_fraction, Variant_fraction))*100,
-
+         # Select the major (over-represented) and minor (under-represented) alleles
+         major_allele = case_when(
+           # If both fractions are exactly 50, then the variant is arbitrarily chosen as the over
+           # represented allele
+           variant_percent >= reference_percent ~ "variant allele",
+           reference_percent > variant_percent ~ "reference allele"),
+         
+         minor_allele = case_when(
+           major_allele == "variant allele" ~ "reference allele",
+           major_allele == "reference allele" ~ "variant allele"),
+         
+         # Choose the percentage of the major and minor alleles
+         major_allele_percent = case_when(
+           major_allele == "variant allele" ~variant_percent,
+           major_allele == "reference allele" ~reference_percent),
+         
+         # Choose the molecules for each allele
+         major_allele_molecules = case_when(
+           major_allele == "variant allele" ~variant_molecules,
+           major_allele == "reference allele" ~reference_molecules),
+         
+         minor_allele_molecules = case_when(
+           minor_allele == "variant allele" ~variant_molecules,
+           minor_allele == "reference allele" ~reference_molecules),
+         
          # Find the difference between the numbers of molecules for each allele
-         Molecules_difference = abs(Molecules_reference - Molecules_variant),
-         
-         # Find the predicted difference between each allele if the fetus was homozygous
-         Molecules_difference_autosomal_predicted = Molecules_variant_assay * (Fetal_fraction/2),
-         
-         Molecules_observed_expected_ratio = Molecules_difference / Molecules_difference_autosomal_predicted,
+         difference_molecules = abs(major_allele_molecules - minor_allele_molecules),
          
          # Calculate the 95% confidence intervals of the numbers of molecules for each allele
-         Molecules_variant_max = Poisson_max((Molecules_variant / AcceptedDroplets_Variant_assay), AcceptedDroplets_Variant_assay),
-         Molecules_variant_min = Poisson_min((Molecules_variant / AcceptedDroplets_Variant_assay), AcceptedDroplets_Variant_assay),
-         Molecules_reference_max = Poisson_max((Molecules_reference / AcceptedDroplets_Variant_assay), AcceptedDroplets_Variant_assay),
-         Molecules_reference_min = Poisson_min((Molecules_reference / AcceptedDroplets_Variant_assay), AcceptedDroplets_Variant_assay),
-         Molecules_paternal_max = Poisson_max((Molecules_paternal / AcceptedDroplets_FetalFrac), AcceptedDroplets_FetalFrac),
-         Molecules_paternal_min = Poisson_min((Molecules_paternal / AcceptedDroplets_FetalFrac), AcceptedDroplets_FetalFrac),
-         Molecules_maternal_max = Poisson_max((Molecules_maternal / AcceptedDroplets_FetalFrac), AcceptedDroplets_FetalFrac),
-         Molecules_maternal_min = Poisson_min((Molecules_maternal / AcceptedDroplets_FetalFrac), AcceptedDroplets_FetalFrac),
+         variant_molecules_max = Poisson_max((variant_molecules / AcceptedDroplets_Variant_assay), AcceptedDroplets_Variant_assay),
+         variant_molecules_min = Poisson_min((variant_molecules / AcceptedDroplets_Variant_assay), AcceptedDroplets_Variant_assay),
+         reference_molecules_max = Poisson_max((reference_molecules / AcceptedDroplets_Variant_assay), AcceptedDroplets_Variant_assay),
+         reference_molecules_min = Poisson_min((reference_molecules / AcceptedDroplets_Variant_assay), AcceptedDroplets_Variant_assay),
          
-         # Calculate the 95% confidence intervals of the numbers of molecules detected by each assay
-         Molecules_variant_assay_max = Poisson_max((Molecules_variant_assay/AcceptedDroplets_Variant_assay), AcceptedDroplets_Variant_assay),
-         Molecules_variant_assay_min = Poisson_min((Molecules_variant_assay/AcceptedDroplets_Variant_assay), AcceptedDroplets_Variant_assay),
-         Molecules_ff_assay_max = Poisson_max((Molecules_ff_assay/AcceptedDroplets_FetalFrac), AcceptedDroplets_FetalFrac),
-         Molecules_ff_assay_min = Poisson_min((Molecules_ff_assay/AcceptedDroplets_FetalFrac), AcceptedDroplets_FetalFrac),
+         major_allele_molecules_max = case_when(
+           major_allele == "variant allele" ~variant_molecules_max,
+           major_allele == "reference allele" ~reference_molecules_max),
+         
+         major_allele_molecules_min = case_when(
+           major_allele == "variant allele" ~variant_molecules_min,
+           major_allele == "reference allele" ~reference_molecules_min),
+         
+         minor_allele_molecules_max = case_when(
+           minor_allele == "variant allele" ~variant_molecules_max,
+           minor_allele == "reference allele" ~reference_molecules_max),
+         
+         minor_allele_molecules_min = case_when(
+           minor_allele == "variant allele" ~variant_molecules_min,
+           minor_allele == "reference allele" ~reference_molecules_min),
+         
+         difference_molecules_max = major_allele_molecules_max - minor_allele_molecules_min,
+         difference_molecules_min = major_allele_molecules_min - minor_allele_molecules_max,
          
          # Calculate the 95% confidence intervals of the fractional abundances
-         Variant_fraction_max_percent = (Poisson_fraction_max(Molecules_variant_max, Molecules_reference))*100,
-         Variant_fraction_min_percent = (Poisson_fraction_min(Molecules_variant_min, Molecules_reference))*100,
-         Reference_fraction_max_percent = (Poisson_fraction_max(Molecules_reference_max, Molecules_variant))*100,
-         Reference_fraction_min_percent = (Poisson_fraction_min(Molecules_reference_min, Molecules_variant))*100,
-         Over_represented_fraction_max_percent = pmax(Variant_fraction_max_percent, Reference_fraction_max_percent),
-         Over_represented_fraction_min_percent = pmax(Variant_fraction_min_percent, Reference_fraction_min_percent),
+         variant_percent_max = (Poisson_fraction_max(variant_molecules_max, reference_molecules))*100,
+         variant_percent_min = (Poisson_fraction_min(variant_molecules_min, reference_molecules))*100,
+         reference_percent_max = (Poisson_fraction_max(reference_molecules_max, variant_molecules))*100,
+         reference_percent_min = (Poisson_fraction_min(reference_molecules_min, variant_molecules))*100,
          
-         # Calculate the over-represented fraction "deviation" from 50%
-         Over_represented_fraction_deviation = Over_represented_fraction_percent - 50,
-         Over_represented_fraction_deviation_max = Over_represented_fraction_max_percent - 50,
-         Over_represented_fraction_deviation_min = Over_represented_fraction_min_percent - 50,
+         major_allele_percent_max = case_when(
+           major_allele == "variant allele" ~variant_percent_max,
+           major_allele == "reference allele" ~reference_percent_max),
          
-         # When calculating for the fetal fraction, the paternal fraction must be multiplied by 2.
-         Fetal_fraction_max_percent = 200* (Poisson_fraction_max(Molecules_paternal_max, Molecules_maternal)),
-         Fetal_fraction_min_percent = 200* (Poisson_fraction_min(Molecules_paternal_min, Molecules_maternal)),
+         major_allele_percent_min = case_when(
+           major_allele == "variant allele" ~variant_percent_min,
+           major_allele == "reference allele" ~reference_percent_min),
          
-         # Perform SPRT and return the likelihood ratio
-         Likelihood_ratio = case_when(
-           Inheritance_chromosomal == "x_linked" ~ calc_LR_X_linked(Fetal_fraction, Over_represented_fraction, Molecules_variant_assay),
-           Inheritance_chromosomal == "autosomal" ~ calc_LR_autosomal(Fetal_fraction, Over_represented_fraction, Molecules_variant_assay)),
+         # Calculate the 95% confidence intervals of the numbers of molecules detected by each assay
+         vf_assay_molecules_max = Poisson_max((vf_assay_molecules/AcceptedDroplets_Variant_assay), AcceptedDroplets_Variant_assay),
+         vf_assay_molecules_min = Poisson_min((vf_assay_molecules/AcceptedDroplets_Variant_assay), AcceptedDroplets_Variant_assay),
          
-         # Classify based on likelihood ratio threshold supplied
-         # Fetal genotype predictions are named consistently as "inconclusive", "heterozygous", "homozygous/hemizygous reference/variant"
-         SPRT_prediction = case_when(
-           Inheritance_chromosomal == "autosomal" & Likelihood_ratio > LR_threshold & Over_represented_fraction == Reference_fraction ~ "homozygous reference",
-           Inheritance_chromosomal == "autosomal" & Likelihood_ratio > LR_threshold & Over_represented_fraction == Variant_fraction ~ "homozygous variant",
+         
+        # Perform the same process for the fetal fraction assay
+        
+        maternal_molecules = Poisson_correct(AcceptedDroplets_FetalFrac,maternal_positives),
+        paternal_molecules = Poisson_correct(AcceptedDroplets_FetalFrac,paternal_positives),
+        
+        # Calculate the fetal fraction
+        fetal_fraction = calc_ff(maternal_molecules, paternal_molecules),
+        fetal_percent = fetal_fraction*100,
+        
+        ff_assay_molecules = maternal_molecules + paternal_molecules,
+        total_molecules = vf_assay_molecules + ff_assay_molecules,
+        
+        
+        paternal_molecules_max = Poisson_max((paternal_molecules / AcceptedDroplets_FetalFrac), AcceptedDroplets_FetalFrac),
+        paternal_molecules_min = Poisson_min((paternal_molecules / AcceptedDroplets_FetalFrac), AcceptedDroplets_FetalFrac),
+
+        maternal_molecules_max = Poisson_max((maternal_molecules / AcceptedDroplets_FetalFrac), AcceptedDroplets_FetalFrac),
+        maternal_molecules_min = Poisson_min((maternal_molecules / AcceptedDroplets_FetalFrac), AcceptedDroplets_FetalFrac),
+         
+        ff_assay_molecules_max = Poisson_max((ff_assay_molecules/AcceptedDroplets_FetalFrac), AcceptedDroplets_FetalFrac),
+        ff_assay_molecules_min = Poisson_min((ff_assay_molecules/AcceptedDroplets_FetalFrac), AcceptedDroplets_FetalFrac),
+        
+        # When calculating for the fetal fraction, the paternal fraction must be multiplied by 2.
+        fetal_percent_max = 200* (Poisson_fraction_max(paternal_molecules_max, maternal_molecules)),
+        fetal_percent_min = 200* (Poisson_fraction_min(paternal_molecules_min, maternal_molecules)),
+         
+        # Perform SPRT and return the likelihood ratio
+        Likelihood_ratio = case_when(
+           Inheritance_chromosomal == "x_linked" ~ calc_LR_X_linked(fetal_fraction, (major_allele_percent/100), vf_assay_molecules),
+           Inheritance_chromosomal == "autosomal" ~ calc_LR_autosomal(fetal_fraction, (major_allele_percent/100), vf_assay_molecules)),
+         
+        # Classify based on likelihood ratio threshold supplied
+        # Fetal genotype predictions are named consistently as "inconclusive", "heterozygous", "homozygous/hemizygous reference/variant"
+        SPRT_prediction = case_when(
+           Inheritance_chromosomal == "autosomal" & Likelihood_ratio > LR_threshold & major_allele == "reference allele" ~ "homozygous reference",
+           Inheritance_chromosomal == "autosomal" & Likelihood_ratio > LR_threshold & major_allele == "variant allele" ~ "homozygous variant",
            Inheritance_chromosomal == "autosomal" & Likelihood_ratio < (1/LR_threshold) ~ "heterozygous",
            Inheritance_chromosomal == "autosomal" & Likelihood_ratio < LR_threshold & Likelihood_ratio > (1/LR_threshold) ~ "inconclusive",
-           Inheritance_chromosomal == "x_linked" & Likelihood_ratio > LR_threshold & Over_represented_fraction == Reference_fraction ~ "hemizygous reference",
-           Inheritance_chromosomal == "x_linked" & Likelihood_ratio > LR_threshold & Over_represented_fraction == Variant_fraction ~ "hemizygous variant",
+           Inheritance_chromosomal == "x_linked" & Likelihood_ratio > LR_threshold & major_allele == "reference allele" ~ "hemizygous reference",
+           Inheritance_chromosomal == "x_linked" & Likelihood_ratio > LR_threshold & major_allele == "variant allele" ~ "hemizygous variant",
            Inheritance_chromosomal == "x_linked" & Likelihood_ratio < LR_threshold ~ "inconclusive"),
          
          Call = ifelse(SPRT_prediction == "no call", "no call", "call"))
@@ -348,8 +400,8 @@ ddpcr_data_mcmc <- ddpcr_data_tbl %>%
                 K_M = Positives_variant,
                 K_N = Positives_reference,
                 n_Z = AcceptedDroplets_FetalFrac,
-                Z_X = Positives_maternal,
-                Z_Y = Positives_paternal) %>%
+                Z_X = maternal_positives,
+                Z_Y = paternal_positives) %>%
   arrange(Inheritance_chromosomal, Inheritance_pattern, variant_assay) %>%
   select(r_number, Inheritance_chromosomal, Inheritance_pattern, variant_assay, n_K, n_Z, 
          K_N, K_M, n_Z, Z_X, Z_Y)
@@ -520,14 +572,15 @@ scd_ddpcr <- ddpcr_nipd_unblinded %>%
   # statistical analyses and the technical data (see paper draft v8)
   
   mutate(algorithm_prediction = case_when(
-    (SPRT_prediction == "heterozygous" | mcmc_prediction == "heterozygous") & Variant_fraction_percent > 48.9 &
-      Variant_fraction_percent < 51.1 ~"heterozygous",
+    (SPRT_prediction == "heterozygous" | mcmc_prediction == "heterozygous") & variant_percent > 48.9 &
+      variant_percent < 51.1 &
+      difference_molecules < 200 ~"heterozygous",
     
     (SPRT_prediction == "homozygous reference" | mcmc_prediction == "homozygous reference") & 
-      Variant_fraction_percent < 48.9 ~"homozygous reference",
+      variant_percent < 48.9 & difference_molecules > 200 ~"homozygous reference",
     
     (SPRT_prediction == "homozygous variant" | mcmc_prediction == "homozygous variant") & 
-      Variant_fraction_percent > 51.1 ~"homozygous variant",
+      variant_percent > 51.1 & difference_molecules > 200 ~"homozygous variant",
     
     TRUE ~"inconclusive"),
     
@@ -545,12 +598,6 @@ scd_ddpcr <- ddpcr_nipd_unblinded %>%
       
       cohort = ifelse(r_number %in% secondary_cohort, "secondary", "primary"))
 
-
-scd_ddpcr %>%
-  filter(algorithm_prediction == "inconclusive") %>%
-  select(r_number, algorithm_prediction, Fetal_fraction_percent, Molecules_variant_assay)
-
-median(scd_ddpcr$Molecules_variant_assay)
 
 # Table
 scd_paper_table <- ddpcr_nipd_unblinded %>%
@@ -582,13 +629,13 @@ scd_paper_table <- ddpcr_nipd_unblinded %>%
 
 write.csv(scd_paper_table, "analysis_outputs/scd_paper_table.csv", row.names = FALSE)
 
-
 #########################
 # Cohort plots
 #########################
+no_gridlines <- theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
 
 # Plot the results of fetal fraction versus variant fraction, including inconclusive results.
-ggplot(scd_ddpcr, aes(x = Fetal_fraction_percent, y = Variant_fraction_percent))+
+ggplot(scd_ddpcr, aes(x =fetal_percent, y = variant_percent))+
   # Add colours for the classifications. Also put them in the right order for the legend: homozygous
   # variant at the top
   # 0000FF is dark blue
@@ -601,8 +648,8 @@ ggplot(scd_ddpcr, aes(x = Fetal_fraction_percent, y = Variant_fraction_percent))
                     breaks=c("homozygous variant", "heterozygous", "inconclusive", "homozygous reference"))+
   geom_point(size = 8, aes(fill = algorithm_prediction), colour="black", pch=21, alpha = 0.8)+
   scale_colour_manual(values = c("#FFFFFF"))+
-  geom_errorbarh(alpha = 0.2, aes(xmin = Fetal_fraction_min_percent, xmax = Fetal_fraction_max_percent)) +
-  geom_errorbar(alpha = 0.2, aes(ymin = Variant_fraction_min_percent, ymax = Variant_fraction_max_percent))+
+  geom_errorbarh(alpha = 0.2, aes(xmin = fetal_percent_min, xmax = fetal_percent_max)) +
+  geom_errorbar(alpha = 0.2, aes(ymin = variant_percent_min, ymax = variant_percent_max))+
   fifty_percent_line +
   theme_bw()+
   ylim(42, 58)+
@@ -613,18 +660,24 @@ ggplot(scd_ddpcr, aes(x = Fetal_fraction_percent, y = Variant_fraction_percent))
         panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
   labs(x = "Fetal fraction (%)", y = "Variant fraction (%)")
 
-
 ggplot(scd_ddpcr, aes(x = Gestation_total_weeks, y = Fetal_fraction_percent))+
   geom_point(size = 3, alpha = 0.4)+
   geom_errorbar(alpha = 0.2, aes(ymin = Fetal_fraction_min_percent, ymax = Fetal_fraction_max_percent))+  
   theme_bw()+
   xlim(0, 40)
 
-to_view <- scd_ddpcr %>%
-  select(r_number, SPRT_prediction, mcmc_prediction, algorithm_prediction, mutation_genetic_info_fetus)
+count(scd_ddpcr, algorithm_prediction, mutation_genetic_info_fetus)
 
-median(scd_ddpcr$Gestation_total_weeks)
-min(scd_ddpcr$Fetal_fraction_percent)
+# Primary and secondary cohort plot
+primary_secondary_cohort_plot <- ggplot(scd_ddpcr, aes(x = cohort, y = Molecules_variant_assay))+
+  geom_boxplot()+
+  theme_bw()+
+  ylim(0, 35000)+
+  no_gridlines+
+  labs(y = "Total molecules detected by HBB c.20A>T ddPCR", x = "",
+       title = "Molecules detected by HBB c.20A>T ddPCR in primary and secondary cfDNA cohorts")
+
+ggsave(filename = "plots/primary_secondary_cohort_plot.png", plot =  primary_secondary_cohort_plot, dpi = 300)
 
 #########################
 # RMD plot function
@@ -687,7 +740,7 @@ plot_rmd_graph <- function(cfdna_sample, maternal, paternal){
       identity == "paternal gDNA" ~pmax(Positives_ff_allele1, Positives_ff_allele2),
       identity == "maternal gDNA" ~ pmin(Positives_ff_allele1, Positives_ff_allele2))) %>% 
     mutate(Molecules_maternal = Poisson_correct(AcceptedDroplets_FetalFrac,Positives_maternal)) %>%
-    mutate(Molecules_paternal = Poisson_correct(AcceptedDroplets_FetalFrac,Positives_paternal))
+    mutate(paternal_molecules = Poisson_correct(AcceptedDroplets_FetalFrac,Positives_paternal))
   
   ddpcr_control_tbl_var_id <- ddpcr_control_tbl_var %>%
     left_join(controls %>%
@@ -711,7 +764,7 @@ plot_rmd_graph <- function(cfdna_sample, maternal, paternal){
   # Get the parental control ff information
   control_ff_all <- ddpcr_control_tbl_ff_id_molecules %>%
     select(Worksheet_well, ff_assay, AcceptedDroplets_FetalFrac, Molecules_maternal,
-           Molecules_paternal, identity) %>%
+           paternal_molecules, identity) %>%
     pivot_longer(
       cols = !c(Worksheet_well, ff_assay, AcceptedDroplets_FetalFrac, identity),
       names_to = "Target",
@@ -944,8 +997,6 @@ ddpcr_nipd_unblinded %>%
 
 scd_qubit <- read_excel("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/ddPCR Worksheets/scd_labwork_plan.xlsx", sheet = "scd_labwork_plan")
 
-no_gridlines <- theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
-
 phase3_results <- left_join(ddpcr_nipd_unblinded %>%
                   filter(r_number %in% phase3_samples),
                 scd_qubit %>%
@@ -1078,33 +1129,104 @@ parents_downsampled <- ddpcr_data %>%
   pivot_wider(id_cols = worksheet_sample,
               names_from = Target,
               values_from = c(AcceptedDroplets, Positives)) %>%
-  mutate(molecules_HbS = Poisson_correct(AcceptedDroplets_HbS, Positives_HbS),
-         molecules_HbA = Poisson_correct(AcceptedDroplets_HbS, Positives_HbA),
-         molecules_HbS_max = Poisson_max((molecules_HbS / AcceptedDroplets_HbS), AcceptedDroplets_HbS),
-         molecules_HbS_min = Poisson_min((molecules_HbS / AcceptedDroplets_HbS), AcceptedDroplets_HbS),
-         Variant_fraction_max_percent = (Poisson_fraction_max(molecules_HbS_max , molecules_HbA))*100,
-         Variant_fraction_min_percent = (Poisson_fraction_min(molecules_HbS_min, molecules_HbA))*100,
-         Molecules_variant_assay = molecules_HbS + molecules_HbA,
-         molecules_difference = pmax(molecules_HbS, molecules_HbA) - pmin(molecules_HbS, molecules_HbA),
-         variant_fraction = (molecules_HbS / (molecules_HbS+molecules_HbA))*100,
-         
-         sample_type = "gDNA",
-         genotype = "het gDNA")
+  dplyr::rename(AcceptedDroplets_Variant_assay =AcceptedDroplets_HbS) %>%
+  
+  mutate(
+    reference_molecules = Poisson_correct(AcceptedDroplets_Variant_assay, Positives_HbA),
+    variant_molecules = Poisson_correct(AcceptedDroplets_Variant_assay, Positives_HbS),
+    
+    vf_assay_molecules = variant_molecules + reference_molecules,
+    
+    # Calculate the fractional abundance of each allele
+    reference_fraction = reference_molecules / vf_assay_molecules,
+    variant_fraction = variant_molecules / vf_assay_molecules,
+    variant_percent  = variant_fraction * 100,
+    reference_percent  = reference_fraction * 100,
+    
+    # Select the major (over-represented) and minor (under-represented) alleles
+    major_allele = case_when(
+      # If both fractions are exactly 50, then the variant is arbitrarily chosen as the over
+      # represented allele
+      variant_percent >= reference_percent ~ "variant allele",
+      reference_percent > variant_percent ~ "reference allele"),
+    
+    minor_allele = case_when(
+      major_allele == "variant allele" ~ "reference allele",
+      major_allele == "reference allele" ~ "variant allele"),
+    
+    # Choose the percentage of the major and minor alleles
+    major_allele_percent = case_when(
+      major_allele == "variant allele" ~variant_percent,
+      major_allele == "reference allele" ~reference_percent),
+    
+    # Choose the molecules for each allele
+    major_allele_molecules = case_when(
+      major_allele == "variant allele" ~variant_molecules,
+      major_allele == "reference allele" ~reference_molecules),
+    
+    minor_allele_molecules = case_when(
+      minor_allele == "variant allele" ~variant_molecules,
+      minor_allele == "reference allele" ~reference_molecules),
+    
+    # Find the difference between the numbers of molecules for each allele
+    difference_molecules = abs(major_allele_molecules - minor_allele_molecules),
+    
+    # Calculate the 95% confidence intervals of the numbers of molecules for each allele
+    variant_molecules_max = Poisson_max((variant_molecules / AcceptedDroplets_Variant_assay), AcceptedDroplets_Variant_assay),
+    variant_molecules_min = Poisson_min((variant_molecules / AcceptedDroplets_Variant_assay), AcceptedDroplets_Variant_assay),
+    reference_molecules_max = Poisson_max((reference_molecules / AcceptedDroplets_Variant_assay), AcceptedDroplets_Variant_assay),
+    reference_molecules_min = Poisson_min((reference_molecules / AcceptedDroplets_Variant_assay), AcceptedDroplets_Variant_assay),
+    
+    major_allele_molecules_max = case_when(
+      major_allele == "variant allele" ~variant_molecules_max,
+      major_allele == "reference allele" ~reference_molecules_max),
+    
+    major_allele_molecules_min = case_when(
+      major_allele == "variant allele" ~variant_molecules_min,
+      major_allele == "reference allele" ~reference_molecules_min),
+    
+    minor_allele_molecules_max = case_when(
+      minor_allele == "variant allele" ~variant_molecules_max,
+      minor_allele == "reference allele" ~reference_molecules_max),
+    
+    minor_allele_molecules_min = case_when(
+      minor_allele == "variant allele" ~variant_molecules_min,
+      minor_allele == "reference allele" ~reference_molecules_min),
+    
+    difference_molecules_max = major_allele_molecules_max - minor_allele_molecules_min,
+    difference_molecules_min = major_allele_molecules_min - minor_allele_molecules_max,
+    
+    # Calculate the 95% confidence intervals of the fractional abundances
+    variant_percent_max = (Poisson_fraction_max(variant_molecules_max, reference_molecules))*100,
+    variant_percent_min = (Poisson_fraction_min(variant_molecules_min, reference_molecules))*100,
+    reference_percent_max = (Poisson_fraction_max(reference_molecules_max, variant_molecules))*100,
+    reference_percent_min = (Poisson_fraction_min(reference_molecules_min, variant_molecules))*100,
+    
+    major_allele_percent_max = case_when(
+      major_allele == "variant allele" ~variant_percent_max,
+      major_allele == "reference allele" ~reference_percent_max),
+    
+    major_allele_percent_min = case_when(
+      major_allele == "variant allele" ~variant_percent_min,
+      major_allele == "reference allele" ~reference_percent_min),
+
+    sample_type = "gDNA",
+    genotype = "het gDNA")
 
 parents_downsampled_bind <- parents_downsampled %>%
   dplyr::rename(r_number = worksheet_sample,
-                algorithm_prediction = genotype,
-                Molecules_difference = molecules_difference,
-                Variant_fraction_percent = variant_fraction) %>%
-  select(r_number, algorithm_prediction, Molecules_variant_assay, sample_type, Molecules_difference,
-         Variant_fraction_percent, Variant_fraction_max_percent, Variant_fraction_min_percent)
-
+                algorithm_prediction = genotype) %>%
+  select(r_number, algorithm_prediction, vf_assay_molecules, sample_type, 
+         variant_molecules, reference_molecules,
+         variant_percent, variant_percent_max, variant_percent_min,
+         difference_molecules, difference_molecules_max, difference_molecules_min)
+         
 cfDNA_compare <- scd_ddpcr %>%
   mutate(sample_type = "cfDNA") %>%
-  select(r_number, algorithm_prediction, Molecules_variant_assay, 
-         sample_type, Molecules_difference,
-         Variant_fraction_percent, Variant_fraction_max_percent, 
-         Variant_fraction_min_percent)
+  select(r_number, algorithm_prediction, vf_assay_molecules, sample_type, 
+         variant_molecules, reference_molecules,
+         variant_percent, variant_percent_max, variant_percent_min,
+         difference_molecules, difference_molecules_max, difference_molecules_min)
 
 # Bind cfDNA and genomic DNA results together
 cfDNA_gDNA_bind <- rbind(cfDNA_compare, parents_downsampled_bind) %>%
@@ -1121,10 +1243,9 @@ cfDNA_gDNA_bind <- rbind(cfDNA_compare, parents_downsampled_bind) %>%
       algorithm_prediction == "homozygous variant" ~"unbalanced",
       algorithm_prediction == "het gDNA" ~"het gDNA",
       algorithm_prediction == "inconclusive" ~ "inconclusive"))
-
-
+    
 # Downsampling plot
-downsampling_plot <- ggplot(cfDNA_gDNA_bind, aes(x = sample_type, y = Molecules_variant_assay))+
+downsampling_plot <- ggplot(cfDNA_gDNA_bind, aes(x = sample_type, y = vf_assay_molecules))+
   geom_boxplot()+
   theme_bw()+
   no_gridlines+
@@ -1144,27 +1265,18 @@ cfDNA_gDNA_bind$x_axis_label <- factor(cfDNA_gDNA_bind$x_axis_label, levels = c(
 cfDNA_gDNA_bind$balanced_or_not <- factor(cfDNA_gDNA_bind$balanced_or_not, levels = c("het gDNA", "het cfDNA", "unbalanced",
                                                                                "inconclusive"))
 
-to_view <- scd_ddpcr %>%
-  filter(overall_prediction == "inconclusive") %>%
-  select(r_number, Variant_fraction_percent, Fetal_fraction_percent, Molecules_difference,
-         Likelihood_ratio, overall_prediction)
-
-
-ggplot(scd_ddpcr, aes( x= overall_prediction, y = mutation_genetic_info_fetus, colour = overall_prediction))+
-  geom_jitter()
-
-
 # Organise data for variant fraction plot
 variant_fraction_data <- cfDNA_gDNA_bind %>%
-  arrange(x_axis_label, Variant_fraction_percent) %>%
+  arrange(x_axis_label, variant_percent) %>%
   # Fix the order of samples
   mutate(row_number = as.numeric(row.names(cfDNA_gDNA_bind)))
 
 # Variant fraction plot
-variant_fraction_plot <- ggplot(variant_fraction_data %>%
-                                  filter(x_axis_label != "inconclusive"), aes(x = row_number, y = Variant_fraction_percent, colour = x_axis_label))+
-  geom_errorbar(colour = "black", aes(ymin = Variant_fraction_min_percent, ymax = Variant_fraction_max_percent))+
-  scale_fill_manual(values=c("#0000FF", "#000000", "#99CCFF", "#FF0000", "#999999"))+
+variant_fraction_plot <- ggplot(variant_fraction_data, aes(x = row_number, y = variant_percent, colour = x_axis_label))+
+  geom_errorbar(colour = "black", aes(ymin = variant_percent_min, ymax = variant_percent_max))+
+  # "#0000FF" = dark blue; "#FFFFFF" = white; "#99CCFF" = light blue
+  # "#000000" = black; "#999999" = grey
+  scale_fill_manual(values=c("#0000FF", "#FFFFFF", "#99CCFF", "#000000", "#999999"))+
   geom_point(size = 4, aes(fill = x_axis_label), colour = "black", pch=21)+
   theme_bw()+
   theme(axis.text.x = element_blank())+
@@ -1183,12 +1295,127 @@ ggsave(filename = "plots/variant_fraction_plot.png", plot = variant_fraction_plo
 
 # Organise data for molecules of difference plot
 molecules_difference_data <- cfDNA_gDNA_bind %>%
-  arrange(balanced_or_not, Molecules_difference) %>%
+  arrange(balanced_or_not, difference_molecules) %>%
   mutate(row_number = as.numeric(row.names(cfDNA_gDNA_bind)))
 
+
+ggplot(molecules_difference_data, aes(x = difference_molecules, y = variant_percent))+
+  scale_fill_manual(values=c("#0000FF", "#FFFFFF", "#99CCFF", "#000000", "#999999"))+
+  geom_point(size = 4, aes(fill = x_axis_label), colour = "black", pch=21, alpha = 0.5)+
+  theme_bw()+
+  no_gridlines+
+  scale_x_log10()+
+  geom_hline(yintercept = 51.1, linetype = "dashed")+
+  geom_hline(yintercept = 48.9, linetype = "dashed")+
+  geom_vline(xintercept = 200, linetype = "dashed")
+
+# Change factor level for plot legend
+molecules_difference_data$x_axis_label <- factor(molecules_difference_data$x_axis_label, levels = c(
+                                                                                "gDNA (heterozgous)", 
+                                                                                "cfDNA (heterozygous)",
+                                                                                "cfDNA (homozygous reference)",
+                                                                                "cfDNA (homozygous variant)",
+                                                                                "inconclusive"))
+hetgDNA_data <- cfDNA_gDNA_bind %>%
+  filter(algorithm_prediction == "het gDNA") %>%
+  select(r_number, algorithm_prediction, variant_molecules, reference_molecules) %>%
+  arrange(algorithm_prediction, variant_molecules)
+
+
+hetgDNA_data2 <- hetgDNA_data %>%
+  mutate(row_number = as.numeric(row.names(hetgDNA_data)))%>%
+  pivot_longer(
+    cols = c(variant_molecules, reference_molecules),
+    names_to = "target",
+    values_to = "count")
+
+hetcfDNA_data <- cfDNA_gDNA_bind %>%
+  filter(algorithm_prediction == "heterozygous") %>%
+  select(r_number, algorithm_prediction, variant_molecules, reference_molecules) %>%
+  arrange(algorithm_prediction, variant_molecules)
+
+hetcfDNA_data2 <- hetcfDNA_data %>%
+  mutate(row_number = as.numeric(row.names(hetcfDNA_data)))%>%
+  pivot_longer(
+    cols = c(variant_molecules, reference_molecules),
+    names_to = "target",
+    values_to = "count")
+
+homref_data <- cfDNA_gDNA_bind %>%
+  filter(algorithm_prediction == "homozygous reference") %>%
+  select(r_number, algorithm_prediction, variant_molecules, reference_molecules) %>%
+  arrange(algorithm_prediction, variant_molecules)
+
+homref_data2 <- homref_data %>%
+  mutate(row_number = as.numeric(row.names(homref_data)))%>%
+  pivot_longer(
+    cols = c(variant_molecules, reference_molecules),
+    names_to = "target",
+    values_to = "count")
+
+homvar_data <- cfDNA_gDNA_bind %>%
+  filter(algorithm_prediction == "homozygous variant") %>%
+  select(r_number, algorithm_prediction, variant_molecules, reference_molecules) %>%
+  arrange(algorithm_prediction, variant_molecules)
+
+homvar_data2 <- homvar_data %>%
+  mutate(row_number = as.numeric(row.names(homvar_data)))%>%
+  pivot_longer(
+    cols = c(variant_molecules, reference_molecules),
+    names_to = "target",
+    values_to = "count")
+
+incon_data <- cfDNA_gDNA_bind %>%
+  filter(algorithm_prediction == "inconclusive") %>%
+  select(r_number, algorithm_prediction, variant_molecules, reference_molecules) %>%
+  arrange(algorithm_prediction, variant_molecules)
+
+incon_data2 <- incon_data %>%
+  mutate(row_number = as.numeric(row.names(incon_data)))%>%
+  pivot_longer(
+    cols = c(variant_molecules, reference_molecules),
+    names_to = "target",
+    values_to = "count")
+
+
+# Fix the order of samples
+
+hetgDNA_data_plot <- hetgDNA_data %>%
+  mutate(row_number = as.numeric(row.names(hetgDNA_data)))
+
+plot_function <- function(dataset) {
+  plot = ggplot(dataset, aes(x = row_number, y = count, fill = target))+
+  geom_col(width = 0.7, position = "dodge", colour="black", alpha = 0.4)+
+    scale_fill_manual(values = c("#3366FF", "#FF0000"))+
+    xlim(0, 43)+
+    ylim(0, 17000)+
+  theme_bw()+
+  labs(y = "Molecules detected")+
+  theme(axis.text.x=element_blank(), axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 18),
+        legend.position = "bottom", legend.title = element_blank(),
+        legend.text = element_text(size= 14),
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+  return(plot)
+}
+
+plot_function(hetgDNA_data2)
+plot_function(hetcfDNA_data2)
+plot_function(homref_data2)
+# 15000
+plot_function(homvar_data2)
+plot_function(incon_data2)
+
+scd_ddpcr %>%
+  filter(algorithm_prediction == "inconclusive") %>%
+  select(r_number, SPRT_prediction, mcmc_prediction, algorithm_prediction)
+
+unique(scd_ddpcr$SPRT_prediction)
+
 # Molecules of difference plot
-molecules_difference_plot <- ggplot(molecules_difference_data, aes(x = row_number, y = Molecules_difference))+
-  scale_fill_manual(values=c("#0000FF", "#000000", "#99CCFF", "#FF0000", "#999999"))+
+molecules_difference_plot <- ggplot(molecules_difference_data, aes(x = row_number, y = difference_molecules))+
+  geom_errorbar(colour = "black", aes(ymin = difference_molecules_min, ymax = difference_molecules_max))+
+  scale_fill_manual(values=c("#FFFFFF", "#000000", "#99CCFF", "#FF0000", "#999999"))+
   geom_point(size = 4, aes(fill = x_axis_label), colour = "black", pch=21)+
   theme_bw()+
   no_gridlines+
@@ -1197,10 +1424,14 @@ molecules_difference_plot <- ggplot(molecules_difference_data, aes(x = row_numbe
         legend.title = element_blank(),legend.position = "bottom")+
   labs(x = "", y = "Molecules of difference",
        title = "Molecules of difference in gDNA and cfDNA ddPCR results")+
-  geom_hline(yintercept = 300, linetype = "dashed")+
-  ylim(0, 5000)
+  geom_hline(yintercept = 200, linetype = "dashed")+
+  scale_y_continuous(breaks = c(0, 200, 1000, 2000, 3000))
 
 ggsave(filename = "plots/molecules_difference_plot.png", plot = molecules_difference_plot, dpi = 300)
+
+view(variant_fraction_data)
+
+
 
 #########################
 # Collating SNP genotypes
@@ -1327,6 +1558,9 @@ LOD_data_longer <- LOD_data %>%
     Likelihood_ratio > 250 & Over_represented_fraction == Variant_fraction ~ "homozygous variant",
     Likelihood_ratio < (1/250) ~ "heterozygous",
     Likelihood_ratio < 250 & Likelihood_ratio > (1/250) ~ "no call"))
+
+view(LOD_data_longer %>%
+       select(unique_identifier, molecules_difference))
 
 LOD_data_even_longer <- LOD_data_longer %>%
   select(Sample, Mass_molecules, Input_molecules, HbS_molecules, HbA_molecules, AcceptedDroplets_Variant_assay, Variant_fraction_percent) %>%
