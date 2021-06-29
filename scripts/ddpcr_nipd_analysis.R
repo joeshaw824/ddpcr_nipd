@@ -73,9 +73,6 @@ for (dataFile in ddpcr_files){
   rm(tmp_dat)
 }
 
-
-
-
 #########################
 # Molecule calculation functions
 #########################
@@ -430,8 +427,6 @@ ddpcr_control_tbl_ff <- pivotted_controls_ff %>%
   # Remove duplicate columns and rename to be compatible with functions
   rename(AcceptedDroplets_FetalFrac = AcceptedDroplets_ff_allele1)
 
-colnames(ddpcr_control_tbl_ff)
-
 #############################################################
 # cfDNA SPRT analysis
 #############################################################
@@ -618,59 +613,52 @@ ddpcr_with_fits <- ddpcr_data_mcmc %>%
 
 ddpcr_mcmc_analysed <- ddpcr_with_fits %>%
   select(-c(data, fit)) %>%
-  dplyr::rename(fetal_fraction = rho_est) %>%
+  rename(fetal_fraction = rho_est) %>%
   mutate(mcmc_prediction = case_when(
     
     # Dominant predictions
     Inheritance_chromosomal == "autosomal" & 
     Inheritance_pattern == "dominant" & 
-    p_G1 > mcmc_threshold 
-                ~"heterozygous",
+    p_G1 > mcmc_threshold ~"heterozygous",
+    
     Inheritance_chromosomal == "autosomal" &
     Inheritance_pattern == "dominant" & 
-    p_G2 > mcmc_threshold 
-                ~"homozygous reference",
+    p_G2 > mcmc_threshold ~"homozygous reference",
+    
     Inheritance_chromosomal == "autosomal" &
     Inheritance_pattern == "dominant" & 
     p_G1 < mcmc_threshold & 
-    p_G2 < mcmc_threshold 
-                ~"inconclusive",
+    p_G2 < mcmc_threshold ~"inconclusive",
     
     # Recessive predictions
     Inheritance_chromosomal == "autosomal" &
     Inheritance_pattern == "recessive" & 
-    p_G1 > mcmc_threshold 
-                ~"homozygous reference",
+    p_G1 > mcmc_threshold ~"homozygous reference",
     
     Inheritance_chromosomal == "autosomal" &
     Inheritance_pattern == "recessive" &
-    p_G2 > mcmc_threshold 
-                ~"heterozygous",
+    p_G2 > mcmc_threshold ~"heterozygous",
+    # ok
     
-    Inheritance_chromosomal == "autosomal"&
+    Inheritance_chromosomal == "autosomal" &
     Inheritance_pattern == "recessive" &
-    p_G3 > mcmc_threshold 
-                ~"homozygous variant",
+    p_G3 > mcmc_threshold ~"homozygous variant",
     
     Inheritance_chromosomal == "autosomal" &
     Inheritance_pattern == "recessive" & 
     p_G1 < mcmc_threshold & 
-    p_G2 < mcmc_threshold & 
-                ~"inconclusive",
+    p_G2 < mcmc_threshold ~"inconclusive",
     
     # X-linked predictions
     Inheritance_chromosomal == "x_linked" &
-    p_G0 > mcmc_threshold 
-                ~"hemizygous reference",
+    p_G0 > mcmc_threshold ~"hemizygous reference",
     
     Inheritance_chromosomal == "x_linked" &
-    p_G1 > mcmc_threshold 
-                ~"hemizygous variant",
+    p_G1 > mcmc_threshold ~"hemizygous variant",
     
     Inheritance_chromosomal == "x_linked" &
     p_G0 < mcmc_threshold &
-    p_G1 < mcmc_threshold 
-                ~"inconclusive"))
+    p_G1 < mcmc_threshold ~"inconclusive"))
 
 #############################################################
 # Collation of results
@@ -771,15 +759,264 @@ scd_ddpcr <- ddpcr_nipd_unblinded %>%
       
       cohort = ifelse(r_number %in% secondary_cohort, "secondary", "primary"))
 
+#########################
+# gDNA and cfDNA plots
+#########################
 
+# The parental gDNA controls were tested at ~20ng per ddPCR well. 
+# In order to have an equivalent dataset for comparison with cfDNA data, 
+# I have down-sampled the genomic controls by selecting wells that bring 
+# the total molecules tested to different levels for each sample
+# (~6000 or ~9000 molecules)
 
+wells_for_9000 <- c("21-1116.csv_C02", "21-1116.csv_D02", "21-1116.csv_G02", 
+                    "21-1116.csv_H02", "21-1116.csv_H03", "21-1116.csv_A04", 
+                    "21-1116.csv_D04", "21-1116.csv_E04", "21-1116.csv_E05", 
+                    "21-1116.csv_F05", "21-1116.csv_A06", "21-1116.csv_B06",
+                    "21-1116.csv_C06", "21-1413.csv_G03", "21-1413.csv_H03", 
+                    "21-1413.csv_A04", "21-1413.csv_B04", "21-1413.csv_C04", 
+                    "21-1413.csv_D04", "21-1413.csv_E06", "21-1413.csv_F06", 
+                    "21-1413.csv_E06", "21-1413.csv_H06", "21-1413.csv_A07",
+                    "21-1413.csv_B07", "21-1413.csv_A09", "21-1413.csv_B09", 
+                    "21-1413.csv_D09", "21-1413.csv_E09", "21-1413.csv_F09", 
+                    "21-1227.csv_F02", "21-1227.csv_G02", "21-1227.csv_A03", 
+                    "21-1227.csv_B03", "21-1227.csv_C03", "21-1227.csv_H04",
+                    "21-1227.csv_A05", "21-1227.csv_C05", "21-1227.csv_D05", 
+                    "21-1227.csv_B07", "21-1227.csv_D07", "21-1227.csv_E07", 
+                    "21-1227.csv_F07", "21-1227.csv_D09", "21-1227.csv_E09", 
+                    "21-1227.csv_G09", "21-1227.csv_H09", "21-1705.csv_G04",
+                    "21-1705.csv_H04", "21-1705.csv_B05", "21-1705.csv_C05", 
+                    "21-1863.csv_G07", "21-1863.csv_H07", "21-1863.csv_A08", 
+                    "21-1863.csv_B08", "21-1863.csv_C08", "21-1863.csv_E08", 
+                    "21-1863.csv_F08", "21-1863.csv_H08", "21-1863.csv_A09",
+                    "21-1946.csv_E08", "21-1946.csv_F08", "21-1946.csv_C09",
+                    "21-1946.csv_D09")
 
+wells_for_6000 <- c("21-1116.csv_C02", "21-1116.csv_G02", "21-1116.csv_H03", 
+                    "21-1116.csv_D04", "21-1116.csv_E05", "21-1116.csv_F05", 
+                    "21-1116.csv_A06", "21-1116.csv_B06", "21-1413.csv_G03",
+                    "21-1413.csv_H03", "21-1413.csv_B04", "21-1413.csv_E06",
+                    "21-1413.csv_F06", "21-1413.csv_E06", "21-1413.csv_H06", 
+                    "21-1413.csv_A07", "21-1413.csv_A09", "21-1413.csv_D09",
+                    "21-1413.csv_F09", "21-1227.csv_F02", "21-1227.csv_G02",
+                    "21-1227.csv_A03", "21-1227.csv_B03", "21-1227.csv_H04",
+                    "21-1227.csv_A05", "21-1227.csv_C05", "21-1227.csv_D05", 
+                    "21-1227.csv_B07", "21-1227.csv_C07", "21-1227.csv_E07",
+                    "21-1227.csv_F07", "21-1227.csv_D09", "21-1227.csv_E09", 
+                    "21-1227.csv_G09", "21-1705.csv_G04", "21-1705.csv_B05", 
+                    "21-1863.csv_G07", "21-1863.csv_A08", "21-1863.csv_B08", 
+                    "21-1863.csv_C08", "21-1863.csv_E08", "21-1863.csv_H08",
+                    "21-1946.csv_E08", "21-1946.csv_C09", "21-1946.csv_F09", 
+                    "21-1946.csv_G10")
 
+# Perform the var_ref_calculations for the parental controls in the 
+# downsampled dataset
 
+parents_downsampled <- var_ref_calculations(
+  
+              ddpcr_data %>%
+              filter(Worksheet_well %in% wells_for_6000) %>%
+              mutate(worksheet_sample = paste0(Worksheet,"_",Sample))%>%
+              group_by(worksheet_sample, Target) %>% 
+              summarise(Positives = sum(Positives),
+                        AcceptedDroplets = sum(AcceptedDroplets),
+                        .groups="drop") %>%
+              pivot_wider(id_cols = worksheet_sample,
+                          names_from = Target,
+                          values_from = 
+                            c(AcceptedDroplets, Positives)) %>%
+              rename(
+                AcceptedDroplets_Variant_assay =AcceptedDroplets_HbS,
+                Positives_variant = Positives_HbA,
+                Positives_reference = Positives_HbS) %>%
+              mutate(
+                sample_type = "gDNA",
+                genotype = "het gDNA")) %>%
+  
+              rename(
+                r_number = worksheet_sample,
+                algorithm_prediction = genotype) %>%
+              select(r_number, algorithm_prediction, 
+                     vf_assay_molecules, sample_type, 
+                     variant_molecules, reference_molecules,
+                     variant_percent, variant_percent_max, 
+                     variant_percent_min, difference_molecules, 
+                     difference_molecules_max, 
+                     difference_molecules_min)
+  
+cfDNA_compare <- scd_ddpcr %>%
+  mutate(sample_type = "cfDNA") %>%
+  select(r_number, algorithm_prediction, vf_assay_molecules, sample_type, 
+         variant_molecules, reference_molecules,
+         variant_percent, variant_percent_max, variant_percent_min,
+         difference_molecules, difference_molecules_max, 
+         difference_molecules_min)
 
+# Bind cfDNA and genomic DNA results together
+cfDNA_gDNA_bind <- rbind(cfDNA_compare, parents_downsampled) %>%
+  mutate(x_axis_label = case_when(
+    algorithm_prediction == "heterozygous" ~"cfDNA (heterozygous)",
+    algorithm_prediction == "homozygous reference" ~"cfDNA (homozygous reference)",
+    algorithm_prediction == "homozygous variant" ~"cfDNA (homozygous variant)",
+    algorithm_prediction == "het gDNA" ~"gDNA (heterozgous)",
+    algorithm_prediction == "inconclusive" ~ "inconclusive"),
+    
+    balanced_or_not = case_when(
+      algorithm_prediction == "heterozygous" ~"het cfDNA",
+      algorithm_prediction == "homozygous reference" ~"unbalanced",
+      algorithm_prediction == "homozygous variant" ~"unbalanced",
+      algorithm_prediction == "het gDNA" ~"het gDNA",
+      algorithm_prediction == "inconclusive" ~ "inconclusive"))
 
+# Downsampling plot
+downsampling_plot <- ggplot(cfDNA_gDNA_bind, aes(x = 
+                                       sample_type, y = vf_assay_molecules))+
+  geom_boxplot()+
+  theme_bw()+
+  no_gridlines+
+  ylim(0, 35000)+
+  labs(y = "Total molecules detected by HBB c.20A>T ddPCR", 
+       x = "",
+       title = "Molecules detected in cfDNA and down-sampled gDNA datasets")
 
+ggsave(filename = "plots/downsampling_plot.png", 
+       plot =  downsampling_plot, dpi = 300)
 
+# Make the two new variables factors to define the order in subsequent plots
+cfDNA_gDNA_bind$x_axis_label <- factor(
+  cfDNA_gDNA_bind$x_axis_label, levels = c("cfDNA (homozygous reference)",
+                                            "gDNA (heterozgous)", 
+                                            "cfDNA (heterozygous)", 
+                                            "cfDNA (homozygous variant)",
+                                            "inconclusive"))
+
+cfDNA_gDNA_bind$balanced_or_not <- factor(
+  cfDNA_gDNA_bind$balanced_or_not, levels = c("het gDNA", "het cfDNA",
+                                              "unbalanced", "inconclusive"))
+
+# Organise data for variant fraction plot
+variant_fraction_data <- cfDNA_gDNA_bind %>%
+  arrange(x_axis_label, variant_percent) %>%
+  # Fix the order of samples
+  mutate(row_number = as.numeric(row.names(cfDNA_gDNA_bind)))
+
+# Variant fraction plot
+variant_fraction_plot <- ggplot(variant_fraction_data, 
+                                aes(x = row_number, 
+                                    y = variant_percent, 
+                                    colour = x_axis_label))+
+  geom_errorbar(colour = "black", 
+                aes(ymin = variant_percent_min, ymax = variant_percent_max))+
+  # "#0000FF" = dark blue; "#FFFFFF" = white; "#99CCFF" = light blue
+  # "#000000" = black; "#999999" = grey
+  scale_fill_manual(values=c("#0000FF", "#FFFFFF", 
+                             "#99CCFF", "#000000", "#999999"))+
+  geom_point(size = 4, aes(fill = x_axis_label), colour = "black", pch=21)+
+  theme_bw()+
+  theme(axis.text.x = element_blank())+
+  ylim(42, 58)+
+  no_gridlines+
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.title = element_blank(), 
+        legend.position = "bottom")+
+  geom_hline(yintercept = 48.9, linetype = "dashed")+
+  geom_hline(yintercept = 51, linetype = "dashed")+
+  labs(x = "", y = "Variant fraction (%)",
+       title = "Variant fraction in gDNA and cfDNA ddPCR results")
+
+ggsave(filename = "plots/variant_fraction_plot.png", 
+       plot = variant_fraction_plot, dpi = 300)
+
+# Organise data for molecules of difference plot
+molecules_difference_data <- cfDNA_gDNA_bind %>%
+  arrange(balanced_or_not, difference_molecules) %>%
+  mutate(row_number = as.numeric(row.names(cfDNA_gDNA_bind)))
+
+# Change factor level for plot legend
+molecules_difference_data$x_axis_label <- factor(
+  molecules_difference_data$x_axis_label, levels = c(
+                                            "gDNA (heterozgous)", 
+                                            "cfDNA (heterozygous)",
+                                            "cfDNA (homozygous reference)",
+                                            "cfDNA (homozygous variant)",
+                                            "inconclusive"))
+
+# Molecules of difference plot
+molecules_difference_plot <- ggplot(molecules_difference_data, 
+                                    aes(x = row_number, 
+                                        y = difference_molecules))+
+  geom_errorbar(colour = "black", aes(ymin = difference_molecules_min, 
+                                      ymax = difference_molecules_max))+
+  scale_fill_manual(values=
+                      c("#FFFFFF", "#000000", "#99CCFF", "#FF0000", "#999999"))+
+  geom_point(size = 4, aes(fill = x_axis_label), colour = "black", pch=21)+
+  theme_bw()+
+  no_gridlines+
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.title = element_blank(),legend.position = "bottom")+
+  labs(x = "", y = "Molecules of difference",
+       title = "Molecules of difference in gDNA and cfDNA ddPCR results")+
+  geom_hline(yintercept = 200, linetype = "dashed")+
+  scale_y_continuous(breaks = c(0, 200, 1000, 2000, 3000))
+
+ggsave(filename = "plots/molecules_difference_plot.png", 
+       plot = molecules_difference_plot, dpi = 300)
+
+# This function is for selecting different sections of the
+# cfDNA_gDNA_bind table and generating a plot.
+# Input is the algorithm_prediction defined above
+
+plot_cohort <- function(cohort) {
+  
+  stopifnot(cohort %in% c("heterozygous", "homozygous reference", 
+                          "homozygous variant", "het gDNA",
+                          "inconclusive"))
+  
+  cohort_data <- cfDNA_gDNA_bind %>%
+  filter(algorithm_prediction == cohort) %>%
+  select(r_number, algorithm_prediction, variant_molecules, 
+         reference_molecules) %>%
+  arrange(algorithm_prediction, variant_molecules) %>%
+  mutate(row_number = seq(1, nrow(cfDNA_gDNA_bind %>%
+                                filter(algorithm_prediction == cohort))))%>%
+  pivot_longer(
+    cols = c(variant_molecules, reference_molecules),
+    names_to = "target",
+    values_to = "count")
+  
+  cohort_plot <- ggplot(cohort_data, aes(x = row_number, y = count, 
+                                         fill = target))+
+    geom_col(width = 0.7, position = "dodge", colour="black", alpha = 0.4)+
+    scale_fill_manual(values = c("#3366FF", "#FF0000"))+
+    xlim(0, 43)+
+    ylim(0, 17000)+
+    theme_bw()+
+    labs(y = "Molecules detected")+
+    theme(axis.text.x=element_blank(), axis.title.x = element_blank(),
+          axis.title.y = element_text(size = 14),
+          legend.position = "bottom", legend.title = element_blank(),
+          legend.text = element_text(size= 12),
+          panel.grid.major = element_blank(), 
+          panel.grid.minor = element_blank())
+  return(cohort_plot)
+}
+
+plot_cohort("heterozygous")+
+  labs(title = "cfDNA heterozygous predictions")
+
+plot_cohort("homozygous reference")+
+  labs(title = "cfDNA homozygous reference predictions")
+
+plot_cohort("homozygous variant")+
+  labs(title = "cfDNA homozygous variant predictions")
+
+plot_cohort("het gDNA")+
+  labs(title = "Heterozygous gDNA")
+
+plot_cohort("inconclusive")+
+  labs(title = "Inconclusive results")
 
 #########################
 # Cohort plots
@@ -1220,297 +1457,6 @@ cffDNA_plot <- ggplot(phase3_results, aes(x = Gestation_total_weeks, y = fetal_s
        title = "Fetal-specific cfDNA by gestation")
 
 ggsave(filename = "plots/cffDNA_plot.png", plot = cffDNA_plot, dpi = 300)
-
-#########################
-# HbAS Variability
-#########################
-
-# The parental gDNA controls were tested at ~20ng per ddPCR well. In order to have an
-# equivalent dataset for comparison with cfDNA data, I have down-sampled the genomic controls
-# by selecting wells that bring the total molecules tested to ~9000 for each sample.
-
-wells_for_9000 <- c("21-1116.csv_C02", "21-1116.csv_D02", "21-1116.csv_G02", "21-1116.csv_H02",
-                     "21-1116.csv_H03", "21-1116.csv_A04", "21-1116.csv_D04", "21-1116.csv_E04",
-                     "21-1116.csv_E05", "21-1116.csv_F05", "21-1116.csv_A06", "21-1116.csv_B06",
-                     "21-1116.csv_C06", "21-1413.csv_G03", "21-1413.csv_H03", "21-1413.csv_A04",
-                     "21-1413.csv_B04", "21-1413.csv_C04", "21-1413.csv_D04", "21-1413.csv_E06",
-                     "21-1413.csv_F06", "21-1413.csv_E06", "21-1413.csv_H06", "21-1413.csv_A07",
-                     "21-1413.csv_B07", "21-1413.csv_A09", "21-1413.csv_B09", "21-1413.csv_D09",
-                     "21-1413.csv_E09", "21-1413.csv_F09", "21-1227.csv_F02", "21-1227.csv_G02",
-                     "21-1227.csv_A03", "21-1227.csv_B03", "21-1227.csv_C03", "21-1227.csv_H04",
-                     "21-1227.csv_A05", "21-1227.csv_C05", "21-1227.csv_D05", "21-1227.csv_B07",
-                     "21-1227.csv_D07", "21-1227.csv_E07", "21-1227.csv_F07", "21-1227.csv_D09",
-                     "21-1227.csv_E09", "21-1227.csv_G09", "21-1227.csv_H09", "21-1705.csv_G04",
-                     "21-1705.csv_H04", "21-1705.csv_B05", "21-1705.csv_C05", "21-1863.csv_G07",
-                     "21-1863.csv_H07", "21-1863.csv_A08", "21-1863.csv_B08", "21-1863.csv_C08",
-                     "21-1863.csv_E08", "21-1863.csv_F08", "21-1863.csv_H08", "21-1863.csv_A09",
-                     "21-1946.csv_E08", "21-1946.csv_F08", "21-1946.csv_C09","21-1946.csv_D09")
-
-wells_for_6000 <- c("21-1116.csv_C02", "21-1116.csv_G02",
-                    "21-1116.csv_H03", "21-1116.csv_D04",
-                    "21-1116.csv_E05", "21-1116.csv_F05", "21-1116.csv_A06", "21-1116.csv_B06",
-                    "21-1413.csv_G03", "21-1413.csv_H03",
-                    "21-1413.csv_B04", "21-1413.csv_E06",
-                    "21-1413.csv_F06", "21-1413.csv_E06", "21-1413.csv_H06", "21-1413.csv_A07",
-                    "21-1413.csv_A09", "21-1413.csv_D09",
-                    "21-1413.csv_F09", 
-                    "21-1227.csv_F02", "21-1227.csv_G02",
-                    "21-1227.csv_A03", "21-1227.csv_B03", 
-                    "21-1227.csv_H04",
-                    "21-1227.csv_A05", 
-                    "21-1227.csv_C05", "21-1227.csv_D05", 
-                    "21-1227.csv_B07", "21-1227.csv_C07",
-                    "21-1227.csv_E07", "21-1227.csv_F07", 
-                    "21-1227.csv_D09",
-                    "21-1227.csv_E09", 
-                    "21-1227.csv_G09", 
-                    "21-1705.csv_G04",
-                    "21-1705.csv_B05", "21-1863.csv_G07",
-                    "21-1863.csv_A08", "21-1863.csv_B08", "21-1863.csv_C08",
-                    "21-1863.csv_E08", "21-1863.csv_H08",
-                    "21-1946.csv_E08", "21-1946.csv_C09","21-1946.csv_F09", 
-                    "21-1946.csv_G10")
-
-parents_downsampled <- var_ref_calculations(ddpcr_data %>%
-  filter(Worksheet_well %in% wells_for_6000) %>%
-  mutate(worksheet_sample = paste0(Worksheet, "_", Sample)) %>%
-  group_by(worksheet_sample, Target) %>% 
-  summarise(Positives = sum(Positives),
-            AcceptedDroplets = sum(AcceptedDroplets),
-            .groups="drop") %>%
-  pivot_wider(id_cols = worksheet_sample,
-              names_from = Target,
-              values_from = c(AcceptedDroplets, Positives)) %>%
-  rename(
-    AcceptedDroplets_Variant_assay =AcceptedDroplets_HbS,
-    Positives_variant = Positives_HbA,
-    Positives_reference = Positives_HbS) %>%
-  mutate(
-    sample_type = "gDNA",
-    genotype = "het gDNA"))
-
-parents_downsampled_bind <- parents_downsampled %>%
-  dplyr::rename(r_number = worksheet_sample,
-                algorithm_prediction = genotype) %>%
-  select(r_number, algorithm_prediction, vf_assay_molecules, sample_type, 
-         variant_molecules, reference_molecules,
-         variant_percent, variant_percent_max, variant_percent_min,
-         difference_molecules, difference_molecules_max, difference_molecules_min)
-         
-cfDNA_compare <- scd_ddpcr %>%
-  mutate(sample_type = "cfDNA") %>%
-  select(r_number, algorithm_prediction, vf_assay_molecules, sample_type, 
-         variant_molecules, reference_molecules,
-         variant_percent, variant_percent_max, variant_percent_min,
-         difference_molecules, difference_molecules_max, difference_molecules_min)
-
-# Bind cfDNA and genomic DNA results together
-cfDNA_gDNA_bind <- rbind(cfDNA_compare, parents_downsampled_bind) %>%
-  mutate(x_axis_label = case_when(
-    algorithm_prediction == "heterozygous" ~"cfDNA (heterozygous)",
-    algorithm_prediction == "homozygous reference" ~"cfDNA (homozygous reference)",
-    algorithm_prediction == "homozygous variant" ~"cfDNA (homozygous variant)",
-    algorithm_prediction == "het gDNA" ~"gDNA (heterozgous)",
-    algorithm_prediction == "inconclusive" ~ "inconclusive"),
-    
-    balanced_or_not = case_when(
-      algorithm_prediction == "heterozygous" ~"het cfDNA",
-      algorithm_prediction == "homozygous reference" ~"unbalanced",
-      algorithm_prediction == "homozygous variant" ~"unbalanced",
-      algorithm_prediction == "het gDNA" ~"het gDNA",
-      algorithm_prediction == "inconclusive" ~ "inconclusive"))
-    
-# Downsampling plot
-downsampling_plot <- ggplot(cfDNA_gDNA_bind, aes(x = sample_type, y = vf_assay_molecules))+
-  geom_boxplot()+
-  theme_bw()+
-  no_gridlines+
-  ylim(0, 35000)+
-  labs(y = "Total molecules detected by HBB c.20A>T ddPCR", x = "",
-       title = "Molecules detected by HBB c.20A>T ddPCR in cfDNA and down-sampled gDNA datasets")
-
-ggsave(filename = "plots/downsampling_plot.png", plot =  downsampling_plot, dpi = 300)
-
-# Make the two new variables factors to define the order subsequent plots
-cfDNA_gDNA_bind$x_axis_label <- factor(cfDNA_gDNA_bind$x_axis_label, levels = c("cfDNA (homozygous reference)",
-                                                                    "gDNA (heterozgous)", 
-                                                                    "cfDNA (heterozygous)", 
-                                                                    "cfDNA (homozygous variant)",
-                                                                    "inconclusive"))
-
-cfDNA_gDNA_bind$balanced_or_not <- factor(cfDNA_gDNA_bind$balanced_or_not, levels = c("het gDNA", "het cfDNA", "unbalanced",
-                                                                               "inconclusive"))
-
-# Organise data for variant fraction plot
-variant_fraction_data <- cfDNA_gDNA_bind %>%
-  arrange(x_axis_label, variant_percent) %>%
-  # Fix the order of samples
-  mutate(row_number = as.numeric(row.names(cfDNA_gDNA_bind)))
-
-# Variant fraction plot
-variant_fraction_plot <- ggplot(variant_fraction_data, aes(x = row_number, y = variant_percent, colour = x_axis_label))+
-  geom_errorbar(colour = "black", aes(ymin = variant_percent_min, ymax = variant_percent_max))+
-  # "#0000FF" = dark blue; "#FFFFFF" = white; "#99CCFF" = light blue
-  # "#000000" = black; "#999999" = grey
-  scale_fill_manual(values=c("#0000FF", "#FFFFFF", "#99CCFF", "#000000", "#999999"))+
-  geom_point(size = 4, aes(fill = x_axis_label), colour = "black", pch=21)+
-  theme_bw()+
-  theme(axis.text.x = element_blank())+
-  ylim(42, 58)+
-  no_gridlines+
-  theme(axis.text.x = element_blank(),
-        axis.ticks.x = element_blank(),
-        legend.title = element_blank(), 
-        legend.position = "bottom")+
-  geom_hline(yintercept = 48.9, linetype = "dashed")+
-  geom_hline(yintercept = 51, linetype = "dashed")+
-  labs(x = "", y = "Variant fraction (%)",
-       title = "Variant fraction in gDNA and cfDNA ddPCR results")
-
-ggsave(filename = "plots/variant_fraction_plot.png", plot = variant_fraction_plot, dpi = 300)
-
-# Organise data for molecules of difference plot
-molecules_difference_data <- cfDNA_gDNA_bind %>%
-  arrange(balanced_or_not, difference_molecules) %>%
-  mutate(row_number = as.numeric(row.names(cfDNA_gDNA_bind)))
-
-
-ggplot(molecules_difference_data, aes(x = difference_molecules, y = variant_percent))+
-  scale_fill_manual(values=c("#0000FF", "#FFFFFF", "#99CCFF", "#000000", "#999999"))+
-  geom_point(size = 4, aes(fill = x_axis_label), colour = "black", pch=21, alpha = 0.5)+
-  theme_bw()+
-  no_gridlines+
-  scale_x_log10()+
-  geom_hline(yintercept = 51.1, linetype = "dashed")+
-  geom_hline(yintercept = 48.9, linetype = "dashed")+
-  geom_vline(xintercept = 200, linetype = "dashed")
-
-# Change factor level for plot legend
-molecules_difference_data$x_axis_label <- factor(molecules_difference_data$x_axis_label, levels = c(
-                                                                                "gDNA (heterozgous)", 
-                                                                                "cfDNA (heterozygous)",
-                                                                                "cfDNA (homozygous reference)",
-                                                                                "cfDNA (homozygous variant)",
-                                                                                "inconclusive"))
-hetgDNA_data <- cfDNA_gDNA_bind %>%
-  filter(algorithm_prediction == "het gDNA") %>%
-  select(r_number, algorithm_prediction, variant_molecules, reference_molecules) %>%
-  arrange(algorithm_prediction, variant_molecules)
-
-
-hetgDNA_data2 <- hetgDNA_data %>%
-  mutate(row_number = as.numeric(row.names(hetgDNA_data)))%>%
-  pivot_longer(
-    cols = c(variant_molecules, reference_molecules),
-    names_to = "target",
-    values_to = "count")
-
-hetcfDNA_data <- cfDNA_gDNA_bind %>%
-  filter(algorithm_prediction == "heterozygous") %>%
-  select(r_number, algorithm_prediction, variant_molecules, reference_molecules) %>%
-  arrange(algorithm_prediction, variant_molecules)
-
-hetcfDNA_data2 <- hetcfDNA_data %>%
-  mutate(row_number = as.numeric(row.names(hetcfDNA_data)))%>%
-  pivot_longer(
-    cols = c(variant_molecules, reference_molecules),
-    names_to = "target",
-    values_to = "count")
-
-homref_data <- cfDNA_gDNA_bind %>%
-  filter(algorithm_prediction == "homozygous reference") %>%
-  select(r_number, algorithm_prediction, variant_molecules, reference_molecules) %>%
-  arrange(algorithm_prediction, variant_molecules)
-
-homref_data2 <- homref_data %>%
-  mutate(row_number = as.numeric(row.names(homref_data)))%>%
-  pivot_longer(
-    cols = c(variant_molecules, reference_molecules),
-    names_to = "target",
-    values_to = "count")
-
-homvar_data <- cfDNA_gDNA_bind %>%
-  filter(algorithm_prediction == "homozygous variant") %>%
-  select(r_number, algorithm_prediction, variant_molecules, reference_molecules) %>%
-  arrange(algorithm_prediction, variant_molecules)
-
-homvar_data2 <- homvar_data %>%
-  mutate(row_number = as.numeric(row.names(homvar_data)))%>%
-  pivot_longer(
-    cols = c(variant_molecules, reference_molecules),
-    names_to = "target",
-    values_to = "count")
-
-incon_data <- cfDNA_gDNA_bind %>%
-  filter(algorithm_prediction == "inconclusive") %>%
-  select(r_number, algorithm_prediction, variant_molecules, reference_molecules) %>%
-  arrange(algorithm_prediction, variant_molecules)
-
-incon_data2 <- incon_data %>%
-  mutate(row_number = as.numeric(row.names(incon_data)))%>%
-  pivot_longer(
-    cols = c(variant_molecules, reference_molecules),
-    names_to = "target",
-    values_to = "count")
-
-
-plot_function <- function(dataset) {
-  plot = ggplot(dataset, aes(x = row_number, y = count, fill = target))+
-  geom_col(width = 0.7, position = "dodge", colour="black", alpha = 0.4)+
-    scale_fill_manual(values = c("#3366FF", "#FF0000"))+
-    xlim(0, 43)+
-    ylim(0, 17000)+
-  theme_bw()+
-  labs(y = "Molecules detected")+
-  theme(axis.text.x=element_blank(), axis.title.x = element_blank(),
-        axis.title.y = element_text(size = 18),
-        legend.position = "bottom", legend.title = element_blank(),
-        legend.text = element_text(size= 14),
-        panel.grid.major = element_blank(), panel.grid.minor = element_blank())
-  return(plot)
-}
-
-het_gDNA_plot <- plot_function(hetgDNA_data2)+
-  labs(title = "Heterozygous gDNA controls")
-plot_function(hetcfDNA_data2)+
-  labs(title = "cfDNA heterozygous predictions")
-plot_function(homref_data2)+
-  labs(title = "cfDNA homozygous reference predictions")
-plot_function(homvar_data2)
-plot_function(incon_data2)
-
-# Export plots as width 1418, height 444
-
-ggsave(filename = "plots/het_gDNA_plot.png",
-       plot =  het_gDNA_plot,
-       width = 5.6732283,
-       height = 1.775591)
-
-?ggsave()
-
-scd_ddpcr %>%
-  filter(algorithm_prediction == "inconclusive") %>%
-  select(r_number, SPRT_prediction, mcmc_prediction, algorithm_prediction)
-
-unique(scd_ddpcr$SPRT_prediction)
-
-# Molecules of difference plot
-molecules_difference_plot <- ggplot(molecules_difference_data, aes(x = row_number, y = difference_molecules))+
-  geom_errorbar(colour = "black", aes(ymin = difference_molecules_min, ymax = difference_molecules_max))+
-  scale_fill_manual(values=c("#FFFFFF", "#000000", "#99CCFF", "#FF0000", "#999999"))+
-  geom_point(size = 4, aes(fill = x_axis_label), colour = "black", pch=21)+
-  theme_bw()+
-  no_gridlines+
-  theme(axis.text.x = element_blank(),
-        axis.ticks.x = element_blank(),
-        legend.title = element_blank(),legend.position = "bottom")+
-  labs(x = "", y = "Molecules of difference",
-       title = "Molecules of difference in gDNA and cfDNA ddPCR results")+
-  geom_hline(yintercept = 200, linetype = "dashed")+
-  scale_y_continuous(breaks = c(0, 200, 1000, 2000, 3000))
-
-ggsave(filename = "plots/molecules_difference_plot.png", plot = molecules_difference_plot, dpi = 300)
-
 
 #########################
 # Collating SNP genotypes
