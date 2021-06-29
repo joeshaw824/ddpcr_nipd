@@ -73,16 +73,203 @@ for (dataFile in ddpcr_files){
   rm(tmp_dat)
 }
 
+
+
+
+#########################
+# Molecule calculation functions
+#########################
+
+# These functions calculate lots of stuff
+# This is to prevent massive duplication of code
+
+var_ref_calculations <- function(data_input) {
+  
+  # The data_input needs these variables for this function to work:
+  # AcceptedDroplets_Variant_assay, Positives_variant, Positives_reference
+  
+  stopifnot(c("AcceptedDroplets_Variant_assay", "Positives_variant", 
+              "Positives_reference")
+            %in% colnames(data_input))
+  
+  data_output <- data_input %>%
+  
+  mutate(
+  # Perform Poisson correction to determine the total number of molecules 
+  # detected for each target.
+  variant_molecules = Poisson_correct(AcceptedDroplets_Variant_assay,
+                                      Positives_variant), 
+  reference_molecules = Poisson_correct(AcceptedDroplets_Variant_assay,
+                                        Positives_reference),   
+  
+  # Calculate the total molecules for the variant fraction (vf) assay
+  vf_assay_molecules = variant_molecules + reference_molecules,
+  
+  # Calculate the fractional abundance of each allele
+  reference_fraction = reference_molecules / vf_assay_molecules,
+  variant_fraction = variant_molecules / vf_assay_molecules,
+  variant_percent  = variant_fraction * 100,
+  reference_percent  = reference_fraction * 100,
+  
+  # Select the major and minor alleles
+  major_allele = case_when(
+    # If both fractions are exactly 50, then the variant is arbitrarily 
+    # chosen as the major allele
+    variant_percent >= reference_percent ~ "variant allele",
+    reference_percent > variant_percent ~ "reference allele"),
+  
+  minor_allele = case_when(
+    major_allele == "variant allele" ~ "reference allele",
+    major_allele == "reference allele" ~ "variant allele"),
+  
+  # Choose the percentage of the major and minor alleles
+  major_allele_percent = case_when(
+    major_allele == "variant allele" ~variant_percent,
+    major_allele == "reference allele" ~reference_percent),
+  
+  # Choose the molecules for each allele
+  major_allele_molecules = case_when(
+    major_allele == "variant allele" ~variant_molecules,
+    major_allele == "reference allele" ~reference_molecules),
+  
+  minor_allele_molecules = case_when(
+    minor_allele == "variant allele" ~variant_molecules,
+    minor_allele == "reference allele" ~reference_molecules),
+  
+  # Find the difference between the numbers of molecules for each allele
+  difference_molecules = abs(major_allele_molecules - 
+                               minor_allele_molecules),
+  
+  # Calculate the 95% confidence intervals of the numbers of molecules
+  # for each allele
+  variant_molecules_max = Poisson_max((variant_molecules/ 
+                                         AcceptedDroplets_Variant_assay), 
+                                      AcceptedDroplets_Variant_assay),
+  variant_molecules_min = Poisson_min((variant_molecules/
+                                         AcceptedDroplets_Variant_assay),
+                                      AcceptedDroplets_Variant_assay),
+  reference_molecules_max = Poisson_max((reference_molecules/
+                                           AcceptedDroplets_Variant_assay),
+                                        AcceptedDroplets_Variant_assay),
+  reference_molecules_min = Poisson_min((reference_molecules/
+                                           AcceptedDroplets_Variant_assay), 
+                                        AcceptedDroplets_Variant_assay),
+  
+  major_allele_molecules_max = case_when(
+    major_allele == "variant allele" ~variant_molecules_max,
+    major_allele == "reference allele" ~reference_molecules_max),
+  
+  major_allele_molecules_min = case_when(
+    major_allele == "variant allele" ~variant_molecules_min,
+    major_allele == "reference allele" ~reference_molecules_min),
+  
+  minor_allele_molecules_max = case_when(
+    minor_allele == "variant allele" ~variant_molecules_max,
+    minor_allele == "reference allele" ~reference_molecules_max),
+  
+  minor_allele_molecules_min = case_when(
+    minor_allele == "variant allele" ~variant_molecules_min,
+    minor_allele == "reference allele" ~reference_molecules_min),
+  
+  difference_molecules_max = major_allele_molecules_max - 
+    minor_allele_molecules_min,
+  difference_molecules_min = major_allele_molecules_min - 
+    minor_allele_molecules_max,
+  
+  # Calculate the 95% confidence intervals of the fractional abundances
+  variant_percent_max = (Poisson_fraction_max(
+    variant_molecules_max, reference_molecules))*100,
+  variant_percent_min = (Poisson_fraction_min(
+    variant_molecules_min, reference_molecules))*100,
+  reference_percent_max = (Poisson_fraction_max(
+    reference_molecules_max, variant_molecules))*100,
+  reference_percent_min = (Poisson_fraction_min(
+    reference_molecules_min, variant_molecules))*100,
+  
+  major_allele_percent_max = case_when(
+    major_allele == "variant allele" ~variant_percent_max,
+    major_allele == "reference allele" ~reference_percent_max),
+  
+  major_allele_percent_min = case_when(
+    major_allele == "variant allele" ~variant_percent_min,
+    major_allele == "reference allele" ~reference_percent_min),
+  
+  # Calculate the 95% confidence intervals of the numbers of molecules 
+  # detected by each assay
+  vf_assay_molecules_max = Poisson_max((
+    vf_assay_molecules/AcceptedDroplets_Variant_assay), 
+    AcceptedDroplets_Variant_assay),
+  vf_assay_molecules_min = Poisson_min((
+    vf_assay_molecules/AcceptedDroplets_Variant_assay),
+    AcceptedDroplets_Variant_assay))
+  
+  return(data_output)
+}
+
+ff_calculations <- function(data_input) {
+  
+  # The data_input needs these variables for this function to work:
+  # maternal_molecules, paternal_molecules, AcceptedDroplets_FetalFrac
+  
+  stopifnot(c("maternal_positives", "paternal_positives",
+              "AcceptedDroplets_FetalFrac")
+            %in% colnames(data_input))
+  
+  data_output <- data_input %>%
+    mutate(
+    
+    # Calculate the same variables for the fetal fraction assay
+    
+    maternal_molecules = Poisson_correct(
+      AcceptedDroplets_FetalFrac,maternal_positives),
+    paternal_molecules = Poisson_correct(
+      AcceptedDroplets_FetalFrac,paternal_positives),
+    
+    # Calculate the fetal fraction
+    fetal_fraction = calc_ff(maternal_molecules, paternal_molecules),
+    fetal_percent = fetal_fraction*100,
+    
+    ff_assay_molecules = maternal_molecules + paternal_molecules,
+    
+    paternal_molecules_max = Poisson_max((
+      paternal_molecules / AcceptedDroplets_FetalFrac), 
+      AcceptedDroplets_FetalFrac),
+    paternal_molecules_min = Poisson_min((
+      paternal_molecules / AcceptedDroplets_FetalFrac), 
+      AcceptedDroplets_FetalFrac),
+    
+    maternal_molecules_max = Poisson_max((
+      maternal_molecules / AcceptedDroplets_FetalFrac), 
+      AcceptedDroplets_FetalFrac),
+    maternal_molecules_min = Poisson_min((
+      maternal_molecules / AcceptedDroplets_FetalFrac), 
+      AcceptedDroplets_FetalFrac),
+    
+    ff_assay_molecules_max = Poisson_max((
+      ff_assay_molecules/AcceptedDroplets_FetalFrac), 
+      AcceptedDroplets_FetalFrac),
+    ff_assay_molecules_min = Poisson_min((
+      ff_assay_molecules/AcceptedDroplets_FetalFrac), 
+      AcceptedDroplets_FetalFrac),
+    
+    # When calculating for the fetal fraction, the paternal fraction 
+    # must be multiplied by 2.
+    fetal_percent_max = 200* (Poisson_fraction_max(
+      paternal_molecules_max, maternal_molecules)),
+    fetal_percent_min = 200* (Poisson_fraction_min(
+      paternal_molecules_min, maternal_molecules)))
+  
+  return(data_output)
+}
+
 #########################
 # Wrangle cfDNA data into shape
 #########################
 
 # Remove single wells and controls
 ddpcr_data_merged_samples <- ddpcr_data %>%
-  # Remove single wells
-  drop_na("MergedWells") %>%
-  # Remove controls
-  filter(!(Sample %in% controls$Sample)) %>%
+  # Remove single wells and controls
+  filter(substr(Well, 1, 1) == "M" & !(Sample %in% controls$Sample)) %>%
   # Count the number of wells which have been merged together,
   # which is the number of commas in "MergedWells" string plus one
   mutate(num_wells = str_count(MergedWells, ",")+1)
@@ -98,7 +285,7 @@ ddpcr_data_reshape <- ddpcr_data_merged_samples %>%
             num_wells = sum(num_wells),
             .groups="drop")
 
-# Add on the category for each ddPCR Target
+# Add on the category for each ddPCR target
 # Data model: 4 categories - variant, reference, ff_allele1 and ff_allele2
 ddpcr_with_target <- ddpcr_data_reshape %>% 
   left_join(ddpcr_target_panel %>%
@@ -138,7 +325,8 @@ ref_table_ff <- left_join(
 
 ddpcr_data_tbl <- pivotted_ddpcr %>%
   left_join(ref_table_var %>%
-              select(Sample, Inheritance_chromosomal, Inheritance_pattern, variant_assay), by = "Sample",
+              select(Sample, Inheritance_chromosomal, Inheritance_pattern, 
+                     variant_assay), by = "Sample",
             .groups="drop") %>% 
   left_join(ref_table_ff %>%
               select(Sample, ff_assay), by = "Sample",
@@ -150,14 +338,16 @@ ddpcr_data_tbl <- pivotted_ddpcr %>%
   filter(!is.na(Positives_variant) & !is.na(Positives_ff_allele1)) %>%
   
   # Remove duplicate columns and rename to be compatible with functions
-  select(-c(AcceptedDroplets_ff_allele2, AcceptedDroplets_reference, num_wells_reference,
+  select(-c(AcceptedDroplets_ff_allele2, AcceptedDroplets_reference, 
+            num_wells_reference,
             num_wells_ff_allele2)) %>%
   rename(AcceptedDroplets_FetalFrac = AcceptedDroplets_ff_allele1,
          AcceptedDroplets_Variant_assay = AcceptedDroplets_variant,
-         num_wells_ff_assay = num_wells_ff_allele1,
-         num_wells_variant_assay = num_wells_variant) %>%
+         ff_assay_num_wells = num_wells_ff_allele1,
+         vf_assay_num_wells = num_wells_variant) %>%
   
-  # Determine the maternal and paternally-inherited alleles for the fetal fraction calculation
+  # Determine the maternal and paternally-inherited alleles for the 
+  # fetal fraction calculation
   mutate(maternal_positives = pmax(Positives_ff_allele1, Positives_ff_allele2),
          paternal_positives = pmin(Positives_ff_allele1, Positives_ff_allele2))
 
@@ -167,15 +357,16 @@ ddpcr_data_tbl <- pivotted_ddpcr %>%
 
 # Get single well controls only without NTCs
 ddpcr_controls <- ddpcr_data %>%
-  filter(Sample %in% controls$Sample & Sample != "NTC" & substr(Well, 1, 1) != "M")
+  filter(Sample %in% controls$Sample & Sample != "NTC" & 
+           substr(Well, 1, 1) != "M")
 
 ddpcr_controls_with_target <- ddpcr_controls %>% 
   left_join(ddpcr_target_panel %>%
               select(Target, Target_category), by = "Target")
 
 # No need to pivot to get one row per sample because we want the control
-# data as individual wells. Use pivot_wider to get one row per well for each well tested with 
-# a variant assay
+# data as individual wells. Use pivot_wider to get one row per well for 
+# each well tested with a variant assay
 pivotted_controls_var <- ddpcr_controls_with_target %>%
   filter(Target_category %in% c("variant", "reference")) %>%
   pivot_wider(id_cols = c(Worksheet_well, Sample),
@@ -222,24 +413,24 @@ control_table_ff <- left_join(
 # Get the control information for the control wells tested with a variant assay
 ddpcr_control_tbl_var <- pivotted_controls_var %>%
   left_join(control_table_var %>%
-              select(Worksheet_well, Inheritance_chromosomal, Inheritance_pattern, variant_assay), by = "Worksheet_well",
+              select(Worksheet_well, Inheritance_chromosomal, 
+                     Inheritance_pattern, variant_assay), 
+            by = "Worksheet_well",
             .groups="drop") %>%
+  
   # Remove duplicate columns and rename to be compatible with functions
-  rename(AcceptedDroplets_Variant_assay = AcceptedDroplets_variant) %>%
-  mutate(variant_molecules = Poisson_correct(AcceptedDroplets_Variant_assay,Positives_variant),
-         reference_molecules = Poisson_correct(AcceptedDroplets_Variant_assay,Positives_reference))
+  rename(AcceptedDroplets_Variant_assay = AcceptedDroplets_variant)
 
-# Get the control information for the control wells tested with a fetal fraction assay
+# Get the control information for the control wells tested with a 
+# fetal fraction assay
 ddpcr_control_tbl_ff <- pivotted_controls_ff %>%
   left_join(control_table_ff %>%
               select(Worksheet_well, ff_assay), by = "Worksheet_well",
             .groups="drop") %>%
   # Remove duplicate columns and rename to be compatible with functions
-  rename(AcceptedDroplets_FetalFrac = AcceptedDroplets_ff_allele1) %>%
-  mutate(maternal_positives = pmax(Positives_ff_allele1, Positives_ff_allele2),
-         paternal_positives = pmin(Positives_ff_allele1, Positives_ff_allele2),
-         maternal_molecules = Poisson_correct(AcceptedDroplets_FetalFrac,maternal_positives),
-         paternal_molecules = Poisson_correct(AcceptedDroplets_FetalFrac,paternal_positives))
+  rename(AcceptedDroplets_FetalFrac = AcceptedDroplets_ff_allele1)
+
+colnames(ddpcr_control_tbl_ff)
 
 #############################################################
 # cfDNA SPRT analysis
@@ -248,138 +439,61 @@ ddpcr_control_tbl_ff <- pivotted_controls_ff %>%
 # Set likelihood ratio threshold
 LR_threshold <- 250
 
-ddpcr_sprt_analysed <- ddpcr_data_tbl %>%
-  # Rename sample to r_number to allow merge with RAPID Biobank data in next step.
-  # Have to specify dplyr for rename.
-  dplyr::rename(r_number = Sample) %>%
+ddpcr_sprt_analysed <- ff_calculations(
+  var_ref_calculations(ddpcr_data_tbl)) %>% 
   
-  # Perform Poisson correction to determine the total number of molecules detected for each target.
-  mutate(variant_molecules = Poisson_correct(AcceptedDroplets_Variant_assay,Positives_variant), 
-         reference_molecules = Poisson_correct(AcceptedDroplets_Variant_assay,Positives_reference),   
-         
-         vf_assay_molecules = variant_molecules + reference_molecules,
-         
-         # Calculate the fractional abundance of each allele
-         reference_fraction = reference_molecules / vf_assay_molecules,
-         variant_fraction = variant_molecules / vf_assay_molecules,
-         variant_percent  = variant_fraction * 100,
-         reference_percent  = reference_fraction * 100,
-         
-         # Select the major (over-represented) and minor (under-represented) alleles
-         major_allele = case_when(
-           # If both fractions are exactly 50, then the variant is arbitrarily chosen as the over
-           # represented allele
-           variant_percent >= reference_percent ~ "variant allele",
-           reference_percent > variant_percent ~ "reference allele"),
-         
-         minor_allele = case_when(
-           major_allele == "variant allele" ~ "reference allele",
-           major_allele == "reference allele" ~ "variant allele"),
-         
-         # Choose the percentage of the major and minor alleles
-         major_allele_percent = case_when(
-           major_allele == "variant allele" ~variant_percent,
-           major_allele == "reference allele" ~reference_percent),
-         
-         # Choose the molecules for each allele
-         major_allele_molecules = case_when(
-           major_allele == "variant allele" ~variant_molecules,
-           major_allele == "reference allele" ~reference_molecules),
-         
-         minor_allele_molecules = case_when(
-           minor_allele == "variant allele" ~variant_molecules,
-           minor_allele == "reference allele" ~reference_molecules),
-         
-         # Find the difference between the numbers of molecules for each allele
-         difference_molecules = abs(major_allele_molecules - minor_allele_molecules),
-         
-         # Calculate the 95% confidence intervals of the numbers of molecules for each allele
-         variant_molecules_max = Poisson_max((variant_molecules / AcceptedDroplets_Variant_assay), AcceptedDroplets_Variant_assay),
-         variant_molecules_min = Poisson_min((variant_molecules / AcceptedDroplets_Variant_assay), AcceptedDroplets_Variant_assay),
-         reference_molecules_max = Poisson_max((reference_molecules / AcceptedDroplets_Variant_assay), AcceptedDroplets_Variant_assay),
-         reference_molecules_min = Poisson_min((reference_molecules / AcceptedDroplets_Variant_assay), AcceptedDroplets_Variant_assay),
-         
-         major_allele_molecules_max = case_when(
-           major_allele == "variant allele" ~variant_molecules_max,
-           major_allele == "reference allele" ~reference_molecules_max),
-         
-         major_allele_molecules_min = case_when(
-           major_allele == "variant allele" ~variant_molecules_min,
-           major_allele == "reference allele" ~reference_molecules_min),
-         
-         minor_allele_molecules_max = case_when(
-           minor_allele == "variant allele" ~variant_molecules_max,
-           minor_allele == "reference allele" ~reference_molecules_max),
-         
-         minor_allele_molecules_min = case_when(
-           minor_allele == "variant allele" ~variant_molecules_min,
-           minor_allele == "reference allele" ~reference_molecules_min),
-         
-         difference_molecules_max = major_allele_molecules_max - minor_allele_molecules_min,
-         difference_molecules_min = major_allele_molecules_min - minor_allele_molecules_max,
-         
-         # Calculate the 95% confidence intervals of the fractional abundances
-         variant_percent_max = (Poisson_fraction_max(variant_molecules_max, reference_molecules))*100,
-         variant_percent_min = (Poisson_fraction_min(variant_molecules_min, reference_molecules))*100,
-         reference_percent_max = (Poisson_fraction_max(reference_molecules_max, variant_molecules))*100,
-         reference_percent_min = (Poisson_fraction_min(reference_molecules_min, variant_molecules))*100,
-         
-         major_allele_percent_max = case_when(
-           major_allele == "variant allele" ~variant_percent_max,
-           major_allele == "reference allele" ~reference_percent_max),
-         
-         major_allele_percent_min = case_when(
-           major_allele == "variant allele" ~variant_percent_min,
-           major_allele == "reference allele" ~reference_percent_min),
-         
-         # Calculate the 95% confidence intervals of the numbers of molecules detected by each assay
-         vf_assay_molecules_max = Poisson_max((vf_assay_molecules/AcceptedDroplets_Variant_assay), AcceptedDroplets_Variant_assay),
-         vf_assay_molecules_min = Poisson_min((vf_assay_molecules/AcceptedDroplets_Variant_assay), AcceptedDroplets_Variant_assay),
-         
-         
-        # Perform the same process for the fetal fraction assay
-        
-        maternal_molecules = Poisson_correct(AcceptedDroplets_FetalFrac,maternal_positives),
-        paternal_molecules = Poisson_correct(AcceptedDroplets_FetalFrac,paternal_positives),
-        
-        # Calculate the fetal fraction
-        fetal_fraction = calc_ff(maternal_molecules, paternal_molecules),
-        fetal_percent = fetal_fraction*100,
-        
-        ff_assay_molecules = maternal_molecules + paternal_molecules,
-        total_molecules = vf_assay_molecules + ff_assay_molecules,
-        
-        
-        paternal_molecules_max = Poisson_max((paternal_molecules / AcceptedDroplets_FetalFrac), AcceptedDroplets_FetalFrac),
-        paternal_molecules_min = Poisson_min((paternal_molecules / AcceptedDroplets_FetalFrac), AcceptedDroplets_FetalFrac),
+  # Rename sample to r_number to allow merge with RAPID Biobank data.
+  rename(r_number = Sample) %>%
+  
+  mutate(
+    total_molecules = vf_assay_molecules + ff_assay_molecules,
 
-        maternal_molecules_max = Poisson_max((maternal_molecules / AcceptedDroplets_FetalFrac), AcceptedDroplets_FetalFrac),
-        maternal_molecules_min = Poisson_min((maternal_molecules / AcceptedDroplets_FetalFrac), AcceptedDroplets_FetalFrac),
-         
-        ff_assay_molecules_max = Poisson_max((ff_assay_molecules/AcceptedDroplets_FetalFrac), AcceptedDroplets_FetalFrac),
-        ff_assay_molecules_min = Poisson_min((ff_assay_molecules/AcceptedDroplets_FetalFrac), AcceptedDroplets_FetalFrac),
-        
-        # When calculating for the fetal fraction, the paternal fraction must be multiplied by 2.
-        fetal_percent_max = 200* (Poisson_fraction_max(paternal_molecules_max, maternal_molecules)),
-        fetal_percent_min = 200* (Poisson_fraction_min(paternal_molecules_min, maternal_molecules)),
-         
-        # Perform SPRT and return the likelihood ratio
-        Likelihood_ratio = case_when(
-           Inheritance_chromosomal == "x_linked" ~ calc_LR_X_linked(fetal_fraction, (major_allele_percent/100), vf_assay_molecules),
-           Inheritance_chromosomal == "autosomal" ~ calc_LR_autosomal(fetal_fraction, (major_allele_percent/100), vf_assay_molecules)),
-         
-        # Classify based on likelihood ratio threshold supplied
-        # Fetal genotype predictions are named consistently as "inconclusive", "heterozygous", "homozygous/hemizygous reference/variant"
-        SPRT_prediction = case_when(
-           Inheritance_chromosomal == "autosomal" & Likelihood_ratio > LR_threshold & major_allele == "reference allele" ~ "homozygous reference",
-           Inheritance_chromosomal == "autosomal" & Likelihood_ratio > LR_threshold & major_allele == "variant allele" ~ "homozygous variant",
-           Inheritance_chromosomal == "autosomal" & Likelihood_ratio < (1/LR_threshold) ~ "heterozygous",
-           Inheritance_chromosomal == "autosomal" & Likelihood_ratio < LR_threshold & Likelihood_ratio > (1/LR_threshold) ~ "inconclusive",
-           Inheritance_chromosomal == "x_linked" & Likelihood_ratio > LR_threshold & major_allele == "reference allele" ~ "hemizygous reference",
-           Inheritance_chromosomal == "x_linked" & Likelihood_ratio > LR_threshold & major_allele == "variant allele" ~ "hemizygous variant",
-           Inheritance_chromosomal == "x_linked" & Likelihood_ratio < LR_threshold ~ "inconclusive"),
-         
-         Call = ifelse(SPRT_prediction == "no call", "no call", "call"))
+  # Perform SPRT and return the likelihood ratio
+  Likelihood_ratio = case_when(
+     Inheritance_chromosomal == "x_linked" ~ 
+       calc_LR_X_linked(fetal_fraction, (major_allele_percent/100), 
+                        vf_assay_molecules),
+     Inheritance_chromosomal == "autosomal" ~ 
+       calc_LR_autosomal(fetal_fraction, (major_allele_percent/100), 
+                         vf_assay_molecules)),
+   
+  # Classify based on likelihood ratio threshold supplied
+  # Fetal genotype predictions are named consistently as 
+  # "inconclusive", "heterozygous", "homozygous/hemizygous reference/variant"
+  SPRT_prediction = case_when(
+      
+      Inheritance_chromosomal == "autosomal" &
+      Likelihood_ratio > LR_threshold &
+      major_allele == "reference allele" 
+          ~ "homozygous reference",
+      
+      Inheritance_chromosomal == "autosomal" &
+      Likelihood_ratio > LR_threshold &
+      major_allele == "variant allele" 
+          ~ "homozygous variant",
+      
+      Inheritance_chromosomal == "autosomal" &
+      Likelihood_ratio < (1/LR_threshold)
+          ~ "heterozygous",
+      
+      Inheritance_chromosomal == "autosomal" &
+      Likelihood_ratio < LR_threshold &
+      Likelihood_ratio > (1/LR_threshold) 
+          ~ "inconclusive",
+      
+      Inheritance_chromosomal == "x_linked" &
+      Likelihood_ratio > LR_threshold &
+      major_allele == "reference allele" 
+          ~ "hemizygous reference",
+      
+      Inheritance_chromosomal == "x_linked" &
+      Likelihood_ratio > LR_threshold &
+      major_allele == "variant allele" 
+          ~ "hemizygous variant",
+      
+      Inheritance_chromosomal == "x_linked" &
+      Likelihood_ratio < LR_threshold 
+          ~ "inconclusive"))
 
 #############################################################
 # cfDNA MCMC analysis
@@ -403,8 +517,8 @@ ddpcr_data_mcmc <- ddpcr_data_tbl %>%
                 Z_X = maternal_positives,
                 Z_Y = paternal_positives) %>%
   arrange(Inheritance_chromosomal, Inheritance_pattern, variant_assay) %>%
-  select(r_number, Inheritance_chromosomal, Inheritance_pattern, variant_assay, n_K, n_Z, 
-         K_N, K_M, n_Z, Z_X, Z_Y)
+  select(r_number, Inheritance_chromosomal, Inheritance_pattern, 
+         variant_assay, n_K, n_Z, K_N, K_M, n_Z, Z_X, Z_Y)
 
 # Compile the models
 
@@ -452,42 +566,53 @@ mcmc_threshold <- 0.95
 
 ddpcr_with_fits <- ddpcr_data_mcmc %>%
   nest(data = n_K:Z_Y) %>%
-  mutate(data = map(data, as.list),
-         # Use mutate once for the data, fit and results sections, which avoids too many brackets
+  mutate(
+    
+  data = map(data, as.list),
          
-         fit = case_when(
-           Inheritance_chromosomal == "autosomal" & Inheritance_pattern == "dominant" ~map(data, ~ dominant_model$sample(data = .,
-                                                init = initialise_chains_dominant,
-                                                step_size = 0.2,
-                                                parallel_chains = parallel::detectCores())),
-           
-           Inheritance_chromosomal == "autosomal" & Inheritance_pattern == "recessive" ~ map(data, ~ recessive_model$sample(data = .,
-                                                                            init = initialise_chains_recessive,
-                                                                            step_size = 0.2,
-                                                                            parallel_chains = parallel::detectCores())),
-           
-           Inheritance_chromosomal == "x_linked" ~map(data, ~ x_linked_model$sample(data = .,
-                                             init = initialise_chains_xlinked,
-                                             step_size = 0.2,
-                                             parallel_chains = parallel::detectCores()))),
-         
-         results = case_when(
-           Inheritance_chromosomal == "autosomal" & Inheritance_pattern == "dominant" ~map(fit,  ~ setNames(pivot_wider(.$summary(c("pG", "rho"), "mean"),
-                                                                        names_from = "variable",
-                                                                        values_from = "mean"),
-                                                            c("p_G1", "p_G2", "rho_est"))),
-           
-           Inheritance_chromosomal == "autosomal" & Inheritance_pattern == "recessive" ~map(fit,  ~ setNames(pivot_wider(.$summary(c("pG", "rho"), "mean"),
-                                                                         names_from = "variable",
-                                                                         values_from = "mean"),
-                                                             c("p_G1", "p_G2", "p_G3", "rho_est"))),
-           
-           Inheritance_chromosomal == "x_linked" ~map(fit,  ~ setNames(pivot_wider(.$summary(c("pG", "rho"), "mean"),
-                                                    names_from = "variable",
-                                                    values_from = "mean"),
-                                        c("p_G0", "p_G1", "rho_est"))))) %>%
-           
-           unnest_wider(results)
+  fit = case_when(
+  Inheritance_chromosomal == "autosomal" &
+  Inheritance_pattern == "dominant" ~map(
+    data, ~ dominant_model$sample(data = .,
+                                  init = initialise_chains_dominant,
+                                  step_size = 0.2,
+                                  parallel_chains = parallel::detectCores())),
+   
+  Inheritance_chromosomal == "autosomal" & 
+  Inheritance_pattern == "recessive" ~ map(
+    data, ~ recessive_model$sample(data = .,
+                                  init = initialise_chains_recessive,
+                                  step_size = 0.2,
+                                  parallel_chains = parallel::detectCores())),
+   
+  Inheritance_chromosomal == "x_linked" ~map(
+    data, ~ x_linked_model$sample(data = .,
+                                 init = initialise_chains_xlinked,
+                                 step_size = 0.2,
+                                 parallel_chains = parallel::detectCores()))),
+ 
+ results = case_when(
+    Inheritance_chromosomal == "autosomal" &
+    Inheritance_pattern == "dominant" ~map(
+      fit,  ~ setNames(pivot_wider(.$summary(c("pG", "rho"), "mean"),
+                                  names_from = "variable",
+                                  values_from = "mean"),
+                       c("p_G1", "p_G2", "rho_est"))),
+   
+   Inheritance_chromosomal == "autosomal" & 
+    Inheritance_pattern == "recessive" ~map(
+      fit,  ~ setNames(pivot_wider(.$summary(c("pG", "rho"), "mean"),
+                                 names_from = "variable",
+                                 values_from = "mean"),
+                     c("p_G1", "p_G2", "p_G3", "rho_est"))),
+   
+   Inheritance_chromosomal == "x_linked" ~map(
+      fit,  ~ setNames(pivot_wider(.$summary(c("pG", "rho"), "mean"),
+                                  names_from = "variable",
+                                  values_from = "mean"),
+                      c("p_G0", "p_G1", "rho_est"))))) %>%
+   
+   unnest_wider(results)
 
 # Add on fetal genotype predictions based on the previously set threshold.
 
@@ -497,20 +622,55 @@ ddpcr_mcmc_analysed <- ddpcr_with_fits %>%
   mutate(mcmc_prediction = case_when(
     
     # Dominant predictions
-    Inheritance_chromosomal == "autosomal" & Inheritance_pattern == "dominant" & p_G1 > mcmc_threshold ~"heterozygous",
-    Inheritance_chromosomal == "autosomal" & Inheritance_pattern == "dominant" & p_G2 > mcmc_threshold ~"homozygous reference",
-    Inheritance_chromosomal == "autosomal" & Inheritance_pattern == "dominant" & p_G1 < mcmc_threshold & p_G2 < mcmc_threshold ~"inconclusive",
+    Inheritance_chromosomal == "autosomal" & 
+    Inheritance_pattern == "dominant" & 
+    p_G1 > mcmc_threshold 
+                ~"heterozygous",
+    Inheritance_chromosomal == "autosomal" &
+    Inheritance_pattern == "dominant" & 
+    p_G2 > mcmc_threshold 
+                ~"homozygous reference",
+    Inheritance_chromosomal == "autosomal" &
+    Inheritance_pattern == "dominant" & 
+    p_G1 < mcmc_threshold & 
+    p_G2 < mcmc_threshold 
+                ~"inconclusive",
     
     # Recessive predictions
-    Inheritance_chromosomal == "autosomal" & Inheritance_pattern == "recessive" & p_G1 > mcmc_threshold ~"homozygous reference",
-    Inheritance_chromosomal == "autosomal" & Inheritance_pattern == "recessive" & p_G2 > mcmc_threshold ~"heterozygous",
-    Inheritance_chromosomal == "autosomal" & Inheritance_pattern == "recessive" & p_G3 > mcmc_threshold ~"homozygous variant",
-    Inheritance_chromosomal == "autosomal" & Inheritance_pattern == "recessive" & p_G1 < mcmc_threshold & p_G2 < mcmc_threshold & p_G2 < mcmc_threshold ~"inconclusive",
+    Inheritance_chromosomal == "autosomal" &
+    Inheritance_pattern == "recessive" & 
+    p_G1 > mcmc_threshold 
+                ~"homozygous reference",
+    
+    Inheritance_chromosomal == "autosomal" &
+    Inheritance_pattern == "recessive" &
+    p_G2 > mcmc_threshold 
+                ~"heterozygous",
+    
+    Inheritance_chromosomal == "autosomal"&
+    Inheritance_pattern == "recessive" &
+    p_G3 > mcmc_threshold 
+                ~"homozygous variant",
+    
+    Inheritance_chromosomal == "autosomal" &
+    Inheritance_pattern == "recessive" & 
+    p_G1 < mcmc_threshold & 
+    p_G2 < mcmc_threshold & 
+                ~"inconclusive",
     
     # X-linked predictions
-    Inheritance_chromosomal == "x_linked" & p_G0 > mcmc_threshold ~"hemizygous reference",
-    Inheritance_chromosomal == "x_linked" & p_G1 > mcmc_threshold ~"hemizygous variant",
-    Inheritance_chromosomal == "x_linked" & p_G0 < mcmc_threshold & p_G1 < mcmc_threshold ~"inconclusive"))
+    Inheritance_chromosomal == "x_linked" &
+    p_G0 > mcmc_threshold 
+                ~"hemizygous reference",
+    
+    Inheritance_chromosomal == "x_linked" &
+    p_G1 > mcmc_threshold 
+                ~"hemizygous variant",
+    
+    Inheritance_chromosomal == "x_linked" &
+    p_G0 < mcmc_threshold &
+    p_G1 < mcmc_threshold 
+                ~"inconclusive"))
 
 #############################################################
 # Collation of results
@@ -556,9 +716,9 @@ write.csv(ddpcr_nipd_unblinded,
 # Sickle cell disease analysis for paper
 #############################################################
 
-# The "secondary cohort" refers to the most recent phase of the ddPCR sickle cell disease project, when 
-# all samples were extracted using a 6ml protocol and the lab workflow was finalised
-# ("phase 1" was my MSc project in 2018, and "phase 2" was the work done in 2019 and 2020).
+# The "secondary cohort" refers to the most recent phase of the 
+# ddPCR sickle cell disease project, when all samples were extracted 
+# using a 6ml protocol and the lab workflow was finalised.
 
 secondary_cohort <- c("14182", "19868", "20238", "20611", 
                      "20874", "30063", "30068", "30113", "30142", 
@@ -572,62 +732,54 @@ scd_ddpcr <- ddpcr_nipd_unblinded %>%
   # statistical analyses and the technical data (see paper draft v8)
   
   mutate(algorithm_prediction = case_when(
-    (SPRT_prediction == "heterozygous" | mcmc_prediction == "heterozygous") & variant_percent > 48.9 &
-      variant_percent < 51.1 &
-      difference_molecules < 200 ~"heterozygous",
+    (SPRT_prediction == "heterozygous" | mcmc_prediction == "heterozygous") &
+    variant_percent > 48.9 &
+    variant_percent < 51.1 &
+    difference_molecules < 200 
+          ~"heterozygous",
     
-    (SPRT_prediction == "homozygous reference" | mcmc_prediction == "homozygous reference") & 
-      variant_percent < 48.9 & difference_molecules > 200 ~"homozygous reference",
+    (SPRT_prediction == "homozygous reference" | 
+       mcmc_prediction == "homozygous reference") & 
+    variant_percent < 48.9 &
+    difference_molecules > 200
+          ~"homozygous reference",
     
-    (SPRT_prediction == "homozygous variant" | mcmc_prediction == "homozygous variant") & 
-      variant_percent > 51.1 & difference_molecules > 200 ~"homozygous variant",
+    (SPRT_prediction == "homozygous variant" | 
+       mcmc_prediction == "homozygous variant") &
+    variant_percent > 51.1 & 
+    difference_molecules > 200 
+          ~"homozygous variant",
     
-    TRUE ~"inconclusive"),
+          TRUE ~"inconclusive"),
     
     # Create an "clinical prediction" of whether the fetus will
     # be affected or not.
     
     clinical_prediction = case_when(
-      algorithm_prediction == "heterozygous" | algorithm_prediction == "homozygous reference" ~ "unaffected",
-      algorithm_prediction == "homozygous variant" ~ "affected",
-      algorithm_prediction == "inconclusive" ~"inconclusive"),
+      algorithm_prediction == "heterozygous" | 
+        algorithm_prediction == "homozygous reference" 
+                ~ "unaffected",
+      algorithm_prediction == "homozygous variant" 
+                ~ "affected",
+      algorithm_prediction == "inconclusive" 
+                ~"inconclusive"),
     
     clinical_outcome = case_when(
-      mutation_genetic_info_fetus == "HbAA" | mutation_genetic_info_fetus == "HbAS" ~"unaffected",
+      mutation_genetic_info_fetus == "HbAA" | 
+        mutation_genetic_info_fetus == "HbAS" ~"unaffected",
       mutation_genetic_info_fetus == "HbSS" ~"affected"),
       
       cohort = ifelse(r_number %in% secondary_cohort, "secondary", "primary"))
 
 
-# Table
-scd_paper_table <- ddpcr_nipd_unblinded %>%
-  filter(r_number %in% phase3_samples) %>%
-  
-  # Round the percentages
-  mutate(Fetal_fraction_percent = round(Fetal_fraction_percent, 1),
-         Variant_fraction_percent = round(Variant_fraction_percent, 1),
-         # Ammend this step to include the testing algorithm
-         "Predicted fetal genotype" = ifelse(r_number == "20238", "Inconclusive", mcmc_prediction)) %>%
-  select(sample_code, r_number, Partner_sample_available,
-         gestation_character, ff_assay, Fetal_fraction_percent, 
-         Variant_fraction_percent, Molecules_ff_assay, Molecules_variant_assay,
-         Molecules_difference, SPRT_prediction, mcmc_prediction, 
-         "Predicted fetal genotype", mutation_genetic_info_fetus) %>%
 
-  # Rename the column headings
-  dplyr::rename("Sample" = sample_code,
-                "Partner sample" = Partner_sample_available,
-                "Gestation" = gestation_character,
-                "Fetal fraction SNP" = ff_assay,
-                "Fetal fraction (%)" = Fetal_fraction_percent,
-                "Variant fraction (%)" = Variant_fraction_percent,
-                "Molecules detected (fetal fraction ddPCR)" = Molecules_ff_assay,
-                "Molecules detected (variant fraction ddPCR)"  = Molecules_variant_assay,
-                "SPRT result" = SPRT_prediction,
-                "MCMC result" = mcmc_prediction,
-                "Confirmed fetal genotype" = mutation_genetic_info_fetus)
 
-write.csv(scd_paper_table, "analysis_outputs/scd_paper_table.csv", row.names = FALSE)
+
+
+
+
+
+
 
 #########################
 # Cohort plots
@@ -1119,7 +1271,7 @@ wells_for_6000 <- c("21-1116.csv_C02", "21-1116.csv_G02",
                     "21-1946.csv_E08", "21-1946.csv_C09","21-1946.csv_F09", 
                     "21-1946.csv_G10")
 
-parents_downsampled <- ddpcr_data %>%
+parents_downsampled <- var_ref_calculations(ddpcr_data %>%
   filter(Worksheet_well %in% wells_for_6000) %>%
   mutate(worksheet_sample = paste0(Worksheet, "_", Sample)) %>%
   group_by(worksheet_sample, Target) %>% 
@@ -1129,89 +1281,13 @@ parents_downsampled <- ddpcr_data %>%
   pivot_wider(id_cols = worksheet_sample,
               names_from = Target,
               values_from = c(AcceptedDroplets, Positives)) %>%
-  dplyr::rename(AcceptedDroplets_Variant_assay =AcceptedDroplets_HbS) %>%
-  
+  rename(
+    AcceptedDroplets_Variant_assay =AcceptedDroplets_HbS,
+    Positives_variant = Positives_HbA,
+    Positives_reference = Positives_HbS) %>%
   mutate(
-    reference_molecules = Poisson_correct(AcceptedDroplets_Variant_assay, Positives_HbA),
-    variant_molecules = Poisson_correct(AcceptedDroplets_Variant_assay, Positives_HbS),
-    
-    vf_assay_molecules = variant_molecules + reference_molecules,
-    
-    # Calculate the fractional abundance of each allele
-    reference_fraction = reference_molecules / vf_assay_molecules,
-    variant_fraction = variant_molecules / vf_assay_molecules,
-    variant_percent  = variant_fraction * 100,
-    reference_percent  = reference_fraction * 100,
-    
-    # Select the major (over-represented) and minor (under-represented) alleles
-    major_allele = case_when(
-      # If both fractions are exactly 50, then the variant is arbitrarily chosen as the over
-      # represented allele
-      variant_percent >= reference_percent ~ "variant allele",
-      reference_percent > variant_percent ~ "reference allele"),
-    
-    minor_allele = case_when(
-      major_allele == "variant allele" ~ "reference allele",
-      major_allele == "reference allele" ~ "variant allele"),
-    
-    # Choose the percentage of the major and minor alleles
-    major_allele_percent = case_when(
-      major_allele == "variant allele" ~variant_percent,
-      major_allele == "reference allele" ~reference_percent),
-    
-    # Choose the molecules for each allele
-    major_allele_molecules = case_when(
-      major_allele == "variant allele" ~variant_molecules,
-      major_allele == "reference allele" ~reference_molecules),
-    
-    minor_allele_molecules = case_when(
-      minor_allele == "variant allele" ~variant_molecules,
-      minor_allele == "reference allele" ~reference_molecules),
-    
-    # Find the difference between the numbers of molecules for each allele
-    difference_molecules = abs(major_allele_molecules - minor_allele_molecules),
-    
-    # Calculate the 95% confidence intervals of the numbers of molecules for each allele
-    variant_molecules_max = Poisson_max((variant_molecules / AcceptedDroplets_Variant_assay), AcceptedDroplets_Variant_assay),
-    variant_molecules_min = Poisson_min((variant_molecules / AcceptedDroplets_Variant_assay), AcceptedDroplets_Variant_assay),
-    reference_molecules_max = Poisson_max((reference_molecules / AcceptedDroplets_Variant_assay), AcceptedDroplets_Variant_assay),
-    reference_molecules_min = Poisson_min((reference_molecules / AcceptedDroplets_Variant_assay), AcceptedDroplets_Variant_assay),
-    
-    major_allele_molecules_max = case_when(
-      major_allele == "variant allele" ~variant_molecules_max,
-      major_allele == "reference allele" ~reference_molecules_max),
-    
-    major_allele_molecules_min = case_when(
-      major_allele == "variant allele" ~variant_molecules_min,
-      major_allele == "reference allele" ~reference_molecules_min),
-    
-    minor_allele_molecules_max = case_when(
-      minor_allele == "variant allele" ~variant_molecules_max,
-      minor_allele == "reference allele" ~reference_molecules_max),
-    
-    minor_allele_molecules_min = case_when(
-      minor_allele == "variant allele" ~variant_molecules_min,
-      minor_allele == "reference allele" ~reference_molecules_min),
-    
-    difference_molecules_max = major_allele_molecules_max - minor_allele_molecules_min,
-    difference_molecules_min = major_allele_molecules_min - minor_allele_molecules_max,
-    
-    # Calculate the 95% confidence intervals of the fractional abundances
-    variant_percent_max = (Poisson_fraction_max(variant_molecules_max, reference_molecules))*100,
-    variant_percent_min = (Poisson_fraction_min(variant_molecules_min, reference_molecules))*100,
-    reference_percent_max = (Poisson_fraction_max(reference_molecules_max, variant_molecules))*100,
-    reference_percent_min = (Poisson_fraction_min(reference_molecules_min, variant_molecules))*100,
-    
-    major_allele_percent_max = case_when(
-      major_allele == "variant allele" ~variant_percent_max,
-      major_allele == "reference allele" ~reference_percent_max),
-    
-    major_allele_percent_min = case_when(
-      major_allele == "variant allele" ~variant_percent_min,
-      major_allele == "reference allele" ~reference_percent_min),
-
     sample_type = "gDNA",
-    genotype = "het gDNA")
+    genotype = "het gDNA"))
 
 parents_downsampled_bind <- parents_downsampled %>%
   dplyr::rename(r_number = worksheet_sample,
@@ -1378,11 +1454,6 @@ incon_data2 <- incon_data %>%
     values_to = "count")
 
 
-# Fix the order of samples
-
-hetgDNA_data_plot <- hetgDNA_data %>%
-  mutate(row_number = as.numeric(row.names(hetgDNA_data)))
-
 plot_function <- function(dataset) {
   plot = ggplot(dataset, aes(x = row_number, y = count, fill = target))+
   geom_col(width = 0.7, position = "dodge", colour="black", alpha = 0.4)+
@@ -1399,12 +1470,23 @@ plot_function <- function(dataset) {
   return(plot)
 }
 
-plot_function(hetgDNA_data2)
-plot_function(hetcfDNA_data2)
-plot_function(homref_data2)
-# 15000
+het_gDNA_plot <- plot_function(hetgDNA_data2)+
+  labs(title = "Heterozygous gDNA controls")
+plot_function(hetcfDNA_data2)+
+  labs(title = "cfDNA heterozygous predictions")
+plot_function(homref_data2)+
+  labs(title = "cfDNA homozygous reference predictions")
 plot_function(homvar_data2)
 plot_function(incon_data2)
+
+# Export plots as width 1418, height 444
+
+ggsave(filename = "plots/het_gDNA_plot.png",
+       plot =  het_gDNA_plot,
+       width = 5.6732283,
+       height = 1.775591)
+
+?ggsave()
 
 scd_ddpcr %>%
   filter(algorithm_prediction == "inconclusive") %>%
@@ -1428,9 +1510,6 @@ molecules_difference_plot <- ggplot(molecules_difference_data, aes(x = row_numbe
   scale_y_continuous(breaks = c(0, 200, 1000, 2000, 3000))
 
 ggsave(filename = "plots/molecules_difference_plot.png", plot = molecules_difference_plot, dpi = 300)
-
-view(variant_fraction_data)
-
 
 
 #########################
