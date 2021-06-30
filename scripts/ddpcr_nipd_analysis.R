@@ -1007,8 +1007,12 @@ plot_cohort("heterozygous")+
   labs(title = "cfDNA heterozygous predictions")
 
 plot_cohort("homozygous reference")+
-  labs(title = "cfDNA homozygous reference predictions")
-
+  labs(title = "cfDNA homozygous reference predictions")+
+  annotate("text", label = "Incorrect prediction",
+           x =7.5, y = 14600, size = 4)+
+  geom_segment(aes(x = 10, y = 14600, xend = 12.5, yend = 14200),
+               arrow = arrow(length = unit(0.1, "inches")))
+          
 plot_cohort("homozygous variant")+
   labs(title = "cfDNA homozygous variant predictions")
 
@@ -1049,13 +1053,50 @@ ggplot(scd_ddpcr, aes(x =fetal_percent, y = variant_percent))+
         panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
   labs(x = "Fetal fraction (%)", y = "Variant fraction (%)")
 
-ggplot(scd_ddpcr, aes(x = Gestation_total_weeks, y = Fetal_fraction_percent))+
-  geom_point(size = 3, alpha = 0.4)+
-  geom_errorbar(alpha = 0.2, aes(ymin = Fetal_fraction_min_percent, ymax = Fetal_fraction_max_percent))+  
-  theme_bw()+
-  xlim(0, 40)
+paternal_molecules_plot 
 
-count(scd_ddpcr, algorithm_prediction, mutation_genetic_info_fetus)
+ggplot(scd_ddpcr, aes(x = Gestation_total_weeks, 
+                                                 y = paternal_molecules,
+                                                 colour = cohort))+
+  geom_point(size = 3, alpha = 0.4)+
+  geom_errorbar(alpha = 0.2, aes(ymin = paternal_molecules_min, ymax = paternal_molecules_max))+  
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  xlim(0, 40)+
+  labs(x = "Gestation (weeks)", y = "Fetal-specific molecules detected")
+
+ggsave(filename = "plots/paternal_molecules_plot.png", 
+       plot =  paternal_molecules_plot, dpi = 300)
+
+
+gestation_plot
+ggplot(scd_ddpcr, aes(x = Gestation_total_weeks, y = fetal_percent,
+                                        colour = cohort))+
+  geom_point(size = 3, alpha = 0.4)+
+  geom_errorbar(alpha = 0.2, aes(ymin = fetal_percent_min, ymax = fetal_percent_max))+  
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  xlim(0, 40)+
+  labs(x = "Gestation (weeks)", y = "Fetal fraction by ddPCR (%)")
+
+ggsave(filename = "plots/gestation_plot.png", 
+       plot =  gestation_plot, dpi = 300)
+
+ggplot(scd_ddpcr %>%
+         filter(algorithm_prediction != "inconclusive"), aes(x = difference_molecules, y = paternal_molecules,
+                      colour = algorithm_prediction))+
+  geom_point(size = 3, alpha = 0.4)+
+  theme_bw()+
+  xlim(0, 1500)+
+  ylim(0, 700)+
+  geom_vline(xintercept = 200, linetype = "dashed")+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+geom_errorbar(alpha = 0.2, aes(ymin = paternal_molecules_min, 
+                               ymax = paternal_molecules_max))+  
+  geom_errorbarh(alpha = 0.2, aes(xmin = difference_molecules_min, 
+                                  xmax = difference_molecules_max))+  
+
 
 # Primary and secondary cohort plot
 primary_secondary_cohort_plot <- ggplot(scd_ddpcr, aes(x = cohort, y = Molecules_variant_assay))+
