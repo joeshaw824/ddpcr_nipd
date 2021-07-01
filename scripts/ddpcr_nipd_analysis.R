@@ -432,7 +432,7 @@ ddpcr_control_tbl_ff <- pivotted_controls_ff %>%
 #############################################################
 
 # Set likelihood ratio threshold
-LR_threshold <- 250
+LR_threshold <- 8
 
 ddpcr_sprt_analysed <- ff_calculations(
   var_ref_calculations(ddpcr_data_tbl)) %>% 
@@ -700,6 +700,54 @@ write.csv(ddpcr_nipd_unblinded,
                         format(current_time, "%Y%m%d_%H%M%S"), ".csv"),
           row.names = FALSE)
 
+ddpcr_nipd_unblinded <- read_csv("analysis_outputs/ddpcr_nipd_unblinded20210629_221518.csv")
+
+
+ddpcr_sickle_only <- left_join(
+  ddpcr_sprt_analysed %>%
+    filter(variant_assay == "HBB c.20A>T"),
+  RAPID_biobank %>%
+    # Change r_number to a character to match ddpcr_analysed
+    mutate(r_number = as.character(r_number)) %>%
+    filter(r_number %in% ddpcr_analysed$r_number) %>%
+    select(r_number, study_id, gestation_weeks, gestation_days, Gestation_total_weeks, gestation_character, 
+           date_of_blood_sample, vacutainer, mutation_genetic_info_fetus, Partner_sample_available, 
+           original_plasma_vol, tubes_plasma_current, report_acquired),
+  by = "r_number") 
+
+
+
+
+
+
+#%>%
+  #mutate(
+   # clinical_prediction = case_when(
+      SPRT_prediction == "heterozygous" | 
+        SPRT_prediction == "homozygous reference" 
+      ~ "unaffected",
+      SPRT_prediction == "homozygous variant" 
+      ~ "affected",
+      SPRT_prediction == "inconclusive" 
+      ~"inconclusive"
+    
+    outcome = case_when(
+    mutation_genetic_info_fetus == "HbAS" |
+      mutation_genetic_info_fetus == "HbAA" 
+    ~"unaffected",
+    mutation_genetic_info_fetus == "HbSS"
+    ~"affected"),
+    outcome_check = ifelse(outcome == clinical_prediction, "TRUE", "FALSE"))
+
+to_view <- (ddpcr_sickle_only %>%
+       select(r_number, SPRT_prediction, mutation_genetic_info_fetus))
+
+view(to_view)
+
+scd_ddpcr %>%
+  filter(fetal_percent < 4) %>%
+  select(r_number, fetal_percent, variant_percent)
+
 #############################################################
 # Sickle cell disease analysis for paper
 #############################################################
@@ -759,6 +807,54 @@ scd_ddpcr <- ddpcr_nipd_unblinded %>%
       
       cohort = ifelse(r_number %in% secondary_cohort, "secondary", "primary"))
 
+
+# New algorithm idea
+
+variant_percent_limit <- 51.1
+
+new_attempt <- scd_ddpcr %>%
+  mutate(new_algorithm = case_when(
+    
+    vf_assay_molecules < 5999 &
+      fetal_percent > 4 &
+      variant_percent < variant_percent_limit
+    ~"unaffected",
+    
+    vf_assay_molecules < 5999 & 
+      fetal_percent > 4 &
+      variant_percent > variant_percent_limit
+    ~"affected",
+    
+    vf_assay_molecules > 6000 &
+      variant_percent < variant_percent_limit
+    ~"unaffected",
+    
+    vf_assay_molecules > 6000 &
+      variant_percent > variant_percent_limit      
+    ~"affected",
+    
+    TRUE ~"inconclusive"),
+    
+    outcome = case_when(
+      mutation_genetic_info_fetus == "HbAS" |
+      mutation_genetic_info_fetus == "HbAA" 
+       ~"unaffected",
+      mutation_genetic_info_fetus == "HbSS"
+      ~"affected"),
+    outcome_check = ifelse(outcome == new_algorithm, "TRUE", "FALSE"))
+  
+ggplot(new_attempt, aes(x = fetal_percent, y = variant_percent,
+                        colour = new_algorithm))+
+         geom_point()
+
+new_attempt_check <- new_attempt %>%
+  filter(new_algorithm != "inconclusive") %>%
+  select(r_number, new_algorithm, outcome, outcome_check)
+
+view(new_attempt_check)
+
+count(new_attempt_check, outcome_check)
+
 #########################
 # gDNA and cfDNA plots
 #########################
@@ -808,6 +904,270 @@ wells_for_6000 <- c("21-1116.csv_C02", "21-1116.csv_G02", "21-1116.csv_H03",
                     "21-1863.csv_C08", "21-1863.csv_E08", "21-1863.csv_H08",
                     "21-1946.csv_E08", "21-1946.csv_C09", "21-1946.csv_F09", 
                     "21-1946.csv_G10")
+
+LR_threshold <- 250
+
+calc_upper_boundary <- function(fetal_fraction, total_copies) {
+  q0 = 0.5
+  q1 <- 0.5+(fetal_fraction/2)
+  Delta <- (1- q1)/(1-q0)
+  Gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
+  upper_boundary <- ((log(LR_threshold)/total_copies) - log(Delta))/log(Gamma)
+  return(upper_boundary)
+}
+
+calc_lower_boundary <- function(fetal_fraction, total_copies) {
+  q0 = 0.5
+  q1 <- 0.5+(fetal_fraction/2)
+  Delta <- (1- q1)/(1-q0)
+  Gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
+  lower_boundary <- ((log(1/LR_threshold)/total_copies) - log(Delta))/log(Gamma)
+  return(lower_boundary)
+}
+
+# This will include merged and single wells
+parent_single_well <- var_ref_calculations(ddpcr_data %>%
+  mutate(worksheet_sample_well = paste0(Worksheet,"_",Sample,"_",Well)) %>%
+  filter(Sample %in% controls$Sample & 
+           !Sample %in% c("NTC", "30139", "30130", 
+                       "19RG-220G0191", "19RG-220G0193",
+                       "21RG-120G0072") &
+           Target %in% c("HbA", "HbS")) %>%
+  pivot_wider(id_cols = c(worksheet_sample_well, Sample, Worksheet, Well),
+              names_from = Target,
+              values_from = 
+                c(AcceptedDroplets, Positives)) %>%
+  select(-AcceptedDroplets_HbA) %>%
+  rename(
+    AcceptedDroplets_Variant_assay =AcceptedDroplets_HbS,
+    Positives_variant = Positives_HbA,
+    Positives_reference = Positives_HbS)) %>%
+  filter(!is.na(variant_percent)) %>%
+  mutate(
+    HbSS_sprt_boundary = (calc_upper_boundary(0.04, vf_assay_molecules))*100,
+    HbAS_sprt_boundary = (calc_lower_boundary(0.04, vf_assay_molecules))*100,
+    sprt_call = case_when(
+      variant_percent > HbSS_sprt_boundary ~"HbSS",
+      variant_percent < HbSS_sprt_boundary &
+        variant_percent > HbAS_sprt_boundary ~"inconclusive",
+      variant_percent < HbAS_sprt_boundary ~"HbAS"))
+
+
+parents_and_boundaries <- parent_single_well %>%
+  select(vf_assay_molecules, variant_percent, HbSS_sprt_boundary, HbAS_sprt_boundary) %>%
+  rename(gDNA_percent = variant_percent) %>%
+  pivot_longer(
+    cols = c(gDNA_percent, HbSS_sprt_boundary, HbAS_sprt_boundary),
+    names_to = "category",
+    values_to = "HbS_percent"
+  )
+
+cfdna_unaffected_cohort <- ddpcr_sickle_only %>%
+  filter(fetal_percent > 4 & mutation_genetic_info_fetus %in% c("HbAS", "HbAA")) %>%
+  mutate(
+    HbSS_sprt_boundary = (calc_upper_boundary(0.04, vf_assay_molecules))*100,
+    HbAS_sprt_boundary = (calc_lower_boundary(0.04, vf_assay_molecules))*100) %>%
+  rename(cfdna_unaffected_percent = variant_percent) %>%
+  select(vf_assay_molecules, cfdna_unaffected_percent, HbSS_sprt_boundary, HbAS_sprt_boundary) %>%
+  pivot_longer(
+    cols = c(cfdna_unaffected_percent, HbSS_sprt_boundary, HbAS_sprt_boundary),
+    names_to = "category",
+    values_to = "HbS_percent"
+  )
+
+cfdna_affected_cohort <- ddpcr_sickle_only %>%
+  filter(fetal_percent > 4 & mutation_genetic_info_fetus == "HbSS") %>%
+  mutate(
+    HbSS_sprt_boundary = (calc_upper_boundary(0.04, vf_assay_molecules))*100,
+    HbAS_sprt_boundary = (calc_lower_boundary(0.04, vf_assay_molecules))*100) %>%
+  rename(cfdna_affected_percent = variant_percent) %>%
+  select(vf_assay_molecules, cfdna_affected_percent, HbSS_sprt_boundary, HbAS_sprt_boundary) %>%
+  pivot_longer(
+    cols = c(cfdna_affected_percent, HbSS_sprt_boundary, HbAS_sprt_boundary),
+    names_to = "category",
+    values_to = "HbS_percent"
+  )
+
+
+all_cohorts <- rbind(cfdna_unaffected_cohort, cfdna_affected_cohort, parents_and_boundaries)
+
+ggplot(parents_and_boundaries %>%
+         arrange(vf_assay_molecules), aes(x = vf_assay_molecules, 
+                               y = HbS_percent))+
+  geom_point(aes(colour = category))+
+  xlim(0, 20000)+
+  ylim(40, 60)
+
+
+
+parents_no_boundaries <- var_ref_calculations(ddpcr_data %>%
+               mutate(worksheet_sample_well = paste0(Worksheet,"_",Sample,"_",Well)) %>%
+               filter(Sample %in% controls$Sample & 
+                        !Sample %in% c("NTC", "30139", "30130", 
+                                       "19RG-220G0191", "19RG-220G0193",
+                                       "21RG-120G0072") &
+                        Target %in% c("HbA", "HbS")) %>%
+               pivot_wider(id_cols = c(worksheet_sample_well, Sample, Worksheet, Well),
+                           names_from = Target,
+                           values_from = 
+                             c(AcceptedDroplets, Positives)) %>%
+               select(-AcceptedDroplets_HbA) %>%
+               rename(
+                 AcceptedDroplets_Variant_assay =AcceptedDroplets_HbS,
+                 Positives_variant = Positives_HbA,
+                 Positives_reference = Positives_HbS)) %>%
+  select(vf_assay_molecules, vf_assay_molecules_max, vf_assay_molecules_min, variant_percent,
+         variant_percent_min, variant_percent_max) %>%
+  mutate(sample_type = "gDNA")
+
+cfdna_affected_cohort <- ddpcr_sickle_only %>%
+  filter(fetal_percent > 4) %>%
+  select(vf_assay_molecules, vf_assay_molecules_max, vf_assay_molecules_min, variant_percent,
+         variant_percent_min, variant_percent_max) %>%
+  mutate(sample_type = "cfDNA")
+
+gDNA_cfDNA_together <- rbind(parents_no_boundaries, cfdna_affected_cohort)
+
+
+ggplot(gDNA_cfDNA_together %>%
+         arrange(vf_assay_molecules), aes(x = vf_assay_molecules, 
+                               y = variant_percent))+
+  geom_point(aes(colour = sample_type))+
+  geom_errorbar(aes(ymin = variant_percent_min, ymax = variant_percent_max),
+                    alpha = 0.2)+
+  geom_errorbarh(aes(xmin = vf_assay_molecules_min, xmax = vf_assay_molecules_max),
+                     alpha = 0.2)+
+  xlim(0, 31000)
+
+
+dosage_predictor <- function(sample_variant_percent, limit) {
+  
+  parent_controls <- parents_no_boundaries %>%
+    filter(vf_assay_molecules >= limit)
+  
+  variant_percent_upper_limit <- max(parent_controls$variant_percent)
+  
+  clinical_prediction = case_when(
+    
+    sample_variant_percent > variant_percent_upper_limit
+    ~ "affected", 
+    
+    sample_variant_percent < variant_percent_upper_limit
+    ~ "unaffected")
+    
+  return(clinical_prediction)
+}
+
+scd_with_predictions <- ddpcr_sickle_only %>%
+  mutate(clinical_prediction = dosage_predictor(variant_percent, vf_assay_molecules))
+
+cfdna_cohort <- scd_with_predictions %>%
+  dplyr::rename(sample_type = clinical_prediction) %>%
+  select(vf_assay_molecules, vf_assay_molecules_max, vf_assay_molecules_min, variant_percent,
+         variant_percent_min, variant_percent_max, sample_type)
+
+
+gDNA_cfDNA_together <- rbind(parents_no_boundaries, cfdna_cohort)
+  
+ggplot(gDNA_cfDNA_together %>%
+           arrange(vf_assay_molecules), aes(x = vf_assay_molecules, 
+                                            y = variant_percent))+
+    geom_point(aes(colour = sample_type))+
+    geom_errorbar(aes(ymin = variant_percent_min, ymax = variant_percent_max),
+                  alpha = 0.2)+
+    geom_errorbarh(aes(xmin = vf_assay_molecules_min, xmax = vf_assay_molecules_max),
+                   alpha = 0.2)+
+  xlim(0, 20000)
+  
+# Need to apply the function to the whole dataset
+
+ddply(scd_ddcr$r_number,dosage_predictor)
+
+?ldply
+ddply(scd_ddpcr, 1,  dosage_predictor(scd_ddpcr))
+
+?apply()
+scd_ddpcr$dosage_prediction
+
+versus_parents_plot <- function(cfdna_sample){
+      
+      sample_only <- scd_ddpcr %>%
+        filter(r_number == cfdna_sample)
+      
+      molecule_threshold <- (sample_only$vf_assay_molecules) -100
+      
+      parent_controls <- parent_single_well %>%
+        filter(vf_assay_molecules > molecule_threshold) %>%
+        mutate(sample_type = "gDNA") %>%
+        rename(r_number = worksheet_sample_well) %>%
+        select(r_number, sample_type, variant_percent, 
+               variant_percent_max, variant_percent_min, vf_assay_molecules)
+      
+      number_control_wells <- nrow(parent_controls)
+      
+      variant_percent_upper_limit <- max(parent_controls$variant_percent)
+      variant_percent_lower_limit <- min(parent_controls$variant_percent)
+      
+      controls_percent_difference <- variant_percent_upper_limit - variant_percent_lower_limit
+      
+      predicted_percent <- (sample_only$fetal_percent/2)+50
+      predicted_percent_max <- predicted_percent + (controls_percent_difference/2)
+      predicted_percent_min <- predicted_percent - (controls_percent_difference/2)
+      
+      
+      sample_fetal_fraction <- round(sample_only$fetal_percent, 1)
+      
+      clinical_prediction = ifelse(sample_only$variant_percent > 
+                                     variant_percent_upper_limit,
+                                   "affected", "unaffected")
+      
+      sample_for_bind <- sample_only %>%
+        mutate(sample_type = "cfDNA") %>%
+        select(r_number, sample_type, variant_percent, 
+               variant_percent_max, variant_percent_min, vf_assay_molecules)
+      
+      parents_and_sample <- rbind(parent_controls, sample_for_bind)
+      
+      vs_parents_plot <- ggplot(parents_and_sample, 
+                                aes(x = r_number, y = variant_percent))+
+        geom_errorbar(aes(ymin = variant_percent_min, 
+                          ymax = variant_percent_max),
+                      alpha = 0.5)+
+        geom_point(size = 3, aes(colour = sample_type))+
+        theme_bw()+
+        theme(axis.text.x = element_blank(),
+              panel.grid.major = element_blank(),
+              panel.grid.minor = element_blank(),
+              axis.ticks.x = element_blank(),
+              axis.title.x = element_blank(),
+              legend.position = "bottom",
+              legend.title = element_blank())+
+        ylim(40, 60)+
+        geom_hline(yintercept = variant_percent_upper_limit,
+                   linetype = "dashed")+
+        geom_hline(yintercept = variant_percent_lower_limit,
+                   linetype = "dashed")+
+        labs(y = "HBB c.20 A>T variant fraction (%)",
+             title = paste0("Sample: ", cfdna_sample),
+             subtitle = paste0(" Fetal fraction: ", sample_fetal_fraction, "  Control wells: ", number_control_wells, "  Molecules threshold: ", molecule_threshold))
+      
+      return(vs_parents_plot)
+}
+
+# For every sample in the cohort, plot this graph
+# We need to change the way of thinking - the woman wants to know if the baby
+# is affected, not whether it's a carrier
+# Then use SPRT with likelihood ratio of 8 and show how crap it is 
+
+
+
+
+
+
+
+versus_parents_plot("14335")
+
+
 
 # Perform the var_ref_calculations for the parental controls in the 
 # downsampled dataset
@@ -1021,6 +1381,28 @@ plot_cohort("het gDNA")+
 
 plot_cohort("inconclusive")+
   labs(title = "Inconclusive results")
+
+
+## New idea for cfDNA plots
+
+ggplot(scd_ddpcr %>%
+         filter(algorithm_prediction == "heterozygous") %>%
+  select(r_number, fetal_percent, algorithm_prediction, variant_molecules, reference_molecules) %>%
+  pivot_longer(
+    cols = c(variant_molecules, reference_molecules),
+    names_to = "target",
+    values_to = "count") %>%
+  group_by(fetal_percent) %>%
+  arrange(fetal_percent) %>%
+    mutate(fetal_percent = factor(fetal_percent)), 
+  aes(x = fetal_percent, y = count, fill = target))+
+    geom_col(position = "dodge", width = 0.5, alpha = 0.5,
+             colour="black")+
+  theme_bw()+
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(angle = 90))
 
 #########################
 # Cohort plots
@@ -1628,8 +2010,9 @@ LOD_data_longer <- LOD_data %>%
 view(LOD_data_longer %>%
        select(unique_identifier, molecules_difference))
 
+
 LOD_data_even_longer <- LOD_data_longer %>%
-  select(Sample, Mass_molecules, Input_molecules, HbS_molecules, HbA_molecules, AcceptedDroplets_Variant_assay, Variant_fraction_percent) %>%
+  select(Sample, unique_identifier, Mass_molecules, Input_molecules, HbS_molecules, HbA_molecules, AcceptedDroplets_Variant_assay, Variant_fraction_percent) %>%
   pivot_longer(cols = c(HbS_molecules, HbA_molecules), names_to = "Target", values_to = "molecules") %>%
   # Order the factors
   mutate(Sample = factor(Sample, levels = c("AA 12%", "AA 10%", "AA 8%", "AA 6%", "AA 4%","AA 2%",
@@ -1656,23 +2039,88 @@ LOD_data_even_longer <- LOD_data_longer %>%
     Sample %in% c("0") ~"0%")) %>%
   mutate(label_y = ifelse(Target == "HbS_molecules", NA, paste0(Variant_fraction_percent, "%")))
 
-view(LOD_data_longer)
-         
+test_data <- LOD_data_even_longer %>%
+  arrange(Input_molecules, Sample) %>%
+  group_by(unique_identifier) %>%
+  mutate(unique_identifier = factor(unique_identifier, levels = c(
+    "3000 AA 12%",
+    "3000 AA 10%",
+    "3000 AA 8%",
+    "3000 AA 6%",
+    "3000 AA 4%",
+    "3000 AA 2%",
+    "3000 0%",
+    "3000 SS 2%",
+    "3000 SS 4%",
+    "3000 SS 6%",
+    "3000 SS 8%",
+    "3000 SS 10%",
+    "3000 SS 12%",
+    "6000 AA 12%",
+    "6000 AA 10%",
+    "6000 AA 8%",
+    "6000 AA 6%",
+    "6000 AA 4%",
+    "6000 AA 2%",
+    "6000 0%",
+    "6000 SS 2%",
+    "6000 SS 4%",
+    "6000 SS 6%",
+    "6000 SS 8%",
+    "6000 SS 10%",
+    "6000 SS 12%",
+    "9000 AA 12%",
+    "9000 AA 10%",
+    "9000 AA 8%",
+    "9000 AA 6%",
+    "9000 AA 4%",
+    "9000 AA 2%",
+    "9000 0%",
+    "9000 SS 2%",
+    "9000 SS 4%",
+    "9000 SS 6%",
+    "9000 SS 8%",
+    "9000 SS 10%",
+    "9000 SS 12%",
+    "12000 AA 12%",
+    "12000 AA 10%",
+    "12000 AA 8%",
+    "12000 AA 6%",
+    "12000 AA 4%",
+    "12000 AA 2%",
+    "12000 0%",
+    "12000 SS 2%",
+    "12000 SS 4%",
+    "12000 SS 6%",
+    "12000 SS 8%",
+    "12000 SS 10%",
+    "12000 SS 12%")))
+
+view(test_data)
+
 # Plot the results for paper
-lod_plot <- ggplot(LOD_data_even_longer %>%
-                     filter(Input_molecules %in% c(6000)), aes(x = Sample, y = molecules, fill = Target))+
+ggplot(test_data, aes(x = unique_identifier, y = molecules, fill = Target))+
   geom_col(width = 0.5, position = position_dodge(width =0.5), colour = "black", alpha = 0.6)+
-  geom_errorbar(aes(ymin = Molecules_min, ymax = Molecules_max), width = .2, position=position_dodge(width=0.5))+
+  # Error bars can be added if necessary
+  # geom_errorbar(aes(ymin = Molecules_min, ymax = Molecules_max), width = .2, position=position_dodge(width=0.5))+
   scale_fill_manual(values=c("#3366FF", "#FF0000"), labels= c("Reference", "Variant"))+
   theme_bw()+
-  theme(axis.text=element_text(size=10), axis.title = element_text(size=14), 
+  theme(axis.text=element_text(size=10, angle = 90), axis.title = element_text(size=14), 
         plot.title = element_text(size=20), legend.position = "bottom", legend.title = element_blank(),
         panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
   labs(x = "", y = "Molecules detected by ddPCR")+
-  ylim(0, 5000)+
-  scale_x_discrete(labels=c("12%","10%","8%","6%","4%","2%","0%",
-                            "2%","4%","6%","8%","10%","12%"))+
-  geom_text(aes(y = 4500, label = label_y), fontface = "bold")
+  scale_x_discrete(labels=rep(c("12%","10%","8%","6%","4%","2%","0%",
+                                "2%","4%","6%","8%","10%","12%"), 4))+  annotate("text", label = "3000 molecules",
+           x = 7, y = 3000, size = 4)+
+  annotate("text", label = "6000 molecules",
+           x = 20, y = 5000, size = 4)+
+  annotate("text", label = "9000 molecules",
+           x = 33, y = 7000, size = 4)+
+  annotate("text", label = "12000 molecules",
+           x = 46, y = 9000, size = 4)+
+  scale_y_continuous(limits = c(0, 9000))
+
+geom_text(aes(y = 4500, label = label_y), fontface = "bold")
   
 
 scd_ddpcr %>%
@@ -1680,7 +2128,8 @@ scd_ddpcr %>%
   select(r_number, algorithm_prediction, Fetal_fraction_percent, Molecules_variant_assay)
 
 
-
+rep(c("12% AA","10% AA","8% AA","6% AA","4% AA","2% AA","0%",
+  "2 SS%","4% SS","6% SS","8% SS","10% SS","12% SS"), 4)
 
 ggsave(filename = "plots/lod_plot.png", plot =  lod_plot, dpi = 300)
 
