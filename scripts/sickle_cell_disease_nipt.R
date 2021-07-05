@@ -250,6 +250,54 @@ ff_calculations <- function(data_input) {
 }
 
 #########################
+# SPRT functions
+#########################
+
+# This step calculates the SPRT thresholds assuming a fetal fraction of 4% and
+# a likelihood ratio of 8.
+calc_SS_boundary <- function(total_copies) {
+  q0 = 0.5
+  q1 <- 0.5+(0.04/2)
+  Delta <- (1- q1)/(1-q0)
+  Gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
+  SS_boundary <- ((log(100)/total_copies) - log(Delta))/log(Gamma)
+  # Convert to a percentage for output
+  return(SS_boundary*100)
+}
+
+calc_AS_upper_boundary <- function(total_copies) {
+  q0 = 0.5
+  q1 <- 0.5+(0.04/2)
+  Delta <- (1- q1)/(1-q0)
+  Gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
+  AS_upper_boundary <- ((log(1/100)/total_copies) - log(Delta))/log(Gamma)
+  # Convert to a percentage for output
+  return(AS_upper_boundary*100)
+}
+
+calc_AS_lower_boundary <- function(total_copies) {
+  q0 = 0.5
+  q1 <- 0.5+(0.04/2)
+  Delta <- (1- q1)/(1-q0)
+  Gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
+  AS_upper_boundary <- ((log(1/100)/total_copies) - log(Delta))/log(Gamma)
+  AS_lower_boundary <- 0.5-(AS_upper_boundary-0.5)
+  # Convert to a percentage for output
+  return(AS_lower_boundary*100)
+}
+
+calc_AA_boundary <- function(total_copies) {
+  q0 = 0.5
+  q1 <- 0.5+(0.04/2)
+  Delta <- (1- q1)/(1-q0)
+  Gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
+  SS_boundary <- ((log(100)/total_copies) - log(Delta))/log(Gamma)
+  AA_boundary <- 0.5-(SS_boundary-0.5)
+  # Convert to a percentage for output
+  return(AA_boundary*100)
+}
+
+#########################
 # Wrangle cfDNA data into shape
 #########################
 
@@ -340,6 +388,24 @@ cfdna_ddpcr_data <- pivotted_ddpcr %>%
          paternal_positives = pmin(Positives_ff_allele1, Positives_ff_allele2))
 
 #########################
+# Select sickle cell disease samples
+#########################
+
+# Samples to exlude:
+# 13262 - this sample had contamination
+# 17004 - this sample was actually HbAC
+# 20915 - this sample was from a twin pregnancy
+samples_to_exclude <- c(13262, 17004, 20915)
+
+cfDNA_scd_data <- ff_calculations(
+  var_ref_calculations(cfdna_ddpcr_data)) %>%
+  # Select only sickle cell disease cases
+  # And cases with fetal fraction over 4%
+  dplyr::rename(r_number = Sample) %>%
+  filter(variant_assay == "HBB c.20A>T" & fetal_percent > 4 &
+           !r_number %in% samples_to_exclude)
+  
+#########################
 # Wrangle gDNA data into shape
 #########################
 
@@ -364,73 +430,217 @@ gDNA_scd_data <- var_ref_calculations(
      AcceptedDroplets_Variant_assay =AcceptedDroplets_HbS,
      Positives_variant = Positives_HbA,
      Positives_reference = Positives_HbS)) %>%
-  # Select relevant columns
-  select(vf_assay_molecules, vf_assay_molecules_max, 
-         vf_assay_molecules_min, variant_percent,
-         variant_percent_min, variant_percent_max,
-         worksheet_sample_well) %>%
   # New column to distinguish control gDNA
-  mutate(sample_type = "gDNA") %>%
-  dplyr::rename(Sample = worksheet_sample_well) %>%
-  filter(vf_assay_molecules > 200)
-
-# This function does not work yet.
-# The aim is to classify samples as "affected" or "unaffected" depending
-# on whether the variant fraction for the cfDNA sample is above or below
-# the upper variant fraction limit for HbAS gDNA controls in the same 
-# range of molecules tested.
-
-dosage_predictor <- function(sample_variant_percent, limit, control_data) {
+  mutate(sample_type = "gDNA",
+         Likelihood_ratio = calc_LR_autosomal(0.04, major_allele_percent/100,
+                                              vf_assay_molecules),
+         genotype_prediction = case_when(
+           Likelihood_ratio > 8 & major_allele == "reference allele"
+           ~"homozygous reference",
+           Likelihood_ratio > 8 & major_allele == "variant allele"
+           ~"homozygous variant",
+           Likelihood_ratio < 1/8 ~"heterozygous",
+           TRUE ~"inconclusive")) %>%
+  dplyr::rename(r_number = Sample)
   
-  # This filter step selects gDNA with equivalent numbers of molecules
-  equivalent_gDNA <- control_data %>%
-    dplyr::filter(vf_assay_molecules > limit)
-  
-  variant_percent_upper_limit <- max(equivalent_gDNA$variant_percent)
-  
-  prediction = case_when(
-    
-    sample_variant_percent > variant_percent_upper_limit
-    ~ "affected", 
-    
-    sample_variant_percent < variant_percent_upper_limit
-    ~ "unaffected")
-  
-  rm(equivalent_gDNA)
-  return(prediction)
-}
+#########################
+# SPRT with gDNA controls
+#########################
 
-cfDNA_scd_data <- ff_calculations(
-  var_ref_calculations(cfdna_ddpcr_data )) %>%
-  # Select only sickle cell disease cases
-  # And cases with fetal fraction over 4%
-  filter(variant_assay == "HBB c.20A>T" & fetal_percent > 4) %>%
-  # This is where the dosage_predictor function will go
-  mutate(sample_type = "cfDNA") %>%
-  select(vf_assay_molecules, vf_assay_molecules_max, 
-         vf_assay_molecules_min, variant_percent,
-         variant_percent_min, variant_percent_max, Sample,
-         sample_type)
-
-# Bind data frames together
-gDNA_cfDNA_bind <- rbind(cfDNA_scd_data, gDNA_scd_data)
-
-# Plot the gDNA controls and the cfDNA on the same plot.
-# This gives a visual representation of how the samples will
-# be classified as "affected" or "unaffected", based on lying above the
-ggplot(gDNA_cfDNA_bind %>%
-         arrange(vf_assay_molecules), aes(x = vf_assay_molecules, 
-                                          y = variant_percent))+
-  geom_point(aes(colour = sample_type))+
+## Plot
+ggplot(gDNA_scd_data, aes(x = vf_assay_molecules, y = variant_percent))+
   geom_errorbar(aes(ymin = variant_percent_min, ymax = variant_percent_max),
-                alpha = 0.2)+
+                alpha = 0.1)+
   geom_errorbarh(aes(xmin = vf_assay_molecules_min, xmax = vf_assay_molecules_max),
-                 alpha = 0.2)+
+                 alpha = 0.1)+
+  scale_fill_manual(values=c("#FFFFFF"))+
+  geom_point(size = 2, aes(fill = sample_type), colour = "grey", pch=21)+
   theme_bw()+
   theme(
     panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank())+
-  ylim(42, 58)+
-  xlim(0, 42000)
+    panel.grid.minor = element_blank(),
+    legend.position = "none")+
+  ylim(43, 57)+
+  xlim(200, 30000)+
+  labs(x = "Total molecules detected",
+       y = "Variant fraction (%)")+
+  geom_function(fun = "calc_SS_boundary",
+                aes(x = vf_assay_molecules, y =
+                      calc_SS_boundary(vf_assay_molecules)),
+                colour = "red")+
+  geom_function(fun = "calc_AA_boundary",
+                aes(x = vf_assay_molecules, y =
+                      calc_AA_boundary(vf_assay_molecules)),
+                colour = "blue")+
+  geom_function(fun = "calc_AS_upper_boundary",
+                aes(x = vf_assay_molecules, y =
+                      calc_AS_upper_boundary(vf_assay_molecules)),
+                colour = "black")+
+  geom_function(fun = "calc_AS_lower_boundary",
+                aes(x = vf_assay_molecules, y =
+                      calc_AS_lower_boundary(vf_assay_molecules)),
+                colour = "black")+
+  annotate(geom = "text", x = 28000, y = 54, label = "HbSS")+
+  annotate(geom = "text", x = 28000, y = 50, label = "HbAS")+
+  annotate(geom = "text", x = 28000, y = 46, label = "HbAA")
+
+count(gDNA_scd_data, genotype_prediction)
+
+#########################
+# Predict fetal genotypes using gDNA control data
+#########################
+
+# The aim is to classify samples as "affected" or "unaffected" depending
+# on whether the variant fraction for the cfDNA sample is outisde or within
+# the variant fraction limits for HbAS gDNA controls in the same 
+# range of molecules tested.
+
+gDNA_upper_limit <- c()
+gDNA_lower_limit <- c()
+
+for (i in cfDNA_scd_data$vf_assay_molecules){
+    
+    control_data_stratified <- gDNA_scd_data %>%
+        filter(vf_assay_molecules > i)
+    
+    # Round to two decimal places
+    upper <- round(max(control_data_stratified$variant_percent), 2)
+    lower <- round(min(control_data_stratified$variant_percent), 2)
+    
+    # Calculate the deviation of the controls from 50%
+    # in both directions
+    upper_deviation <- upper - 50
+    lower_deviation <- abs(lower - 50)
+    
+    # Check which direction hs the most deviation
+    max_deviation <- max(upper_deviation, lower_deviation)
+    
+    upper_limit <- 50 + max_deviation
+    lower_limit <- 50 - max_deviation
+    
+    # Add on the limits to the vectors
+    gDNA_upper_limit <- c(gDNA_upper_limit, upper_limit)
+    gDNA_lower_limit <- c(gDNA_lower_limit, lower_limit)
+    
+    # Remove the intermediate steps
+    rm(list = c("control_data_stratified", "upper", "lower",
+         "upper_deviation", "lower_deviation", "max_deviation",
+         "upper_limit", "lower_limit"))
+}
+
+cfDNA_scd_predictions <- cbind(cfDNA_scd_data, gDNA_upper_limit,
+                               gDNA_lower_limit) %>%
+  mutate(
+    variant_percent = round(variant_percent, 2),
+    sample_type = case_when(
+    variant_percent > calc_SS_boundary(vf_assay_molecules)
+    ~"affected",
+    variant_percent < calc_AA_boundary(vf_assay_molecules)
+    ~"unaffected",
+    variant_percent < calc_SS_boundary(vf_assay_molecules) &
+    variant_percent > calc_AA_boundary(vf_assay_molecules)
+    ~"carrier"))
+
+to_view <- cfDNA_scd_predictions %>%
+       arrange(vf_assay_molecules) %>%
+       select(r_number, vf_assay_molecules,
+              sample_type, gDNA_upper_limit, variant_percent,
+              gDNA_lower_limit)
+
+view(to_view)
+
+gDNA_cfDNA_bind <- rbind(
+  gDNA_scd_data %>%
+    select(r_number, sample_type, vf_assay_molecules, vf_assay_molecules_max, 
+           vf_assay_molecules_min, variant_percent, variant_percent_max, 
+           variant_percent_min),
+  cfDNA_scd_predictions %>%
+    select(r_number, sample_type, vf_assay_molecules, vf_assay_molecules_max, 
+           vf_assay_molecules_min, variant_percent, variant_percent_max, 
+           variant_percent_min)) %>%
+  # Factorise for plotting
+  mutate(sample_type = factor(sample_type, levels = c(
+    "affected", "carrier", "unaffected",
+    "gDNA")))
 
 
+# Plot the gDNA controls and the cfDNA on the same plot.
+# This gives a visual representation of how the samples are
+# classified as "affected" or "unaffected", based on lying within or outside
+# the gDNA control variation.
+
+# Plot for gDNA controls
+ggplot(gDNA_scd_data, aes(x = vf_assay_molecules, 
+                                            y = variant_percent))+
+  scale_fill_manual(values=c("#FFFFFF"))+
+  geom_point(size = 2, aes(fill = sample_type), colour = "black", pch=21)+
+  ylim(43, 57)+
+  geom_hline(yintercept = 51, linetype = "dashed")+
+  geom_hline(yintercept = 49, linetype = "dashed")+
+  geom_vline(xintercept = 12000, linetype = "dashed")
+
+  geom_errorbar(aes(ymin = variant_percent_min, ymax = variant_percent_max),
+                alpha = 0.2)+
+  geom_errorbarh(aes(xmin = vf_assay_molecules_min, 
+                     xmax = vf_assay_molecules_max),
+                 alpha = 0.2)+
+  # "#FFFFFF" = white
+  
+  theme_bw()+
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), 
+    legend.title = element_blank(), 
+    legend.position = "bottom")+
+  labs(y = "Variant fraction (%)", x = "Total molecules detected")+
+  xlim(0, 35000)+
+  ylim(37.5, 62.5)
+
+?geom_curve()
+
+# Plot for cfDNA samples
+ggplot(gDNA_cfDNA_bind, aes(x = vf_assay_molecules, 
+                                            y = variant_percent))+
+  geom_hline(yintercept = 50, linetype = "dashed")+
+  #geom_errorbar(aes(ymin = variant_percent_min, ymax = variant_percent_max),
+                #alpha = 0.2)+
+  #geom_errorbarh(aes(xmin = vf_assay_molecules_min, 
+                     #xmax = vf_assay_molecules_max),
+                 #alpha = 0.2)+
+  # "#0000FF" = dark blue; 
+  #"#99CCFF" = light blue; "#000000" = black; 
+  scale_fill_manual(values=c("#000000", "#99CCFF", "#0000FF", "#FFFFFF"))+
+  scale_alpha_manual(values=c(1, 1, 1, 0.5))+
+  geom_point(size = 2, aes(fill = sample_type, alpha = sample_type), colour = "black", pch=21)+
+  theme_bw()+
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), 
+    legend.title = element_blank(), 
+    legend.position = "bottom")+
+  labs(y = "Variant fraction (%)", x = "Total molecules detected")+
+  xlim(0, 35000)+
+  ylim(40, 60)+
+  geom_function(fun = "calc_SS_boundary",
+                aes(x = vf_assay_molecules, y =
+                      calc_SS_boundary(vf_assay_molecules)),
+                colour = "red")+
+  geom_function(fun = "calc_AA_boundary",
+                aes(x = vf_assay_molecules, y =
+                      calc_AA_boundary(vf_assay_molecules)),
+                colour = "blue")
+
+nrow(gDNA_cfDNA_bind %>%
+       filter(sample_type != "gDNA"))
+
+#########################
+# Compare predictions against Biobank
+#########################
+
+cfDNA_scd_outcomes <- left_join(
+  cfDNA_scd_predictions,
+  RAPID_biobank %>%
+    mutate(r_number = as.character(r_number)) %>%
+    select(r_number, study_id, date_of_blood_sample, Gestation_total_weeks, 
+           mutation_genetic_info_fetus),
+  by = "r_number")

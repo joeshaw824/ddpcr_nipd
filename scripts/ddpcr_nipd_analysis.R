@@ -1905,13 +1905,6 @@ for (dataFile in ddpcr_files){
   rm(tmp_dat)
 }
 
-view(ddpcr_nipd_unblinded %>%
-  select(r_number, variant_assay, tubes_plasma_current))
-
-write.csv(ddpcr_nipd_unblinded, "analysis_outputs/ddpcr_nipd_unblinded.csv", row.names = FALSE)
-
-nrow(scd)
-(17/85)*100
 
 
 #########################
