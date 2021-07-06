@@ -23,6 +23,8 @@
 ## Load necessary packages
 library(tidyverse)
 
+library(epiR)
+
 ## Set working directory
 setwd("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/ddPCR_R_Analysis/ddpcr_nipd")
 
@@ -301,7 +303,7 @@ calc_AA_boundary <- function(total_copies) {
 # cfDNA samples with variant fractions above this will be predicted to be 
 # affected.
 control_boundary_SS <- function(input){
-  output <- ((log(100)/input)+0.0409)/0.0802
+  output <- ((log(125)/input)+0.0409)/0.0805
   return(output*100)
 }
 
@@ -415,7 +417,7 @@ cfDNA_scd_data <- ff_calculations(
   # Select only sickle cell disease cases
   # And cases with fetal fraction over 4%
   dplyr::rename(r_number = Sample) %>%
-  filter(variant_assay == "HBB c.20A>T" & fetal_percent > 4 &
+  filter(variant_assay == "HBB c.20A>T" &
            !r_number %in% samples_to_exclude)
 
 #########################
@@ -433,6 +435,8 @@ gDNA_scd_data <- var_ref_calculations(
             !Sample %in% c("NTC", "30139", "30130", 
                            "19RG-220G0191", "19RG-220G0193",
                            "21RG-120G0072") &
+            # Remove empty well 
+            Positives != 0 &
             Target %in% c("HbA", "HbS")) %>%
    pivot_wider(id_cols = c(worksheet_sample_well, Sample, Worksheet, Well),
                names_from = Target,
@@ -444,9 +448,23 @@ gDNA_scd_data <- var_ref_calculations(
      Positives_variant = Positives_HbA,
      Positives_reference = Positives_HbS)) %>%
   # New column to distinguish control gDNA
-  mutate(sample_type = "gDNA") %>%
+  mutate(sample_type = "gDNA",
+        sprt_prediction = case_when(
+          
+         variant_percent > calc_SS_boundary(vf_assay_molecules) &
+              major_allele == "variant allele"
+            ~"HbSS",
+         
+         variant_percent < calc_AA_boundary(vf_assay_molecules) &
+           major_allele == "reference allele"
+         ~"HbAA",
+         
+         variant_percent > calc_AS_lower_boundary(vf_assay_molecules) &
+          variant_percent < calc_AS_upper_boundary(vf_assay_molecules)
+         ~"HbAS",
+          TRUE ~"inconclusive")) %>%
   dplyr::rename(r_number = Sample)
-
+  
 #########################
 # SPRT with gDNA controls
 #########################
@@ -461,10 +479,11 @@ ggplot(gDNA_scd_data, aes(x = vf_assay_molecules, y = variant_percent))+
     panel.grid.major = element_blank(),
     panel.grid.minor = element_blank(),
     legend.position = "none")+
-  labs(x = "Total molecules detected",
+  labs(x = "Total molecules (variant and reference)",
        y = "Variant fraction (%)") +
-  xlim(200, 30000)+
-  ylim(40, 60)+
+  xlim(200, 35000)+
+  scale_y_continuous(breaks = c(45, 50, 55), 
+                     limits = c(45, 55))+
   geom_function(fun = "calc_AS_upper_boundary",
                 aes(x = vf_assay_molecules, y =
                       calc_AS_upper_boundary(vf_assay_molecules)),
@@ -476,11 +495,17 @@ ggplot(gDNA_scd_data, aes(x = vf_assay_molecules, y = variant_percent))+
   geom_function(fun = "calc_SS_boundary",
                 aes(x = vf_assay_molecules, y =
                       calc_SS_boundary(vf_assay_molecules)),
-                colour = "red")+
+                colour = "black")+
   geom_function(fun = "calc_AA_boundary",
                 aes(x = vf_assay_molecules, y =
                       calc_AA_boundary(vf_assay_molecules)),
-                colour = "blue")
+                colour = "black")+
+  annotate(geom = "text", x = 30000, y = 50, 
+                              label = "HbAS classification")+
+  annotate(geom = "text", x = 30000, y = 47, 
+           label = "HbAA classification") +
+  annotate(geom = "text", x = 30000, y = 53, 
+           label = "HbSS classification")
 
 # This plot adds on more appropriate curves to show the range
 # of variation in the gDNA dataset.
@@ -519,6 +544,8 @@ lr_threshold <- 8
 cfDNA_scd_predictions <- cfDNA_scd_data %>%
   mutate(
     genotype_prediction = case_when(
+      # Samples with fetal fractions below 4% are inconclusive
+      fetal_percent < 4 ~"inconclusive",
       variant_percent > control_boundary_SS(vf_assay_molecules)
       ~"HbSS",
       variant_percent < control_boundary_AA(vf_assay_molecules)
@@ -544,8 +571,10 @@ cfDNA_scd_predictions <- cfDNA_scd_data %>%
       ~"HbAA",
       likelihood_ratio < 1/lr_threshold
       ~"HbAS",
-      TRUE ~"inconclusive")
-    )
+      TRUE ~"inconclusive"),
+    
+    sample_id = 
+             paste0("HBB-", as.character(row.names(cfDNA_scd_data))))
 
 # Bind the gDNA and cfDNA datasets together
 gDNA_cfDNA_bind <- rbind(
@@ -561,50 +590,130 @@ gDNA_cfDNA_bind <- rbind(
            variant_percent_min)) %>%
   # Factorise for plotting
   mutate(genotype_prediction = factor(genotype_prediction, levels = c(
-    "HbSS", "HbAS", "HbAA", "gDNA")))
+    "HbSS", "HbAS", "HbAA", "inconclusive", "gDNA")))
 
 # Plot the gDNA controls and the cfDNA on the same plot.
 # This gives a visual representation of how the samples are
 # classified as "affected" or "unaffected", based on lying within or outside
 # the gDNA control variation.
 
-ggplot(gDNA_cfDNA_bind, aes(x = vf_assay_molecules, 
+ggplot(gDNA_cfDNA_bind %>%
+         filter(!genotype_prediction %in% c("gDNA",
+                                            "inconclusive")), aes(x = vf_assay_molecules, 
                                             y = variant_percent))+
   # Add error bars only for the cfDNA data points
   # To stop the plot getting messy
   geom_errorbar(data = gDNA_cfDNA_bind %>%
-                  filter(genotype_prediction != "gDNA"),
+                  filter(!genotype_prediction %in% c("gDNA",
+                                                     "inconclusive")),
                 aes(ymin = variant_percent_min, ymax = variant_percent_max),
                 alpha = 0.2)+
   geom_errorbarh(data = gDNA_cfDNA_bind %>%
-                   filter(genotype_prediction != "gDNA"),
+                   filter(!genotype_prediction %in% c("gDNA",
+                                                    "inconclusive")),
                  aes(xmin = vf_assay_molecules_min, 
                      xmax = vf_assay_molecules_max),
                  alpha = 0.2)+
   # "#000000" = black; "#99CCFF" = light blue
   # "#0000FF" = dark blue; "#FFFFFF" = white
-  scale_fill_manual(values=c("#000000", "#99CCFF", "#0000FF", "#FFFFFF"))+
-  scale_alpha_manual(values=c(1, 1, 1, 0.2))+
-  geom_point(size = 2, aes(fill = genotype_prediction, alpha = genotype_prediction),
+  #scale_fill_manual(values=c("#000000", "#99CCFF", "#0000FF", "#FFFFFF"))+
+  #scale_alpha_manual(values=c(1, 1, 1, 0.2))+
+  scale_fill_manual(values=c("#FFFFFF", "#FFFFFF", "#FFFFFF", "#000000"))+
+  geom_point(size = 2, aes(fill = genotype_prediction),
              colour = "black", pch=21)+
   theme_bw()+
   theme(
     panel.grid.major = element_blank(),
     panel.grid.minor = element_blank(), 
     legend.title = element_blank(), 
-    legend.position = "bottom")+
-  labs(y = "Variant fraction (%)", x = "Total molecules detected")+
-  geom_function(fun = "control_boundary_SS",
-                aes(x = vf_assay_molecules, y =
-                      control_boundary_SS(vf_assay_molecules)),
-                colour = "black")+
-  geom_function(fun = "control_boundary_AA",
-                aes(x = vf_assay_molecules, y =
-                      control_boundary_AA(vf_assay_molecules)),
-                colour = "black")+
+    legend.position = "none")+
+  labs(y = "Variant fraction (%)", x = "Total molecules detected",
+       title = "cfDNA cohort")+
+  #geom_function(fun = "control_boundary_SS",
+                #aes(x = vf_assay_molecules, y =
+                      #control_boundary_SS(vf_assay_molecules)),
+                #colour = "black")+
+  #geom_function(fun = "control_boundary_AA",
+              #aes(x = vf_assay_molecules, y =
+                      #control_boundary_AA(vf_assay_molecules)),
+                #colour = "black")+
   ylim(40, 60)+
-  xlim(200, 35000)
+  xlim(200, 35000)+
+  # Circle the incorrect predictions
+  #geom_point(data=subset(gDNA_cfDNA_bind, r_number %in% 
+                                 #c("10209", "17472",
+                                   #"18836", "20763")),
+             #pch=1,
+             #size=5,
+             #colour = "red",
+             #alpha = 0.8)+
+  #annotate(geom = "text", x = 30000, y = 50, 
+           #label = "HbAS classification")+
+  #annotate(geom = "text", x = 30000, y = 47, 
+           #label = "HbAA classification") +
+ # annotate(geom = "text", x = 30000, y = 53, 
+           #label = "HbSS classification")+
+  geom_hline(yintercept = 52.2, linetype = "dashed")+
+  geom_hline(yintercept = 51.5, linetype = "dashed")+
+  geom_hline(yintercept = 47.8, linetype = "dashed")+
+  geom_hline(yintercept = 48.5, linetype = "dashed")+
+  geom_vline(xintercept = 4000, linetype = "dashed")
+  
+# Plot of just the gDNA controls
+ggplot(gDNA_cfDNA_bind %>%
+         filter(genotype_prediction == "gDNA"), aes(x = vf_assay_molecules, 
+                            y = variant_percent))+
+  
+  # "#000000" = black; "#99CCFF" = light blue
+  # "#0000FF" = dark blue; "#FFFFFF" = white
+  scale_fill_manual(values=c("#FFFFFF"))+
+  geom_point(size = 2, aes(fill = genotype_prediction),
+             alpha = 0.5,
+             colour = "black", pch=21)+
+  theme_bw()+
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), 
+    legend.title = element_blank(), 
+    legend.position = "none")+
+  labs(y = "Variant fraction (%)", x = "Total molecules detected",
+       title = "Heterozygous gDNA controls")+
+  #geom_function(fun = "control_boundary_SS",
+                #aes(x = vf_assay_molecules, y =
+                      #control_boundary_SS(vf_assay_molecules)),
+              #colour = "black")+
+  #geom_function(fun = "control_boundary_AA",
+                #aes(x = vf_assay_molecules, y =
+                      #control_boundary_AA(vf_assay_molecules)),
+                #colour = "black")+
+  ylim(40, 60)+
+  xlim(200, 35000)+
+  geom_hline(yintercept = 52.2, linetype = "dashed")+
+  geom_hline(yintercept = 51.5, linetype = "dashed")+
+  geom_hline(yintercept = 47.8, linetype = "dashed")+
+  geom_hline(yintercept = 48.5, linetype = "dashed")+
+  geom_vline(xintercept = 4000, linetype = "dashed")
 
+
+#########################
+# Z score
+#########################
+
+# Calculate the z score using the gDNA data
+
+mean_vf <- mean(gDNA_scd_data$variant_percent)
+sd_vf <- sd(gDNA_scd_data$variant_percent)
+
+cfDNA_scd_z_score <- cfDNA_scd_data %>%
+  mutate(zscore = (variant_percent - mean_vf)/sd_vf)
+
+ggplot(cfDNA_scd_z_score, aes(x = vf_assay_molecules,
+                              y = zscore))+
+  geom_point()+
+  theme_bw()+
+  geom_hline(yintercept = 3, linetype = "dashed")+
+  geom_hline(yintercept = -
+               3, linetype = "dashed")
 
 #########################
 # Compare predictions against Biobank
@@ -614,20 +723,35 @@ cfDNA_scd_outcomes <- left_join(
   cfDNA_scd_predictions,
   RAPID_biobank %>%
     mutate(r_number = as.character(r_number)) %>%
-    select(r_number, study_id, date_of_blood_sample, Gestation_total_weeks, 
-           mutation_genetic_info_fetus),
+    select(r_number, study_id, date_of_blood_sample, Gestation_total_weeks,
+           gestation_character,
+           mutation_genetic_info_fetus, Partner_sample_available),
   by = "r_number") %>%
-  mutate(genotype_concordance = ifelse(genotype_prediction == mutation_genetic_info_fetus,
-                              "TRUE", "FALSE"))
+  mutate(outcome = case_when(
+    genotype_prediction == "inconclusive" ~"inconclusive",
+    is.na(mutation_genetic_info_fetus) ~"awaiting result",
+    genotype_prediction == mutation_genetic_info_fetus
+    ~"correct",
+    TRUE ~"incorrect"),
+    sprt_outcome = case_when(
+      sprt_prediction == "inconclusive" ~"inconclusive",
+      is.na(mutation_genetic_info_fetus) ~"awaiting result",
+      sprt_prediction == mutation_genetic_info_fetus
+      ~"correct",
+      TRUE ~"incorrect"))
 
 # This method calls 69/72 genotypes correct (95.8%)
-count(cfDNA_scd_outcomes, genotype_concordance)
+count(cfDNA_scd_outcomes, genotype_prediction, mutation_genetic_info_fetus)
 # This method calls 73/73 clinical outcomes correct
 # 8/73 samples had fetal fractions below 4% (11% inconclusive rate)
 
 # 10209, 18836 and 20763 are incorrect
 
 count(cfDNA_scd_outcomes, genotype_prediction)
+
+ggplot(cfDNA_scd_outcomes, aes(x = mutation_genetic_info_fetus,
+                                       y = variant_percent))+
+  geom_jitter()
 
 # False negative rate is 1/61, 
 # False positive rate is 2/61
@@ -661,4 +785,158 @@ ggplot(cfDNA_scd_outcomes %>%
   ylim(50, 60)+
   xlim(200, 35000)
 
+#########################
+# Results table
+#########################
 
+scd_cohort_table <- cfDNA_scd_outcomes %>%
+  select(sample_id, r_number, study_id, date_of_blood_sample, 
+         gestation_character, Partner_sample_available, variant_assay, 
+         AcceptedDroplets_Variant_assay, Positives_variant,
+         Positives_reference, ff_assay, AcceptedDroplets_FetalFrac, 
+         maternal_positives, paternal_positives, variant_molecules, 
+         reference_molecules, maternal_molecules, paternal_molecules,
+         variant_percent, fetal_percent, genotype_prediction, 
+         clinical_prediction, 
+         mutation_genetic_info_fetus, outcome) %>%
+  dplyr::rename(
+    gestation = gestation_character, 
+    "invasive genotype" = mutation_genetic_info_fetus)
+
+view(scd_cohort_table)
+
+#########################
+# Limit of detection
+#########################
+
+LOD_data <- read_csv("data/20-1557_LOD.csv", col_names = TRUE)
+
+LOD_data_longer <- var_ref_calculations(LOD_data %>%
+  mutate(unique_identifier = paste(Input_molecules, Sample)) %>%
+  pivot_wider(id_cols = c(unique_identifier, Sample, Input_molecules, Mass_molecules, fetal_fraction),
+              names_from = Target,
+              values_from = c(AcceptedDroplets, Positives)) %>%
+  select(-c(AcceptedDroplets_HbA)) %>%
+  dplyr::rename(AcceptedDroplets_Variant_assay = AcceptedDroplets_HbS,
+                Positives_variant = Positives_HbS,
+                Positives_reference = Positives_HbA,
+                sample_type = Sample,
+                r_number = unique_identifier)) %>%
+  # Factorise for plot
+  mutate(sample_type = factor(sample_type, levels = c(
+    "0%",
+    "AA 2%", "SS 2%",
+    "AA 4%", "SS 4%",
+    "AA 6%", "SS 6%",
+    "AA 8%", "SS 8%",
+    "AA 10%", "SS 10%",
+    "AA 12%", "SS 12%")))
+
+gDNA_cfDNA_lod_bind <- rbind(gDNA_scd_data %>%
+                        select(r_number, sample_type, vf_assay_molecules, 
+                               vf_assay_molecules_max, vf_assay_molecules_min, 
+                               variant_percent, variant_percent_max, 
+                               variant_percent_min),
+                       LOD_data_longer %>%
+                         select(r_number, sample_type, vf_assay_molecules, 
+                                vf_assay_molecules_max, vf_assay_molecules_min, 
+                                variant_percent, variant_percent_max, 
+                                variant_percent_min),
+                       cfDNA_scd_predictions %>%
+                         dplyr:: rename(sample_type = genotype_prediction) %>%
+                         select(r_number, sample_type, vf_assay_molecules, 
+                                vf_assay_molecules_max, vf_assay_molecules_min, 
+                                variant_percent, variant_percent_max, 
+                                variant_percent_min)) %>%
+  mutate(sample_type = factor(sample_type, levels = c(
+    "0%",
+    "AA 2%", "SS 2%",
+    "AA 4%", "SS 4%",
+    "AA 6%", "SS 6%",
+    "AA 8%", "SS 8%",
+    "AA 10%", "SS 10%",
+    "AA 12%", "SS 12%", 
+    "gDNA",
+    "HbSS", "HbAA", "HbAS")))
+
+
+ggplot(gDNA_cfDNA_lod_bind %>%
+         filter(!sample_type %in% c("HbSS", "HbAA", "HbAS")), 
+       aes(x = vf_assay_molecules, y = variant_percent))+
+  #geom_errorbar(aes(ymin = variant_percent_min, ymax = variant_percent_max),
+                #alpha = 0.2)+
+  #geom_errorbarh(aes(xmin = vf_assay_molecules_min, 
+                     #xmax = vf_assay_molecules_max))+
+  # In order of shade
+  # "#FFFFFF" = white
+  # "#CCCCCC" = grey 1
+  # "#9999CC" = grey 2
+  # "#999999" = grey 3
+  # "#666666" = grey 4
+  # "#333333" = grey 5
+  # "#000000" = black; 
+  scale_fill_manual(values = c("#FFFFFF", 
+                               "#CCCCCC", "#CCCCCC",
+                               "#9999CC", "#9999CC",
+                               "#999999", "#999999",
+                               "#666666", "#666666",
+                               "#333333", "#333333",
+                               "#000000", "#000000",
+                               "#FFFFFF"))+
+  geom_point(size = 3, aes(fill = sample_type), pch=21, alpha = 0.5)+
+  theme_bw()+
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.position = "bottom")+
+  labs(x = "Total molecules detected",
+       y = "Variant fraction (%)") +
+  xlim(200, 15000)+
+  ylim(40, 60)+
+  #geom_function(fun = "control_boundary_SS",
+                #aes(x = vf_assay_molecules, y =
+                      #control_boundary_SS(vf_assay_molecules)),
+                #colour = "black")+
+  #geom_function(fun = "control_boundary_AA",
+                #aes(x = vf_assay_molecules, y =
+                    #control_boundary_AA(vf_assay_molecules)),
+                #colour = "black")+
+  geom_hline(yintercept = 50, linetype = "dashed")+
+  geom_hline(yintercept = 52, linetype = "dashed")+
+  geom_hline(yintercept = 52.5, linetype = "dashed")+
+  geom_hline(yintercept = 48, linetype = "dashed")+
+  geom_hline(yintercept = 47.5, linetype = "dashed")+
+  geom_vline(xintercept = 3000, linetype = "dashed")
+
+nrow(cfDNA_scd_data %>%
+       filter(fetal_percent > 6))
+
+
+# Median is 50.09% 
+median(gDNA_scd_data$variant_percent)
+
+cfDNA_scd_predictions %>%
+  filter(genotype_prediction == "HbAA") %>%
+  select(r_number, fetal_percent, variant_percent, vf_assay_molecules) %>%
+  arrange(vf_assay_molecules)
+
+nrow(cfDNA_scd_data %>%
+  filter(vf_assay_molecules > 3000 & fetal_percent > 4))
+
+# Use the epiR package to calculate sensitivity
+count(cfDNA_scd_outcomes, genotype_prediction, mutation_genetic_info_fetus)
+
+# Balanced vs unbalanced
+# True positives, false positives, false negatives, true negatives
+scd_data <- as.table(matrix(c(24, 3, 1, 44), nrow = 2, byrow = TRUE))
+scd_metrics <- epi.tests(scd_data, conf.level = 0.95)
+
+# Affected vs unaffected
+# True positives, false positives, false negatives, true negatives
+scd_data <- as.table(matrix(c(12, 0, 0, 60), nrow = 2, byrow = TRUE))
+scd_metrics <- epi.tests(scd_data, conf.level = 0.95)
+
+
+cfDNA_scd_outcomes %>%
+  filter(outcome == "incorrect") %>%
+  select(r_number, sample_id)
