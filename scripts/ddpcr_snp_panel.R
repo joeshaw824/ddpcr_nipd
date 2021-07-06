@@ -235,6 +235,10 @@ SNP_data_plotting <- SNP_data %>%
       genotype == "hom VIC" ~"No"))
 
 
+SNP_data_plotting %>%
+  filter(Assay == "rs2276702" & genotype %in% c("hom VIC"))
+
+
 sample_30065_SNP <- SNP_data_plotting %>%
   filter(Sample %in% c("30065", "21RG-126G0126")) %>%
   select(-c(fluorophore_VIC, fluorophore_FAM)) %>%
@@ -317,7 +321,6 @@ new_samples <- c("21RG-112G0065", "21RG-112G0027", "21RG-112G0029", "21RG-112G00
                  "21RG-112G0102", "21RG-112G0034")
 
 snp_table_new <- SNP_data %>%
-  filter(Sample %in% new_samples) %>%
   select(Sample, Target, TargetType, Concentration, FractionalAbundance) %>%
   left_join(ddpcr_target_panel %>%
               select(Target, Assay), by = "Target") %>%
