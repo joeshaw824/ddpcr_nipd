@@ -7,13 +7,12 @@
 ## disease, based on dosage experiments with heterozygous gDNA controls.
 #############################################################
 
-## Naming convention
-# For consistency, variables are named as: target_category_qualifier
+# Naming convention
+# For consistency, new ddPCR variables are named as: target_category_qualifier
 # Target examples: variant, reference, paternal, maternal, fetal, difference, 
-#                   major_allele, minor_allele, ff_assay, vf_assay, total
+# major_allele, minor_allele, ff_assay, vf_assay and total
 # Category examples: molecules, fraction, percent, positives
 # Qualifier examples: max, min
-
 # Example: fetal_percent_max
 
 #########################
@@ -67,7 +66,8 @@ for (dataFile in ddpcr_files){
 
 # These functions calculate the number of molecules and fractional
 # abundance for each target, including 95% Poisson confidence intervals.
-# This is to prevent massive duplication of code
+# This is to prevent massive duplication of code when performing these
+# calculations for gDNA, cfDNA and limit of detection datasets.
 
 var_ref_calculations <- function(data_input) {
   
@@ -131,12 +131,15 @@ var_ref_calculations <- function(data_input) {
       variant_molecules_max = Poisson_max((variant_molecules/ 
                                              AcceptedDroplets_Variant_assay), 
                                           AcceptedDroplets_Variant_assay),
+      
       variant_molecules_min = Poisson_min((variant_molecules/
                                              AcceptedDroplets_Variant_assay),
                                           AcceptedDroplets_Variant_assay),
+      
       reference_molecules_max = Poisson_max((reference_molecules/
                                                AcceptedDroplets_Variant_assay),
                                             AcceptedDroplets_Variant_assay),
+      
       reference_molecules_min = Poisson_min((reference_molecules/
                                                AcceptedDroplets_Variant_assay), 
                                             AcceptedDroplets_Variant_assay),
@@ -159,16 +162,20 @@ var_ref_calculations <- function(data_input) {
       
       difference_molecules_max = major_allele_molecules_max - 
         minor_allele_molecules_min,
+      
       difference_molecules_min = major_allele_molecules_min - 
         minor_allele_molecules_max,
       
       # Calculate the 95% confidence intervals of the fractional abundances
       variant_percent_max = (Poisson_fraction_max(
         variant_molecules_max, reference_molecules))*100,
+      
       variant_percent_min = (Poisson_fraction_min(
         variant_molecules_min, reference_molecules))*100,
+      
       reference_percent_max = (Poisson_fraction_max(
         reference_molecules_max, variant_molecules))*100,
+      
       reference_percent_min = (Poisson_fraction_min(
         reference_molecules_min, variant_molecules))*100,
       
@@ -185,6 +192,7 @@ var_ref_calculations <- function(data_input) {
       vf_assay_molecules_max = Poisson_max((
         vf_assay_molecules/AcceptedDroplets_Variant_assay), 
         AcceptedDroplets_Variant_assay),
+      
       vf_assay_molecules_min = Poisson_min((
         vf_assay_molecules/AcceptedDroplets_Variant_assay),
         AcceptedDroplets_Variant_assay))
@@ -208,11 +216,13 @@ ff_calculations <- function(data_input) {
       
       maternal_molecules = Poisson_correct(
         AcceptedDroplets_FetalFrac,maternal_positives),
+      
       paternal_molecules = Poisson_correct(
         AcceptedDroplets_FetalFrac,paternal_positives),
       
       # Calculate the fetal fraction
       fetal_fraction = calc_ff(maternal_molecules, paternal_molecules),
+      
       fetal_percent = fetal_fraction*100,
       
       ff_assay_molecules = maternal_molecules + paternal_molecules,
@@ -220,6 +230,7 @@ ff_calculations <- function(data_input) {
       paternal_molecules_max = Poisson_max((
         paternal_molecules / AcceptedDroplets_FetalFrac), 
         AcceptedDroplets_FetalFrac),
+      
       paternal_molecules_min = Poisson_min((
         paternal_molecules / AcceptedDroplets_FetalFrac), 
         AcceptedDroplets_FetalFrac),
@@ -227,6 +238,7 @@ ff_calculations <- function(data_input) {
       maternal_molecules_max = Poisson_max((
         maternal_molecules / AcceptedDroplets_FetalFrac), 
         AcceptedDroplets_FetalFrac),
+      
       maternal_molecules_min = Poisson_min((
         maternal_molecules / AcceptedDroplets_FetalFrac), 
         AcceptedDroplets_FetalFrac),
@@ -234,6 +246,7 @@ ff_calculations <- function(data_input) {
       ff_assay_molecules_max = Poisson_max((
         ff_assay_molecules/AcceptedDroplets_FetalFrac), 
         AcceptedDroplets_FetalFrac),
+      
       ff_assay_molecules_min = Poisson_min((
         ff_assay_molecules/AcceptedDroplets_FetalFrac), 
         AcceptedDroplets_FetalFrac),
@@ -242,6 +255,7 @@ ff_calculations <- function(data_input) {
       # must be multiplied by 2.
       fetal_percent_max = 200* (Poisson_fraction_max(
         paternal_molecules_max, maternal_molecules)),
+      
       fetal_percent_min = 200* (Poisson_fraction_min(
         paternal_molecules_min, maternal_molecules)))
   
@@ -252,33 +266,28 @@ ff_calculations <- function(data_input) {
 # SPRT curve functions
 #########################
 
-# These functions calculates the SPRT thresholds assuming 
+# These functions calculate the SPRT thresholds assuming 
 # a fetal fraction of 4% and a likelihood ratio of 8.
+
+# Variables for each function
+q0 <- 0.5
+q1 <- 0.5+(0.04/2)
+Delta <- (1- q1)/(1-q0)
+Gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
+
 calc_SS_boundary <- function(total_copies) {
-  q0 = 0.5
-  q1 <- 0.5+(0.04/2)
-  Delta <- (1- q1)/(1-q0)
-  Gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
   SS_boundary <- ((log(8)/total_copies) - log(Delta))/log(Gamma)
   # Convert to a percentage for output
   return(SS_boundary*100)
 }
 
 calc_AS_upper_boundary <- function(total_copies) {
-  q0 = 0.5
-  q1 <- 0.5+(0.04/2)
-  Delta <- (1- q1)/(1-q0)
-  Gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
   AS_upper_boundary <- ((log(1/8)/total_copies) - log(Delta))/log(Gamma)
   # Convert to a percentage for output
   return(AS_upper_boundary*100)
 }
 
 calc_AS_lower_boundary <- function(total_copies) {
-  q0 = 0.5
-  q1 <- 0.5+(0.04/2)
-  Delta <- (1- q1)/(1-q0)
-  Gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
   AS_upper_boundary <- ((log(1/8)/total_copies) - log(Delta))/log(Gamma)
   AS_lower_boundary <- 0.5-(AS_upper_boundary-0.5)
   # Convert to a percentage for output
@@ -286,10 +295,6 @@ calc_AS_lower_boundary <- function(total_copies) {
 }
 
 calc_AA_boundary <- function(total_copies) {
-  q0 = 0.5
-  q1 <- 0.5+(0.04/2)
-  Delta <- (1- q1)/(1-q0)
-  Gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
   SS_boundary <- ((log(8)/total_copies) - log(Delta))/log(Gamma)
   AA_boundary <- 0.5-(SS_boundary-0.5)
   # Convert to a percentage for output
@@ -303,7 +308,6 @@ calc_AA_boundary <- function(total_copies) {
 # The data wrangling in this section is due to collating 
 # data acquired over 3 years with various lab workflows.
 
-# Remove single wells and controls
 ddpcr_data_merged_samples <- ddpcr_data %>%
   # Remove single wells and controls
   filter(substr(Well, 1, 1) == "M" & !(Sample %in% controls$Sample)) %>%
@@ -393,7 +397,7 @@ cfdna_ddpcr_data <- pivotted_ddpcr %>%
 # Select sickle cell disease samples
 #########################
 
-# Samples to exlude:
+# Samples to exclude:
 # 13262 - this sample had contamination
 # 17004 - this sample was actually HbAC
 # 20915 - this sample was from a twin pregnancy
@@ -497,12 +501,9 @@ ggplot(gDNA_scd_data, aes(x = vf_assay_molecules, y = variant_percent))+
                 aes(x = vf_assay_molecules, y =
                       calc_AA_boundary(vf_assay_molecules)),
                 colour = "black")+
-  annotate(geom = "text", x = 20000, y = 50, 
-                              label = "HbAS")+
-  annotate(geom = "text", x = 20000, y = 47, 
-           label = "HbAA") +
-  annotate(geom = "text", x = 20000, y = 53, 
-           label = "HbSS")
+  annotate(geom = "text", x = 20000, y = 50, label = "HbAS")+
+  annotate(geom = "text", x = 20000, y = 47, label = "HbAA") +
+  annotate(geom = "text", x = 20000, y = 53, label = "HbSS")
 
 #########################
 # gDNA control dataset limits
@@ -516,8 +517,7 @@ AS_lower_limit <- 48.9
 AA_limit <- 48.5
 
 # This plot adds on limits that identify the regions that we should be able to 
-# see variation and predict fetal genotypes. These are regions in which
-# the majority (95%) of variation in truly heterozygous controls occurs.
+# see variation and predict fetal genotypes.
 
 ggplot(gDNA_scd_data, aes(x = vf_assay_molecules, y = variant_percent))+
   geom_point(size = 2, pch=21, alpha =0.6)+
@@ -547,34 +547,63 @@ ggplot(gDNA_scd_data, aes(x = vf_assay_molecules, y = variant_percent))+
 # Limit of detection study
 #########################
 
-# Need to check the labelling of the LOD csv
+lod_data <- read_csv("data/20-1557.csv", col_names = TRUE)
 
-LOD_data <- read_csv("data/20-1557_LOD.csv", col_names = TRUE)
+# There are 4 replicates per spike-in. Merging them together gives
+# outputs of 3000, 6000, 9000 and 12000 genome equivalents.
 
-LOD_data_longer$sample_type
+# Wells for 3000 GE dataset
+wells_3000_GE <- c("A02", "A03", "E03", "A04", "E04", "A05", "E05", 
+                   "A06", "E06", "A07", "E07", "A08", "E08")
 
-LOD_data_longer <- var_ref_calculations(
-  LOD_data %>%
-  mutate(unique_identifier = paste(Input_molecules, Sample)) %>%
-  pivot_wider(id_cols = c(unique_identifier, Sample, 
-                          Input_molecules, Mass_molecules, fetal_fraction),
-              names_from = Target,
-              values_from = c(AcceptedDroplets, Positives)) %>%
-  select(-c(AcceptedDroplets_HbA)) %>%
-  dplyr::rename(AcceptedDroplets_Variant_assay = AcceptedDroplets_HbS,
-                Positives_variant = Positives_HbS,
-                Positives_reference = Positives_HbA,
-                sample_type = Sample,
-                r_number = unique_identifier)) %>%
+wells_6000_GE <- c(wells_3000_GE, "B02", "B03", "F03", "B04", "F04", 
+                   "B05", "F05", "B06", "F06", "B07", "F07", "B08", "F08")
+
+wells_9000_GE <- c(wells_6000_GE, "C02", "C03", "G03", "C04", "G04", 
+                   "C05", "G05", "C06", "G06", "C07", "G07", "C08", "G08")
+
+wells_12000_GE <- c(wells_9000_GE, "D02", "D03", "H03", "D04", "H04", 
+                   "D05", "H05", "D06", "H06", "D07", "H07", "D08", "H08")
+
+# Merge values together with a function
+
+merge_lod_wells <- function(input_wells, GE_level){
+  
+  output <- lod_data %>% 
+            select(Well, Sample, Target, Positives, AcceptedDroplets) %>%
+            filter(Well %in% input_wells) %>%
+            group_by(Sample, Target) %>% 
+            summarise(Positives = sum(Positives),
+                      AcceptedDroplets = sum(AcceptedDroplets),
+                      .groups="drop") %>%
+            pivot_wider(id_cols = c(Sample),
+                        names_from = Target,
+                        values_from = c(AcceptedDroplets, Positives)) %>%
+            select(-c(AcceptedDroplets_HbA)) %>%
+            dplyr::rename(AcceptedDroplets_Variant_assay = AcceptedDroplets_HbS,
+                          Positives_variant = Positives_HbS,
+                          Positives_reference = Positives_HbA) %>%
+            mutate(GE_level = GE_level)
+  
+  return(output)
+}
+
+# Bind the datasets together, then apply var_ref_calculations
+
+lod_data_merged <- var_ref_calculations(rbind(
+  merge_lod_wells(wells_3000_GE, 3000), 
+  merge_lod_wells(wells_6000_GE, 6000),
+  merge_lod_wells(wells_9000_GE, 9000),
+  merge_lod_wells(wells_12000_GE, 12000))) %>%
   # Allows easier colour labelling
-  mutate(sample_type = factor(sample_type, levels = 
+  mutate(Sample = factor(Sample, levels = 
                 c("SS 12%", "SS 10%", "SS 8%", "SS 6%", "SS 4%", "SS 2%",
                   "0%",
                   "AA 2%", "AA 4%", "AA 6%", "AA 8%", "AA 10%", "AA 12%")))
-    
+
 # Plot the LOD data against the limits set in the previous section
 
-ggplot(LOD_data_longer, 
+ggplot(lod_data_merged, 
        aes(x = vf_assay_molecules, y = variant_percent))+
   geom_errorbar(aes(ymin = variant_percent_min, ymax = variant_percent_max),
                 alpha = 0.2)+
@@ -595,7 +624,7 @@ ggplot(LOD_data_longer,
     "#FFFFFF",
     # 2% to 12%
     "#CCCCCC", "#9999CC", "#999999", "#666666", "#333333","#000000"))+
-  geom_point(size = 3, aes(fill = sample_type), pch=21)+
+  geom_point(size = 3, aes(fill = Sample), pch=21)+
   theme_bw()+
   theme(
     panel.grid.major = element_blank(),
@@ -697,8 +726,10 @@ cfDNA_scd_outcomes <- left_join(
   cfDNA_scd_predictions,
   RAPID_biobank %>%
     mutate(r_number = as.character(r_number)) %>%
-    select(r_number, study_id, date_of_blood_sample, Gestation_total_weeks,
-           gestation_character,
+    select(r_number, study_id, site, 
+           original_plasma_vol,
+           date_of_blood_sample, Gestation_total_weeks,
+           gestation_character, vacutainer,
            mutation_genetic_info_fetus, Partner_sample_available),
   by = "r_number") %>%
   mutate(outcome = case_when(
@@ -762,19 +793,22 @@ ggplot(cfDNA_scd_predictions, aes(x = vf_assay_molecules,
 #########################
 
 scd_cohort_table <- cfDNA_scd_outcomes %>%
-  select(sample_id, r_number, study_id, date_of_blood_sample, 
-         gestation_character, extraction_volume, 
+  select(sample_id, r_number, study_id, site, 
+         date_of_blood_sample, original_plasma_vol,
+         vacutainer, gestation_character, extraction_volume, 
          Partner_sample_available, variant_assay, 
          AcceptedDroplets_Variant_assay, Positives_variant,
          Positives_reference, ff_assay, AcceptedDroplets_FetalFrac, 
          maternal_positives, paternal_positives, variant_molecules, 
-         reference_molecules, maternal_molecules, paternal_molecules,
+         reference_molecules, vf_assay_molecules,
+         maternal_molecules, paternal_molecules,
          variant_percent, fetal_percent, Prediction, 
          clinical_prediction, 
          mutation_genetic_info_fetus, outcome) %>%
   dplyr::rename(
     gestation = gestation_character, 
-    "invasive genotype" = mutation_genetic_info_fetus)
+    "invasive genotype" = mutation_genetic_info_fetus,
+    "HBB GE measured" = vf_assay_molecules)
 
 write.csv(scd_cohort_table, "analysis_outputs/Supplementary Table 1.csv",
           row.names = FALSE)
