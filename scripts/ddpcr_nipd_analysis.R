@@ -408,19 +408,13 @@ new_attempt_check <- new_attempt %>%
 # RMD plot function
 #########################
 
-# The rationale is to have all the information in a tibble (cfDNA, gDNA,
-# merged wells, single wells) and then I can select what I need based
-# on the application
-
-# Specify the maternal and paternal episodes in the input
-# Add on molecular calculations to parental gDNA data
-# Then merge with cfDNA data
-
 # This is the function for plotting relative mutation dosage (rmd) 
 # results for ddPCR, including parental gDNA controls. The amount of 
 # information on this plot can be modified to suit user preference.
 
 # Input parental gDNA wells as vectors
+
+colnames(ddpcr_sprt_analysed)
 
 plot_rmd_graph <- function(cfdna_sample, parent_vf_wells, parent_ff_wells) {
   
@@ -429,7 +423,7 @@ plot_rmd_graph <- function(cfdna_sample, parent_vf_wells, parent_ff_wells) {
     filter(r_number == cfdna_sample) %>%
     dplyr::rename(Sample = r_number) %>%
     mutate(identity = "cfDNA") %>%
-    select(Sample, identity, variant_assay, ff_assay,
+    select(Sample, identity, SPRT_prediction, variant_assay, ff_assay,
            variant_molecules, reference_molecules,
            variant_molecules_max, variant_molecules_min, 
            reference_molecules_max, reference_molecules_min, 
@@ -462,37 +456,69 @@ plot_rmd_graph <- function(cfdna_sample, parent_vf_wells, parent_ff_wells) {
          paternal_molecules_max, paternal_molecules_min,
          maternal_molecules_max, maternal_molecules_min) %>%
     # Bind with cfDNA data
-    rbind(cfDNA_single_sample)
+    rbind(cfDNA_single_sample %>%
+            select(-SPRT_prediction))
   
-  # The fetal fraction assay for all samples in a case should be the same
+  # The fetal fraction and variant assay for all samples in a case 
+  # should be the same
   stopifnot(length(unique(case_data$ff_assay))==1)
+  stopifnot(length(unique(case_data$variant_assay))==1)
   
-  case_data_long <- pivot_longer(data = case_data %>%
-                 select(-c(variant_assay, ff_assay,
-                           # Take out the min and max values for now
-                           # Hopefully I can work out a clever pivot
-                           # to keep them in the plot
-                           paternal_molecules_max, paternal_molecules_min,
-                           maternal_molecules_max, maternal_molecules_min,
-                           variant_molecules_max, variant_molecules_min, 
-                           reference_molecules_max, reference_molecules_min)),
-               cols = -c(Sample, identity),
-                 names_to = "Target",
-                 values_to = "molecules") %>%
-    
+  # This section can probably be simplified with a clever pivot
+  # to get the max and min values in separate columns
+  
+  case_data_variant <- case_data %>%
+    select(Sample, identity, variant_molecules,
+           variant_molecules_max, variant_molecules_min) %>%
+    mutate(Target_type = "Variant") %>%
+    rename(molecules = variant_molecules,
+           molecules_max = variant_molecules_max,
+           molecules_min = variant_molecules_min)
+  
+  case_data_reference <- case_data %>%
+    select(Sample, identity, reference_molecules,
+           reference_molecules_max, reference_molecules_min) %>%
+    mutate(Target_type = "Reference") %>%
+    rename(molecules = reference_molecules,
+           molecules_max = reference_molecules_max,
+           molecules_min = reference_molecules_min)
+  
+  case_data_maternal <- case_data %>%
+    select(Sample, identity, maternal_molecules,
+           maternal_molecules_max, maternal_molecules_min) %>%
+    mutate(Target_type = "Shared allele") %>%
+    rename(molecules = maternal_molecules,
+           molecules_max = maternal_molecules_max,
+           molecules_min = maternal_molecules_min)
+  
+  case_data_paternal <- case_data %>%
+    select(Sample, identity, paternal_molecules,
+           paternal_molecules_max, paternal_molecules_min) %>%
+    mutate(Target_type = "Fetal-specific allele") %>%
+    rename(molecules = paternal_molecules,
+           molecules_max = paternal_molecules_max,
+           molecules_min = paternal_molecules_min)
+  
+  case_data_long <- rbind(case_data_variant,
+                          case_data_reference,
+                          case_data_maternal,
+                          case_data_paternal)%>%
+
     # Control factor order for plot
     mutate(identity = factor(identity, levels = c("maternal gDNA",
                                                   "paternal gDNA",
                                                   "cfDNA")),
-           Target = factor(Target, levels = c("maternal_molecules",
-                                              "paternal_molecules",
-                                              "reference_molecules",
-                                              "variant_molecules")))
+           Target_type = factor(Target_type, levels = c("Shared allele",
+                                              "Fetal-specific allele",
+                                              "Reference",
+                                              "Variant")))
   
   rmd_plot <- ggplot(case_data_long, 
-                     aes(x = identity, y = molecules, fill = Target))+
+                     aes(x = identity, y = molecules, fill = Target_type))+
     geom_col(position = position_dodge(width = 0.9), 
              colour="black", alpha = 0.6)+
+    geom_errorbar(aes(ymin = molecules_min, ymax = molecules_max, 
+                      width = 0.3), position = position_dodge(width = 0.9))+
     scale_fill_manual(values = c("#99FFFF", "#FFCC99", "#3366FF", "#FF0000"))+
     theme_bw()+
     theme(axis.text=element_text(size=18), axis.title = element_text(size=18),
@@ -501,9 +527,15 @@ plot_rmd_graph <- function(cfdna_sample, parent_vf_wells, parent_ff_wells) {
           panel.grid.major = element_blank(), 
           panel.grid.minor = element_blank())+
     labs(x = "", y = "Molecules", 
-         title = paste("Sample:", cfdna_sample, " ", 
-                       "Variant assay:", cfDNA_single_sample[1,3], "  ",
-                       "Fetal fraction assay:", cfDNA_single_sample[1,4]))
+         title = paste("cfDNA:", cfdna_sample),
+         subtitle = paste("Variant assay:", cfDNA_single_sample[1,4], "  ",
+                          "Fetal fraction assay:", cfDNA_single_sample[1,5],
+                          "  ", "SPRT prediction: ", 
+                          cfDNA_single_sample[1,3]))+
+    geom_text(aes(x = identity, y = molecules_max, label = molecules), 
+              position = position_dodge(width = 0.9), vjust = -1)
 
-return(rmd_plot)
+return(list(rmd_plot, case_data))
 }
+
+#plot_rmd_graph("30065", "21-1863.csv_M07", "21-1862.csv_M10")
