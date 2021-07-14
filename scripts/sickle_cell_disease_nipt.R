@@ -7,14 +7,6 @@
 ## disease, based on dosage experiments with heterozygous gDNA controls.
 ################################################################################
 
-# Naming convention
-# For consistency, new ddPCR variables are named as: target_category_qualifier
-# Target examples: variant, reference, paternal, maternal, fetal, difference, 
-# major_allele, minor_allele, ff_assay, vf_assay and total
-# Category examples: molecules, fraction, percent, positives
-# Qualifier examples: max, min
-# Example: fetal_percent_max
-
 #########################
 # Load libraries and resources
 #########################
@@ -25,10 +17,6 @@ library(epiR)
 
 ## Set working directory
 setwd("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/ddPCR_R_Analysis/ddpcr_nipd")
-
-# Load resources
-controls <- readr::read_csv("resources/controls.csv")
-ddpcr_target_panel <- readr::read_csv("resources/ddpcr_target_panel.csv") 
 
 # Source functions (this includes loading ddPCR data)
 source("functions/ddPCR_nipd_functions.R")
@@ -55,8 +43,8 @@ secondary_cohort <- c("14182", "19868", "20238", "20611",
 
 cfDNA_scd_data <- ff_calculations(
   var_ref_calculations(cfdna_ddpcr_data)) %>%
-  dplyr::rename(r_number = Sample) %>%
-  filter(variant_assay == "HBB c.20A>T" &
+  dplyr::rename(r_number = sample) %>%
+  filter(vf_assay == "HBB c.20A>T" &
            !r_number %in% samples_to_exclude) %>%
   mutate(extraction_volume = ifelse(r_number %in% secondary_cohort,
                          "6ml", "2 or 4ml"))
@@ -67,27 +55,17 @@ cfDNA_scd_data <- ff_calculations(
 
 # This step selects every HbAS gDNA control which we have run, including
 # single well data, and data merged by sample for each worksheet.
-gDNA_scd_data <- var_ref_calculations(
-  ddpcr_data %>%
-    # Create a unique identifier for every well in the dataset
-    mutate(worksheet_sample_well = paste0(Worksheet,"_",Sample,"_",Well)) %>%
-   filter(Sample %in% controls$Sample & 
+
+gDNA_scd_data <- parent_gDNA_var_ref %>%
+   filter(sample %in% controls$sample & 
             # Remove any controls that aren't HbAS gDNA
-            !Sample %in% c("NTC", "30139", "30130", 
+            !sample %in% c("NTC", "30139", "30130", 
                            "19RG-220G0191", "19RG-220G0193",
                            "21RG-120G0072") &
             # Remove empty well 
-            Positives != 0 &
-            Target %in% c("HbA", "HbS")) %>%
-   pivot_wider(id_cols = c(worksheet_sample_well, Sample, Worksheet, Well),
-               names_from = Target,
-               values_from = 
-                 c(AcceptedDroplets, Positives)) %>%
-   select(-AcceptedDroplets_HbA) %>%
-   dplyr::rename(
-     AcceptedDroplets_Variant_assay =AcceptedDroplets_HbS,
-     Positives_variant = Positives_HbA,
-     Positives_reference = Positives_HbS)) %>%
+            reference_positives != 0 &
+            vf_assay == "HBB c.20A>T") %>%
+  
   # New column to distinguish control gDNA
   mutate(sample_type = "gDNA",
         sprt_prediction = case_when(
@@ -104,7 +82,7 @@ gDNA_scd_data <- var_ref_calculations(
           variant_percent < calc_AS_upper_boundary(vf_assay_molecules)
          ~"HbAS",
           TRUE ~"inconclusive")) %>%
-  dplyr::rename(r_number = Sample)
+  dplyr::rename(r_number = sample)
 
 #########################
 # SPRT with HbAS gDNA controls
@@ -188,7 +166,9 @@ ggplot(gDNA_scd_data, aes(x = vf_assay_molecules, y = variant_percent))+
 # Limit of detection study
 #########################
 
-lod_data <- read_csv("data/20-1557.csv", col_names = TRUE)
+lod_data <- read_csv("data/20-1557.csv", col_names = TRUE) %>%
+  janitor::clean_names() %>%
+  dplyr::rename(droplets = accepted_droplets)
 
 # There are 4 replicates per spike-in. Merging them together gives
 # outputs of 3000, 6000, 9000 and 12000 genome equivalents.
@@ -211,19 +191,20 @@ wells_12000_GE <- c(wells_9000_GE, "D02", "D03", "H03", "D04", "H04",
 merge_lod_wells <- function(input_wells, GE_level){
   
   output <- lod_data %>% 
-            select(Well, Sample, Target, Positives, AcceptedDroplets) %>%
-            filter(Well %in% input_wells) %>%
-            group_by(Sample, Target) %>% 
-            summarise(Positives = sum(Positives),
-                      AcceptedDroplets = sum(AcceptedDroplets),
+            select(well, sample, target, positives, droplets) %>%
+            filter(well %in% input_wells) %>%
+            group_by(sample, target) %>% 
+            summarise(positives = sum(positives),
+                      droplets = sum(droplets),
                       .groups="drop") %>%
-            pivot_wider(id_cols = c(Sample),
-                        names_from = Target,
-                        values_from = c(AcceptedDroplets, Positives)) %>%
-            select(-c(AcceptedDroplets_HbA)) %>%
-            dplyr::rename(AcceptedDroplets_Variant_assay = AcceptedDroplets_HbS,
-                          Positives_variant = Positives_HbS,
-                          Positives_reference = Positives_HbA) %>%
+            pivot_wider(id_cols = c(sample),
+                        names_from = target,
+                        values_from = c(droplets, positives),
+                        names_glue = "{target}_{.value}") %>%
+            select(-c(HbA_droplets)) %>%
+            dplyr::rename(vf_assay_droplets = HbS_droplets,
+                          variant_positives = HbS_positives,
+                          reference_positives = HbA_positives) %>%
             mutate(GE_level = GE_level)
   
   return(output)
@@ -237,7 +218,7 @@ lod_data_merged <- var_ref_calculations(rbind(
   merge_lod_wells(wells_9000_GE, 9000),
   merge_lod_wells(wells_12000_GE, 12000))) %>%
   # Allows easier colour labelling
-  mutate(Sample = factor(Sample, levels = 
+  mutate(sample = factor(sample, levels = 
                 c("SS 12%", "SS 10%", "SS 8%", "SS 6%", "SS 4%", "SS 2%",
                   "0%",
                   "AA 2%", "AA 4%", "AA 6%", "AA 8%", "AA 10%", "AA 12%")))
@@ -245,7 +226,7 @@ lod_data_merged <- var_ref_calculations(rbind(
 # Plot the LOD data against the limits set in the previous section
 
 ggplot(lod_data_merged, 
-       aes(x = vf_assay_molecules, y = variant_percent))+
+       aes(x = vf_assay_molecules, y = variant_percent)) +
   geom_errorbar(aes(ymin = variant_percent_min, ymax = variant_percent_max),
                 alpha = 0.2)+
   geom_errorbarh(aes(xmin = vf_assay_molecules_min, 
@@ -264,24 +245,24 @@ ggplot(lod_data_merged,
     # 0%
     "#FFFFFF",
     # 2% to 12%
-    "#CCCCCC", "#9999CC", "#999999", "#666666", "#333333","#000000"))+
-  geom_point(size = 3, aes(fill = Sample), pch=21)+
-  theme_bw()+
+    "#CCCCCC", "#9999CC", "#999999", "#666666", "#333333","#000000")) +
+  geom_point(size = 3, aes(fill = sample), pch=21) +
+  theme_bw() +
   theme(
     panel.grid.major = element_blank(),
     panel.grid.minor = element_blank(),
     legend.position = "right", 
-    legend.title = element_blank())+ 
+    legend.title = element_blank()) + 
   labs(x = "Genome equivalents (GE)",
        y = "Variant fraction (%)",
        title = "Limit of detection experiment") +
-  xlim(0, 20000)+
-  ylim(40, 60)+
-  geom_vline(xintercept = vf_assay_molecules_limit, linetype = "dashed")+
-  geom_hline(yintercept = SS_limit, linetype = "dashed")+
-  geom_hline(yintercept = AS_upper_limit, linetype = "dashed")+
-  geom_hline(yintercept = AS_lower_limit, linetype = "dashed")+
-  geom_hline(yintercept = AA_limit, linetype = "dashed")+
+  xlim(0, 20000) +
+  ylim(40, 60) +
+  geom_vline(xintercept = vf_assay_molecules_limit, linetype = "dashed") +
+  geom_hline(yintercept = SS_limit, linetype = "dashed") +
+  geom_hline(yintercept = AS_upper_limit, linetype = "dashed") +
+  geom_hline(yintercept = AS_lower_limit, linetype = "dashed") +
+  geom_hline(yintercept = AA_limit, linetype = "dashed") +
   annotate(geom = "text", x = 20000, y = 50, 
            label = "HbAS")+
   annotate(geom = "text", x = 20000, y = 47, 
@@ -342,7 +323,7 @@ cfDNA_scd_predictions <- cfDNA_scd_data %>%
                                      "inconclusive")),
     
     # Calculate likelihood ratio
-    likelihood_ratio = calc_LR_autosomal(fetal_fraction,
+    likelihood_ratio = calc_lr_autosomal(fetal_fraction,
                                          major_allele_percent/100,
                                          vf_assay_molecules),
     sprt_prediction = case_when(
@@ -437,9 +418,9 @@ scd_cohort_table <- cfDNA_scd_outcomes %>%
   select(sample_id, r_number, study_id, site, 
          date_of_blood_sample, original_plasma_vol,
          vacutainer, gestation_character, extraction_volume, 
-         Partner_sample_available, variant_assay, 
-         AcceptedDroplets_Variant_assay, Positives_variant,
-         Positives_reference, ff_assay, AcceptedDroplets_FetalFrac, 
+         Partner_sample_available, vf_assay, 
+         vf_assay_droplets, variant_positives,
+         reference_positives, ff_assay, ff_assay_droplets, 
          maternal_positives, paternal_positives, variant_molecules, 
          reference_molecules, vf_assay_molecules,
          maternal_molecules, paternal_molecules,
