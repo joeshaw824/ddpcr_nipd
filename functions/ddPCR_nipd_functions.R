@@ -559,13 +559,13 @@ parent_gDNA_ff <- ff_calculations(ddpcr_controls_with_target %>%
 draw_rmd_plot <- function(cfdna_sample, parent_vf_wells, parent_ff_wells) {
   
   # Get cfDNA data
-  cfDNA_rmd <- ddpcr_sprt_analysed %>%
+  cfDNA_rmd <- ddpcr_sprt_unblinded %>%
     filter(r_number %in% cfdna_sample) %>%
     dplyr::rename(sample = r_number) %>%
     mutate(identity = "cfDNA") %>%
     select(sample, identity, sprt_prediction, fetal_percent,
-           variant_percent,
-           variant_assay, ff_assay,
+           variant_percent, 
+           vf_assay, ff_assay, mutation_genetic_info_fetus,
            variant_molecules, reference_molecules,
            variant_molecules_max, variant_molecules_min, 
            reference_molecules_max, reference_molecules_min, 
@@ -579,10 +579,9 @@ draw_rmd_plot <- function(cfdna_sample, parent_vf_wells, parent_ff_wells) {
     parent_gDNA_var_ref %>%
       # First table
       filter(worksheet_well_sample %in% parent_vf_wells) %>%
-      select(sample, identity, variant_assay, variant_molecules, 
+      select(sample, identity, vf_assay, variant_molecules, 
              reference_molecules, variant_molecules_max, variant_molecules_min, 
-             reference_molecules_max, reference_molecules_min,
-             variant_assay),
+             reference_molecules_max, reference_molecules_min),
     # Second table
     parent_gDNA_ff %>%
       filter(worksheet_well_sample %in% parent_ff_wells) %>%
@@ -590,7 +589,7 @@ draw_rmd_plot <- function(cfdna_sample, parent_vf_wells, parent_ff_wells) {
              paternal_molecules_max, paternal_molecules_min,
              maternal_molecules_max, maternal_molecules_min),
     by = "sample") %>%
-    select(sample, identity, variant_assay, ff_assay,
+    select(sample, identity, vf_assay, ff_assay,
            variant_molecules, reference_molecules,
            variant_molecules_max, variant_molecules_min, 
            reference_molecules_max, reference_molecules_min, 
@@ -601,7 +600,7 @@ draw_rmd_plot <- function(cfdna_sample, parent_vf_wells, parent_ff_wells) {
   # Bind with cfDNA data
   case_rmd <- rbind(parents_rmd,
                     cfDNA_rmd %>%
-                      select(sample, identity, variant_assay, 
+                      select(sample, identity, vf_assay, 
                              ff_assay, variant_molecules, 
                              reference_molecules, variant_molecules_max, 
                              variant_molecules_min, reference_molecules_max, 
@@ -615,7 +614,7 @@ draw_rmd_plot <- function(cfdna_sample, parent_vf_wells, parent_ff_wells) {
   # na.omit used because some cases do not have both assays tested for 
   # parental samples
   stopifnot(length(unique(na.omit(case_rmd$ff_assay)))==1)
-  stopifnot(length(unique(na.omit(case_rmd$variant_assay)))==1)
+  stopifnot(length(unique(na.omit(case_rmd$vf_assay)))==1)
   
   # This section can probably be simplified with a clever pivot
   # to get the max and min values in separate columns
@@ -681,16 +680,20 @@ draw_rmd_plot <- function(cfdna_sample, parent_vf_wells, parent_ff_wells) {
           panel.grid.minor = element_blank())+
     labs(x = "", y = "Molecules", 
          title = paste("cfDNA:", cfdna_sample),
-         subtitle = paste("Variant assay:", cfDNA_rmd[1,6], "  ",
+         subtitle = paste("Variant fraction assay:", cfDNA_rmd[1,6], "  ",
                           "Fetal fraction assay:", cfDNA_rmd[1,7],
                           "  ", "SPRT prediction: ",
                           cfDNA_rmd[1,3],
                           "  ", "Fetal fraction: ",
                           round(cfDNA_rmd[1,4], 1),"%  ",
                           "Variant fraction: ",
-                          round(cfDNA_rmd[1,5], 1),"%"))+
+                          round(cfDNA_rmd[1,5], 1),"%  ",
+                          "Invasive result: ",
+                          cfDNA_rmd[1,8]))+
     geom_text(aes(x = identity, y = molecules_max, label = molecules), 
               position = position_dodge(width = 0.9), vjust = -1)
   
   return(rmd_plot)
 }
+
+#########################

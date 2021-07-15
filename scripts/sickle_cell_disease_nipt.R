@@ -39,7 +39,8 @@ samples_to_exclude <- c(13262, 17004, 20915)
 secondary_cohort <- c("14182", "19868", "20238", "20611", 
                       "20874", "30063", "30068", "30113", "30142", 
                       "30206", "30228", "30230", "30078", "30065", 
-                      "13402", "20939", "30215", "30203")
+                      "13402", "20939", "30215", "30203",
+                      "20911", "30236", "30112")
 
 cfDNA_scd_data <- ff_calculations(
   var_ref_calculations(cfdna_ddpcr_data)) %>%
@@ -404,7 +405,7 @@ ggplot(cfDNA_scd_predictions, aes(x = vf_assay_molecules,
   geom_hline(yintercept = SS_limit, linetype = "dashed")+
   geom_hline(yintercept = AS_upper_limit, linetype = "dashed")+
   geom_hline(yintercept = AS_lower_limit, linetype = "dashed")+
-  geom_hline(yintercept = AA_limit, linetype = "dashed") +
+  geom_hline(yintercept = AA_limit, linetype = "dashed")
   # Circle the incorrect predictions
   geom_point(data=subset(cfDNA_scd_predictions, 
                          r_number %in% c("17472", "18836",  "20763")),

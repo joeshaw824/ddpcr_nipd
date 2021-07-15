@@ -33,7 +33,8 @@ setwd("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/ddP
 # Load resources
 sample_wells <- read.csv("resources/sample_wells.csv",
                          colClasses = c("character", "character", 
-                                        "character", "character"))
+                                        "character", "character",
+                                        "character"))
 
 # Source functions (this includes loading ddPCR data)
 source("functions/ddPCR_nipd_functions.R")
@@ -305,20 +306,35 @@ ddpcr_nipd_unblinded <- left_join(
            tubes_plasma_current, report_acquired),
   by = "r_number")
 
+# If you don't want to run the MCMC pipeline every time, 
+# just compare using SPRT
+
+ddpcr_sprt_unblinded <- left_join(
+  ddpcr_sprt_analysed,
+  RAPID_biobank %>%
+    # Change r_number to a character to match ddpcr_analysed
+    mutate(r_number = as.character(r_number)) %>%
+    filter(r_number %in% ddpcr_sprt_analysed$r_number) %>%
+    select(r_number, study_id, gestation_weeks, gestation_days, 
+           Gestation_total_weeks, gestation_character, 
+           date_of_blood_sample, vacutainer, mutation_genetic_info_fetus, 
+           Partner_sample_available, original_plasma_vol, 
+           tubes_plasma_current, report_acquired),
+  by = "r_number")
+
 #########################
-# Plot all cases
+# Plot bespoke cohort cases
 #########################
 
-scd_cases <- ddpcr_sprt_analysed %>%
-  filter(variant_assay == "HBB c.20A>T")
+bespoke_cases <- ddpcr_sprt_analysed %>%
+  filter(vf_assay != "HBB c.20A>T")
 
 bespoke_wells <- sample_wells %>%
   filter(!cfdna_sample %in% scd_cases$r_number)
 
-# Arrange by r number so the plots are in the right order
-
 bespoke_plots <-list()
 
+# Plot an rmd plot for each case
 for (i in bespoke_wells$cfdna_sample) {
   
   case <- bespoke_wells %>%
@@ -331,10 +347,45 @@ for (i in bespoke_wells$cfdna_sample) {
   rm(new_plot)
 }
 
-# This appears to work
+# Export bespoke cohort plots a single pdf
 ggexport(plotlist = bespoke_plots, filename = "plots/bespoke_cohort.pdf",
          width=15, height=8, res=300)
 
-	 		
+#########################
+# Plot sickle cell disease cohort cases
+#########################
 
+secondary_cohort <- c("14182", "19868", "20238", "20611", 
+                      "20874", "30063", "30068", "30113", "30142", 
+                      "30206", "30228", "30230", "30078", "30065", 
+                      "13402", "20939", "30215", "30203",
+                      "20911", "30236", "30112")
 
+scd_cases_secondary <- ddpcr_sprt_analysed %>%
+  filter(vf_assay == "HBB c.20A>T" & 
+           r_number %in% secondary_cohort)
+
+scd_wells_secondary <- sample_wells %>%
+  filter(cfdna_sample %in% scd_cases_secondary$r_number)
+
+scd_plots <-list()
+
+# Plot an rmd plot for each case
+for (i in scd_wells_secondary$cfdna_sample) {
+  
+  case <- scd_wells_secondary %>%
+    filter(cfdna_sample == i)
+  
+  new_plot <- draw_rmd_plot(i, 
+                            c(case[, 2], case[, 3]),
+                            c(case[, 4], case[, 5]))
+  scd_plots <- list(scd_plots, new_plot)
+  rm(new_plot)
+}
+
+# Export sickle cell plots as a single pdf
+ggexport(plotlist = scd_plots, 
+         filename = "plots/sickle_cell_secondary_cohort.pdf",
+         width=15, height=8, res=300)
+
+#########################
