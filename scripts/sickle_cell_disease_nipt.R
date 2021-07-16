@@ -48,7 +48,8 @@ cfDNA_scd_data <- ff_calculations(
   filter(vf_assay == "HBB c.20A>T" &
            !r_number %in% samples_to_exclude) %>%
   mutate(extraction_volume = ifelse(r_number %in% secondary_cohort,
-                         "6ml", "2 or 4ml"))
+                         "6ml", "2 or 4ml"),
+         sample_type = "cfDNA")
 
 #########################
 # Prepare HbAS gDNA data
@@ -447,3 +448,179 @@ count(cfDNA_scd_outcomes, Prediction, mutation_genetic_info_fetus)
 # True positives, false positives, false negatives, true negatives
 scd_data <- as.table(matrix(c(18, 3, 0, 31), nrow = 2, byrow = TRUE))
 scd_metrics <- epi.tests(scd_data, conf.level = 0.95)
+
+#########################
+# Z score analysis
+#########################
+
+# This section applies the z score analysis from Chiu et al 2008 
+# (PMID: 19073917), using gDNA HbAS controls with over 4000 GE detected as
+# a reference dataset.
+
+z_score_control <- gDNA_scd_data %>%
+       filter(vf_assay_molecules > 4000)
+
+# vp is "variant percent"
+control_mean_vp <- mean(z_score_control$variant_percent)            
+
+# Find the standard deviation (use the "sd" option in R 
+# or calculate using the squared differences and variance)
+
+z_score_control_sd <- z_score_control %>%
+  mutate(squared_difference = (variant_percent - control_mean_vp)**2)
+
+# Standard deviation
+stand_dev_method1 <- sd(z_score_control$variant_percent)
+
+variance <- sum(z_score_control_test$squared_difference)/
+  (nrow(z_score_control_test) -1)
+
+stand_dev_method2 <- sqrt(variance)
+
+# Coefficient of variation
+cv <- (stand_dev_method1/control_mean_vp) * 100
+
+# Both methods give the same answer
+stand_dev_method1 == stand_dev_method2
+
+# Combine gDNA and cfDNA and calculate z scores
+cohort_z_scores <- rbind(z_score_control %>%
+               dplyr::rename(identifier = worksheet_well_sample) %>%
+               select(identifier, vf_assay_molecules, variant_percent,
+               variant_percent_max, variant_percent_min,
+               sample_type),
+        cfDNA_scd_data %>% 
+          dplyr::rename(identifier = r_number) %>%
+          filter(vf_assay_molecules > 4000 &
+                   fetal_percent > 4) %>%
+          select(identifier, vf_assay_molecules, variant_percent,
+               variant_percent_max, variant_percent_min,
+               sample_type)) %>%
+  mutate(z_score = (variant_percent - control_mean_vp) / stand_dev_method1,
+         identifier = fct_reorder(identifier, z_score))
+
+# Plot
+ggplot(cohort_z_scores, aes(x = identifier, y = z_score,
+                            colour = sample_type))+
+  facet_wrap(~sample_type) +
+  geom_point() +
+  theme_bw() +
+  theme(axis.text.x = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.title.x = element_blank()) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_hline(yintercept = -3, linetype = "dashed") +
+  geom_hline(yintercept = 3, linetype = "dashed") +
+  labs(y = "Z score")
+
+# Check against Biobank
+z_score_check <- left_join(cohort_z_scores %>%
+            dplyr::rename(r_number = identifier) %>%
+            filter(sample_type == "cfDNA") %>%
+            mutate(z_score_prediction = case_when(
+              z_score > 3 ~"HbSS",
+              z_score < -3 ~"HbAA",
+              TRUE ~"HbAS")),
+          RAPID_biobank %>%
+            mutate(r_number = as.character(r_number)),
+          by= "r_number") %>%
+  mutate(r_number = fct_reorder(r_number, z_score))
+
+ggplot(z_score_check, aes(x = r_number, y = z_score,
+                            colour = mutation_genetic_info_fetus))+
+  geom_point() +
+  theme_bw() +
+  theme(axis.text.x = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.title.x = element_blank()) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_hline(yintercept = -3, linetype = "dashed") +
+  geom_hline(yintercept = 3, linetype = "dashed") +
+  labs(y = "Z score", title = "Z score analysis of sickle cell disease ddPCR")
+
+#########################
+# Z score limit of detection
+#########################
+
+lod_z_score <- lod_data_merged %>%
+  mutate(z_score = (variant_percent - control_mean_vp) / control_sd_vp)
+
+ggplot(lod_z_score , 
+       aes(x = vf_assay_molecules, y = z_score)) +
+  # In order of shade
+  # "#FFFFFF" = white
+  # "#CCCCCC" = grey 1
+  # "#9999CC" = grey 2
+  # "#999999" = grey 3
+  # "#666666" = grey 4
+  # "#333333" = grey 5
+  # "#000000" = black; 
+  scale_fill_manual(values = c(
+    # SS 12% to 2%
+    "#000000", "#333333", "#666666", "#999999", "#9999CC", "#CCCCCC",
+    # 0%
+    "#FFFFFF",
+    # 2% to 12%
+    "#CCCCCC", "#9999CC", "#999999", "#666666", "#333333","#000000")) +
+  geom_point(size = 3, aes(fill = sample), pch=21) +
+  theme_bw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.position = "right", 
+    legend.title = element_blank()) + 
+  labs(x = "Genome equivalents (GE)",
+       y = "Z score",
+       title = "Limit of detection experiment Z score") +
+  geom_hline(yintercept = 3, linetype = "dashed") +
+  geom_hline(yintercept = -3, linetype = "dashed")
+
+#########################
+# Distribution of HbAS controls
+#########################
+
+# Plot controls with normal distribution curve
+gDNA_scd_data %>%
+  mutate(variant_percent = round(variant_percent/0.5)*0.5) %>%
+  filter(vf_assay_molecules > 4000) %>%
+  ggplot(aes(x = variant_percent, y = )) +
+  geom_bar(aes(y = (..count..)/sum(..count..))) +
+  xlim(45, 55) +
+  stat_function(fun = dnorm, n = 171, args = list(mean = 49.9, sd = 0.57),
+               linetype = "dashed") +
+  theme_bw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()) +
+  labs(y = "Percentage of controls", x = "Variant percent (%)",
+       title = "Distrubution of HbAS gDNA controls")
+
+# Plot controls with standard deviations
+gDNA_scd_data %>%
+  filter(vf_assay_molecules > 4000) %>%
+  ggplot(aes(x = variant_percent, y = sample_type)) +
+  geom_jitter(pch = 21, size = 3) +
+  xlim(45, 55) +
+  theme_bw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()) +
+  labs(y = "Percentage of controls", x = "Variant percent (%)",
+       title = "Distrubution of HbAS gDNA controls") +
+  geom_vline(xintercept = (50+stand_dev_method1),
+             linetype = "dashed") +
+  geom_vline(xintercept = (50-stand_dev_method1),
+             linetype = "dashed") +
+  geom_vline(xintercept = (50+(2*stand_dev_method1)),
+             linetype = "dashed") +
+  geom_vline(xintercept = (50-(2*stand_dev_method1)),
+             linetype = "dashed") +
+  geom_vline(xintercept = (50+(3*stand_dev_method1)),
+             linetype = "dashed") +
+  geom_vline(xintercept = (50-(3*stand_dev_method1)),
+             linetype = "dashed")
+

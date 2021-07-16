@@ -389,3 +389,29 @@ ggexport(plotlist = scd_plots,
          width=15, height=8, res=300)
 
 #########################
+# Fetal fraction versus variant fraction
+#########################
+
+ggplot(ddpcr_sprt_analysed %>%
+         filter(!r_number %in% samples_to_exclude &
+                  inheritance_chromosomal == "autosomal"), aes(x = fetal_percent,
+                                y = major_allele_percent,
+                                colour = vf_assay)) +
+  geom_errorbar(aes(ymin = major_allele_percent_min,
+                    ymax = major_allele_percent_max),
+                alpha = 0.2) +
+  geom_errorbarh(aes(xmin = fetal_percent_min,
+                     xmax = fetal_percent_max),
+                 alpha = 0.2) +
+  geom_point(pch=21, fill = "white", size = 3) +
+  theme_bw() +
+  theme(
+    panel.grid.major =  element_blank(),
+    panel.grid.minor = element_blank()) +
+  labs(y = "Over-represented allele (%)",
+       x = "Fetal fraction (%)",
+       title = "ddPCR for maternally-inherited autosomal variants") +
+  geom_abline(slope = 0.5, intercept = 50, linetype = "dashed") +
+  geom_hline(yintercept = 50, linetype = "dashed") +
+  xlim(0, 21) +
+  ylim(50, 60)
