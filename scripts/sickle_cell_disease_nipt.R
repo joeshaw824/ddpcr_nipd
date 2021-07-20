@@ -130,6 +130,8 @@ ggplot(gDNA_scd_data, aes(x = vf_assay_molecules, y = variant_percent))+
 # Variation in HbAS gDNA controls
 #########################
 
+vf_assay_molecules_limit <- 4000
+
 # This section shows the variation in HbAS gDNA controls over 
 # 4000 GE, in preparation for z score analysis in the next section
 
@@ -288,7 +290,7 @@ ggplot(lod_data_merged,
     legend.position = "right", 
     legend.title = element_blank()) + 
   labs(x = "Genome equivalents (GE)",
-       y = "Z score",
+       y = "Variant fraction (%)",
        title = "Limit of detection experiment Z score") +
   geom_vline(xintercept = vf_assay_molecules_limit, linetype = "dashed") +
   geom_hline(yintercept = gDNA_mean_vp+(2*gDNA_stand_dev_vp), 
@@ -316,13 +318,12 @@ ggplot(lod_data_merged,
 # way as NIPT for trisomy 21.
 
 lr_threshold <- 8
-vf_assay_molecules_limit <- 4000
 
 cfDNA_scd_predictions <- cfDNA_scd_data %>%
   mutate(
     z_score = (variant_percent - gDNA_mean_vp) / gDNA_stand_dev_vp,
     
-    Prediction = case_when(
+    z_score_genotype_prediction = case_when(
       # Samples with fetal fractions below 4% are inconclusive
       
       z_score > 3 &
@@ -343,8 +344,20 @@ cfDNA_scd_predictions <- cfDNA_scd_data %>%
       
       TRUE ~"inconclusive"),
     
+    z_score_clinical_prediction = case_when(
+      
+      z_score > 3 &
+        fetal_percent > 4 &
+        vf_assay_molecules > vf_assay_molecules_limit
+      ~"affected",
+      z_score < 2 &
+        fetal_percent > 4 &
+        vf_assay_molecules > vf_assay_molecules_limit
+      ~ "unaffected",
+      TRUE ~"inconclusive"),
+    
     # Factorise for plot
-    Prediction = factor(Prediction, levels = 
+    z_score_genotype_prediction = factor(z_score_genotype_prediction, levels = 
                                    c("HbSS", "HbAS", "HbAA",
                                      "inconclusive")),
     
@@ -352,7 +365,7 @@ cfDNA_scd_predictions <- cfDNA_scd_data %>%
     likelihood_ratio = calc_lr_autosomal(fetal_fraction,
                                          major_allele_percent/100,
                                          vf_assay_molecules),
-    sprt_prediction = case_when(
+    sprt_genotype_prediction = case_when(
       likelihood_ratio > lr_threshold &
         major_allele == "variant allele"
       ~"HbSS",
@@ -378,20 +391,15 @@ cfDNA_scd_outcomes <- left_join(
            original_plasma_vol,
            date_of_blood_sample, Gestation_total_weeks,
            gestation_character, vacutainer,
-           mutation_genetic_info_fetus, Partner_sample_available),
+           mutation_genetic_info_fetus, Partner_sample_available,
+           report_acquired),
   by = "r_number") %>%
   mutate(outcome = case_when(
-    Prediction == "inconclusive" ~"inconclusive",
+    z_score_genotype_prediction == "inconclusive" ~"inconclusive",
     is.na(mutation_genetic_info_fetus) ~"awaiting result",
-    Prediction == mutation_genetic_info_fetus
+    z_score_genotype_prediction == mutation_genetic_info_fetus
     ~"correct",
-    TRUE ~"incorrect"),
-    sprt_outcome = case_when(
-      sprt_prediction == "inconclusive" ~"inconclusive",
-      is.na(mutation_genetic_info_fetus) ~"awaiting result",
-      sprt_prediction == mutation_genetic_info_fetus
-      ~"correct",
-      TRUE ~"incorrect"))
+    TRUE ~"incorrect"))
 
 #########################
 # Plot cfDNA results
@@ -408,8 +416,8 @@ ggplot(cfDNA_scd_outcomes, aes(x = vf_assay_molecules,
   # "#0000FF" = dark blue; "#999999" = grey
   scale_fill_manual(values=c("#000000", "#99CCFF", "#0000FF", "#999999")) +
   scale_alpha_manual(values = c(1, 1, 1, 0.4)) +
-  geom_point(size = 2, aes(fill = Prediction,
-                           alpha = Prediction),
+  geom_point(size = 2, aes(fill = z_score_genotype_prediction,
+                           alpha = z_score_genotype_prediction),
              colour = "black", pch=21) +
   theme_bw() +
   theme(
@@ -450,9 +458,9 @@ scd_cohort_table <- cfDNA_scd_outcomes %>%
          maternal_positives, paternal_positives, variant_molecules, 
          reference_molecules, vf_assay_molecules,
          maternal_molecules, paternal_molecules,
-         variant_percent, fetal_percent, Prediction, 
-         clinical_prediction, 
-         mutation_genetic_info_fetus, outcome) %>%
+         variant_percent, fetal_percent, z_score,
+         z_score_genotype_prediction, z_score_clinical_prediction,
+         mutation_genetic_info_fetus, report_acquired, outcome) %>%
   dplyr::rename(
     gestation = gestation_character, 
     "invasive genotype" = mutation_genetic_info_fetus,
@@ -466,7 +474,8 @@ write.csv(scd_cohort_table, "analysis_outputs/Supplementary Table 1.csv",
 #########################
 
 # Use the epiR package to calculate sensitivity
-count(cfDNA_scd_outcomes, Prediction, mutation_genetic_info_fetus)
+count(cfDNA_scd_outcomes, z_score_genotype_prediction, 
+      mutation_genetic_info_fetus)
 
 # Balanced vs unbalanced
 # True positives (9+10), false positives (1), false negatives (0),
