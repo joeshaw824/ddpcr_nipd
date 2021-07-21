@@ -396,7 +396,7 @@ ggplot(ddpcr_sprt_analysed %>%
          filter(!r_number %in% samples_to_exclude &
                   inheritance_chromosomal == "autosomal"), aes(x = fetal_percent,
                                 y = major_allele_percent,
-                                colour = vf_assay)) +
+                                colour = sprt_prediction)) +
   geom_errorbar(aes(ymin = major_allele_percent_min,
                     ymax = major_allele_percent_max),
                 alpha = 0.2) +
@@ -415,3 +415,59 @@ ggplot(ddpcr_sprt_analysed %>%
   geom_hline(yintercept = 50, linetype = "dashed") +
   xlim(0, 21) +
   ylim(50, 60)
+
+#########################
+# Worksheet 21-2418
+#########################
+
+# IDS, MAGED2 and ADA assays
+
+cfDNA_samples <- c("19611", "20980", "14142")
+
+parental_samples <- c("21RG-027G0070", "21RG-027G0010", "21RG-047G0089",
+                      "21RG-047G0093")
+
+
+parents_and_cfDNA <- rbind(parent_gDNA_var_ref %>%
+                             filter(sample %in% parental_samples &
+                                      worksheet_well_sample %in% 
+                                      grep("21-2418.csv", 
+                                           parent_gDNA_var_ref$worksheet_well_sample,
+                                           value = TRUE)) %>%
+  select(sample, vf_assay, vf_assay_molecules, vf_assay_molecules_max, 
+          vf_assay_molecules_min, variant_percent, variant_percent_max, 
+         variant_percent_min) %>%
+  mutate(sample_type = "gDNA"),
+  
+  ddpcr_sprt_analysed %>%
+    filter(r_number %in% cfDNA_samples) %>%
+    select(r_number, vf_assay, vf_assay_molecules, vf_assay_molecules_max, 
+           vf_assay_molecules_min, variant_percent, variant_percent_max, 
+           variant_percent_min) %>%
+    dplyr::rename(sample = r_number) %>%
+    mutate(sample_type = "cfDNA"))
+
+
+cfDNA_z_scores <- left_join(parents_and_cfDNA %>%
+  filter(sample_type == "cfDNA"),
+  parents_and_cfDNA %>%
+    filter(sample_type == "gDNA")%>%
+    dplyr::group_by(vf_assay) %>%
+    dplyr::summarise(mean_vp = mean(variant_percent),
+                     stand_dev_vp = sd(variant_percent)),
+  by = "vf_assay") %>%
+  mutate(z_score = (variant_percent - mean_vp) / stand_dev_vp)
+
+
+ggplot(parents_and_cfDNA %>%
+         filter(vf_assay == "IDS c.182_189del"), aes(
+           x = vf_assay_molecules,
+          y = variant_percent, 
+          colour = sample_type)) +
+  geom_jitter(pch = 21, size = 3) +
+  facet_wrap(~vf_assay)+
+  ylim(40, 60) +
+  xlim(0, 10000) +
+  theme_bw() +
+  geom_hline(yintercept = 50, linetype = "dashed") +
+  theme(legend.position = "bottom")

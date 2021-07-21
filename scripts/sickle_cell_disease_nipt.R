@@ -387,7 +387,7 @@ cfDNA_scd_outcomes <- left_join(
   cfDNA_scd_predictions,
   RAPID_biobank %>%
     mutate(r_number = as.character(r_number)) %>%
-    select(r_number, study_id, site, 
+    select(r_number, study_id, site, maternal_DOB, 
            original_plasma_vol,
            date_of_blood_sample, Gestation_total_weeks,
            gestation_character, vacutainer,
@@ -450,7 +450,7 @@ ggplot(cfDNA_scd_outcomes, aes(x = vf_assay_molecules,
 
 scd_cohort_table <- cfDNA_scd_outcomes %>%
   select(sample_id, r_number, study_id, site, 
-         date_of_blood_sample, original_plasma_vol,
+         date_of_blood_sample, maternal_DOB, original_plasma_vol,
          vacutainer, gestation_character, extraction_volume, 
          Partner_sample_available, vf_assay, 
          vf_assay_droplets, variant_positives,
