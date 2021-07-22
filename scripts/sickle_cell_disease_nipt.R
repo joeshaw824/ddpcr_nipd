@@ -482,3 +482,39 @@ count(cfDNA_scd_outcomes, z_score_genotype_prediction,
 # true negatives (32)
 scd_data <- as.table(matrix(c(19, 1, 0, 32), nrow = 2, byrow = TRUE))
 scd_metrics <- epi.tests(scd_data, conf.level = 0.95)
+
+#########################
+# Z score plotting
+#########################
+
+gDNA_cfDNA <- rbind(gDNA_scd_data_4000 %>%
+  mutate(z_score = (variant_percent - gDNA_mean_vp) / gDNA_stand_dev_vp) %>%
+  select(worksheet_well_sample, z_score, sample_type) %>%
+  dplyr::rename(sample = worksheet_well_sample),
+  
+  cfDNA_scd_outcomes %>%
+    filter(vf_assay_molecules > 4000) %>%
+    select(r_number, z_score, mutation_genetic_info_fetus) %>%
+    filter(!is.na(mutation_genetic_info_fetus)) %>%
+    dplyr::rename(sample_type = mutation_genetic_info_fetus,
+                  sample = r_number)) %>%
+    
+    mutate(sample_type = factor(sample_type, levels = c("gDNA", "HbAS",
+                                                        "HbAA", "HbSS"))) %>%
+    arrange(sample_type) %>%
+    mutate(sample = factor(sample))
+
+ggplot(gDNA_cfDNA, aes(x = sample_type, y = z_score))+
+  geom_jitter(size = 3, aes(shape = sample_type)) + 
+  scale_shape_manual(values = c(1, 2, 0, 3)) +
+  theme_bw() +
+  labs(y = "Z score", x = "", 
+       title = "Z score analysis on gDNA and cfDNA cohorts") +
+  geom_hline(yintercept = 3, linetype = "dashed") +
+  geom_hline(yintercept = -3, linetype = "dashed") +
+  theme(
+    legend.position = "bottom",
+    panel.grid = element_blank(),
+    axis.text.x = element_blank(), 
+    legend.title = element_blank())
+  

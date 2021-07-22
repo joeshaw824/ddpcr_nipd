@@ -11,6 +11,7 @@
 # Load packages
 library(tidyverse)
 library(janitor)
+library(stringi)
 
 # Load resources
 controls <- readr::read_csv("resources/controls.csv")
@@ -697,3 +698,13 @@ draw_rmd_plot <- function(cfdna_sample, parent_vf_wells, parent_ff_wells) {
 }
 
 #########################
+# Sequence functions
+#########################
+
+reverse_complement <- function(input_sequence){
+  
+  rev_comp <- stri_reverse(chartr("ATGC","TACG",input_sequence))
+  
+  return(rev_comp)
+  
+}
