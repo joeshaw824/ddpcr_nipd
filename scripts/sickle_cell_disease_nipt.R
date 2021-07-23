@@ -319,9 +319,12 @@ ggplot(lod_data_merged,
 
 lr_threshold <- 8
 
+colnames(cfDNA_scd_predictions)
+
 cfDNA_scd_predictions <- cfDNA_scd_data %>%
   mutate(
     z_score = (variant_percent - gDNA_mean_vp) / gDNA_stand_dev_vp,
+    z_score_major = (major_allele_percent - gDNA_mean_vp) / gDNA_stand_dev_vp,
     
     z_score_genotype_prediction = case_when(
       # Samples with fetal fractions below 4% are inconclusive
@@ -493,28 +496,31 @@ gDNA_cfDNA <- rbind(gDNA_scd_data_4000 %>%
   dplyr::rename(sample = worksheet_well_sample),
   
   cfDNA_scd_outcomes %>%
-    filter(vf_assay_molecules > 4000) %>%
-    select(r_number, z_score, mutation_genetic_info_fetus) %>%
+    filter(vf_assay_molecules > 4000 &
+             fetal_percent > 4) %>%
+    select(r_number, z_score_major, mutation_genetic_info_fetus) %>%
     filter(!is.na(mutation_genetic_info_fetus)) %>%
     dplyr::rename(sample_type = mutation_genetic_info_fetus,
-                  sample = r_number)) %>%
+                  sample = r_number,
+                  z_score = z_score_major)) %>%
     
     mutate(sample_type = factor(sample_type, levels = c("gDNA", "HbAS",
                                                         "HbAA", "HbSS"))) %>%
     arrange(sample_type) %>%
     mutate(sample = factor(sample))
 
-ggplot(gDNA_cfDNA, aes(x = sample_type, y = z_score))+
+ggplot(gDNA_cfDNA %>%
+         filter(sample_type != "gDNA"), aes(x = sample_type, y = z_score))+
   geom_jitter(size = 3, aes(shape = sample_type)) + 
-  scale_shape_manual(values = c(1, 2, 0, 3)) +
+  scale_shape_manual(values = c(1, 0, 3)) +
   theme_bw() +
-  labs(y = "Z score", x = "", 
-       title = "Z score analysis on gDNA and cfDNA cohorts") +
-  geom_hline(yintercept = 3, linetype = "dashed") +
-  geom_hline(yintercept = -3, linetype = "dashed") +
+  labs(y = "Z statistic", x = "") +
   theme(
     legend.position = "bottom",
     panel.grid = element_blank(),
     axis.text.x = element_blank(), 
-    legend.title = element_blank())
-  
+    legend.title = element_blank()) +
+  ylim(-5, 20)
+
+#########################
+
