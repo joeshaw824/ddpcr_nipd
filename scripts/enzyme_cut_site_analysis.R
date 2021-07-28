@@ -88,7 +88,7 @@ amplicons_primers_probes <- full_join(
       TRUE ~"fail")))
     
 
-good_assays <- c("ZFXY", "TCOF1 c.3611 C>A",
+good_assays <- c("ZFXY",
                  "VHL c.583C>T", "F8 c.6046C>T",
                  "FGFR3 c.1138G>A", "OTC c.905A>G",
                  "PMM2 c.691G>A", "MAGED2 c.1426C>T",
@@ -122,10 +122,10 @@ write.csv(for_rossa, "analysis_outputs/ddpcr_assays.csv",
 dnase1l3_end_motifs <- c("CCCA", "CCAG", "CCTG", "CCAA", "CCCT", "CCAT", 
                          "TGGG", "CTGG", "CAGG", "TTGG", "AGGG", "ATGG") 
 
-amplicons_longer <- amplicons %>%
-  select(-c(reference_amplicon_length, variant_amplicon_length)) %>%
+amplicons_longer <- for_rossa %>%
+  select(assay_name, category, reference_amplicon, variant_amplicon) %>%
   pivot_longer(
-    cols = -assay_name,
+    cols = c(reference_amplicon, variant_amplicon),
     names_to = "amplicon_class",
     values_to = "sequence") %>%
     mutate(length = nchar(sequence))
@@ -148,6 +148,14 @@ amplicons_count <- cbind(amplicons_longer, dnase1l3_motif_count) %>%
 #########################
 # Plots
 #########################
+
+ggplot(amplicons_count %>%
+         filter(category != "unsure"), aes(x = assay_name, 
+                                           y = dnase1l3_motif_count,
+                                           colour = category))+
+  geom_jitter() +
+  ylim(0, 15)
+
 
 amplicons_count %>%
   filter(amplicon_class == "reference_amplicon") %>%

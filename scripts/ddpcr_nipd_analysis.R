@@ -427,7 +427,6 @@ cfDNA_samples <- c("19611", "20980", "14142")
 parental_samples <- c("21RG-027G0070", "21RG-027G0010", "21RG-047G0089",
                       "21RG-047G0093")
 
-
 parents_and_cfDNA <- rbind(parent_gDNA_var_ref %>%
                              filter(sample %in% parental_samples &
                                       worksheet_well_sample %in% 
@@ -458,16 +457,41 @@ cfDNA_z_scores <- left_join(parents_and_cfDNA %>%
   by = "vf_assay") %>%
   mutate(z_score = (variant_percent - mean_vp) / stand_dev_vp)
 
+plot_title <- expression(paste(italic("IDS"), " c.182_189del ddPCR"))
 
 ggplot(parents_and_cfDNA %>%
          filter(vf_assay == "IDS c.182_189del"), aes(
            x = vf_assay_molecules,
-          y = variant_percent, 
-          colour = sample_type)) +
-  geom_jitter(pch = 21, size = 3) +
-  facet_wrap(~vf_assay)+
+          y = variant_percent)) +
+  geom_errorbar(aes(ymin = variant_percent_min, 
+                    ymax = variant_percent_max), alpha = 0.2) +
+  geom_errorbarh(aes(xmin = vf_assay_molecules_min, 
+                    xmax = vf_assay_molecules_max), alpha = 0.2) +
+  geom_point(size = 3, aes(shape = sample_type)) +
+  scale_shape_manual(values = c(19, 1)) +
   ylim(40, 60) +
   xlim(0, 10000) +
   theme_bw() +
+  theme(legend.title = element_blank(),
+        panel.grid = element_blank()) +
   geom_hline(yintercept = 50, linetype = "dashed") +
-  theme(legend.position = "bottom")
+  theme(legend.position = "bottom") +
+  labs(x = "Molecules detected",
+       y = "Variant percent (%)",
+       title = plot_title)
+
+#########################
+# IDS incorrect result
+#########################
+
+# Sample was at 0.788ng/ul
+# Worksheet 21-0588. 7 reps for IDS assay, 4 reps for the ZFXY assay.
+
+IDS_only <- ddpcr_sprt_analysed %>%
+  filter(r_number == "19611") %>%
+  mutate(IDS_expected = (0.788*1000/3.3)*(5*7),
+         ZFXY_expected = (0.788*1000/3.3)*(5*4),
+         amplifiability_IDS = (vf_assay_molecules/IDS_expected)*100,
+         amplifiability_ZFXY = (ff_assay_molecules/ZFXY_expected)*100) %>%
+  select(vf_assay_molecules, IDS_expected, ff_assay_molecules,
+         ZFXY_expected, amplifiability_IDS, amplifiability_ZFXY)
