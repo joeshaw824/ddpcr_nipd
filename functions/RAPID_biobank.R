@@ -245,8 +245,7 @@ search_biobank <- function(search_terms) {
 
 # Plot the locations of the plasma tubes
 
-ggplot(RAPID_biobank %>%
-         filter(Plasma_location_tray_number %in% c(45)), 
+ggplot(RAPID_biobank, 
        aes(x = Plasma_location_X, y = Plasma_location_Y))+
   geom_point(size = 3, alpha = 0.4)+
   facet_wrap(~Plasma_location_tray_number)+
@@ -293,7 +292,9 @@ blood_removed <- samples_removed %>%
 plasma_check_table <- plasma_removed %>% left_join (
   RAPID_biobank %>%
     select(r_number, tubes_plasma_original, tubes_plasma_current,
-           action_plasma),
+           action_plasma, Plasma_location_tray_number,
+           Plasma_location_Y, Plasma_location_X,
+           Reorganisation_notes),
   by = "r_number") %>%
   filter(action_plasma != "Sample Not Found") %>%
   mutate(plasma_check = ifelse(tubes_plasma_current == 
@@ -301,7 +302,11 @@ plasma_check_table <- plasma_removed %>% left_join (
                                "TRUE",
                                "FALSE")) %>%
   select(r_number, tubes_plasma_original,
-         plasma_tubes_removed, tubes_plasma_current, plasma_check)
+         plasma_tubes_removed, tubes_plasma_current, plasma_check,
+         Plasma_location_tray_number,
+         Plasma_location_Y, Plasma_location_X,
+         Reorganisation_notes) %>%
+  arrange(Plasma_location_tray_number)
 
 # Check blood tube values have been correctly updated
 
@@ -316,6 +321,4 @@ blood_check_table <- blood_removed %>% left_join (
                                "TRUE",
                                "FALSE"))
 
-
-
-
+#############################################################

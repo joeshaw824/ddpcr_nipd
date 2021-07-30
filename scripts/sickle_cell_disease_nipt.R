@@ -142,7 +142,7 @@ gDNA_scd_data_4000 <- gDNA_scd_data %>%
 gDNA_mean_vp <- mean(gDNA_scd_data_4000$variant_percent)            
 
 # Find the standard deviation, by using the "sd" function in stats package. 
-# The stanard deviation is the square root of the variance.
+# The standard deviation is the square root of the variance.
 # The variance is the average of the squared differences.
 
 gDNA_stand_dev_vp <- sd(gDNA_scd_data_4000$variant_percent)
@@ -477,7 +477,9 @@ write.csv(scd_cohort_table, "analysis_outputs/Supplementary Table 1.csv",
 #########################
 
 # Use the epiR package to calculate sensitivity
-count(cfDNA_scd_outcomes, z_score_genotype_prediction, 
+count(cfDNA_scd_outcomes %>%
+        filter(vf_assay_molecules > 4000 &
+                 fetal_percent > 4), z_score_genotype_prediction, 
       mutation_genetic_info_fetus)
 
 # Balanced vs unbalanced
@@ -509,10 +511,10 @@ gDNA_cfDNA <- rbind(gDNA_scd_data_4000 %>%
     arrange(sample_type) %>%
     mutate(sample = factor(sample))
 
-ggplot(gDNA_cfDNA %>%
+z_score_plot <- ggplot(gDNA_cfDNA %>%
          filter(sample_type != "gDNA"), aes(x = sample_type, y = z_score))+
   geom_jitter(size = 3, aes(shape = sample_type)) + 
-  scale_shape_manual(values = c(1, 0, 3)) +
+  scale_shape_manual(values = c(1, 0, 24)) +
   theme_bw() +
   labs(y = "Z statistic", x = "") +
   theme(
