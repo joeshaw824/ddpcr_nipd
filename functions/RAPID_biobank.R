@@ -322,3 +322,138 @@ blood_check_table <- blood_removed %>% left_join (
                                "FALSE"))
 
 #############################################################
+# 5 - Tube tray locations
+#############################################################
+
+# Each tray is a a grid with 10 spaces across and 40 long.
+# The coordinate order must go tray, y, x (for readability)
+
+#################################
+# Get all tray locations
+#################################
+
+# Create a dataframe with coordinates for every tray
+
+tray_coordinates <- data.frame(tray = c(),
+                           x_coordinate = c(),
+                           y_coordinate = c())
+
+# Create a data-frame of every position in the biobank trays
+# Do for trays up to 54
+
+for (i in 1:54) {
+  for (j in 1:10) {
+    for (k in 1:40) {
+      temp_output <- data.frame(tray = c(i),
+                                x_coordinate = c(j),
+                                y_coordinate = c(k))
+      tray_coordinates <- rbind(tray_coordinates, temp_output)
+      rm(temp_output)
+    }
+  }
+}
+
+#################################
+# Get all tube locations
+#################################
+
+# New strategy - make individual dataframes of long data for each r_number,
+# 1 row per tube. Then rbind all those tables together.
+
+make_coord_long <- function(single_sample) {
+  
+  new_data <- single_sample
+  
+  for(i in seq(2,(single_sample$tubes_plasma_current))) {
+    
+    new_row <- c(single_sample$r_number, 
+                 single_sample$tubes_plasma_current, 
+                 i, 
+                 single_sample$tray, 
+                 single_sample$position_y, 
+                 single_sample$position_x + (i-1))
+    
+    new_data <- rbind(new_data, new_row)
+    
+    rm(new_row)
+  }
+  return(new_data)
+}
+
+# All relevant plasma samples
+RAPID_plasma <- RAPID_biobank %>%
+  #Remove samples which got separated during the reorganisation
+  filter(is.na(Reorganisation_notes)) %>%
+  select(r_number, tubes_plasma_current, Plasma_location_tray_number,
+         Plasma_location_Y, Plasma_location_X) %>%
+  # Remove rows with NAs
+  drop_na() %>%
+  # Remove rows with no plasma left
+  filter(tubes_plasma_current != 0) %>%
+  filter(Plasma_location_tray_number < 55) %>%
+  mutate(tube = 1) %>%
+  dplyr::rename(
+    tray = Plasma_location_tray_number,
+    position_y = Plasma_location_Y,
+    position_x = Plasma_location_X) %>%
+  select(r_number, tubes_plasma_current, tube,
+         tray, position_y, position_x)
+
+# For every row of RAPID_plasma, perform make_coord_long and then rbind together
+
+total_coordinates <- data.frame()
+
+for (i in 1:nrow(RAPID_plasma)) {
+  
+  next_sample <- make_coord_long(RAPID_plasma[i,])
+  
+  total_coordinates <- rbind(total_coordinates, next_sample)
+  
+  rm(next_sample)
+  
+}
+
+# Now we need to apply the dimensions of the trays
+
+total_test <- total_coordinates %>%
+  # Apply the x dimension
+  mutate(position_x_new = ifelse(position_x > 10,
+                                 position_x -10,
+                                 position_x),
+         
+         position_y_new = ifelse(position_x > 10,
+                                 position_y+1,
+                                 position_y),
+
+        # Apply the y dimension
+        position_y_newnew = ifelse(position_y_new > 40,
+                                   position_y_new -40,
+                                   position_y_new),
+        
+        tray_new = ifelse(position_y_new > 40,
+                          tray+1,
+                          tray),
+        
+        # Concatenate the coordinates in a single field
+        coordinate_string = paste(tray_new, position_y_newnew, position_x_new,
+                                  sep = "_"))
+
+
+## Plot a graph of this
+
+ggplot(total_test %>%
+         filter(tray_new %in% c(14)), 
+       aes(x = position_x_new, y = position_y_newnew, 
+           label =  r_number))+
+  geom_point(size = 5, pch = 21)+
+  geom_text(size = 1) +
+  facet_wrap(~tray_new)+
+  theme_bw()+
+  theme(panel.grid.major = element_line(colour="white", size=0.5)) +
+  scale_y_continuous(minor_breaks = seq(0.5 , 40.5, 1), 
+                     breaks = seq(0, 40, 10))+
+  scale_x_continuous(minor_breaks = seq(0.5 , 10.5, 1), 
+                     breaks = seq(0, 10, 5))
+
+# Check for tubes in the same coordinates
+total_test[duplicated(total_test$coordinate_string),]

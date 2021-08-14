@@ -306,6 +306,9 @@ ddpcr_nipd_unblinded <- left_join(
            tubes_plasma_current, report_acquired),
   by = "r_number")
 
+write.csv(ddpcr_nipd_unblinded, "analysis_outputs/ddpcr_nipd_unblinded_20210811.csv",
+          row.names = FALSE)
+
 # If you don't want to run the MCMC pipeline every time, 
 # just compare using SPRT
 
@@ -330,7 +333,7 @@ bespoke_cases <- ddpcr_sprt_analysed %>%
   filter(vf_assay != "HBB c.20A>T")
 
 bespoke_wells <- sample_wells %>%
-  filter(!cfdna_sample %in% scd_cases$r_number)
+  filter(cfdna_sample %in% bespoke_cases$r_number)
 
 bespoke_plots <-list()
 

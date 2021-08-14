@@ -318,8 +318,8 @@ ggplot(lod_data_merged,
 # way as NIPT for trisomy 21.
 
 lr_threshold <- 8
-
-colnames(cfDNA_scd_predictions)
+z_score_imbalance_threshold <- 4
+z_score_balance_threshold <- 2
 
 cfDNA_scd_predictions <- cfDNA_scd_data %>%
   mutate(
@@ -329,18 +329,18 @@ cfDNA_scd_predictions <- cfDNA_scd_data %>%
     z_score_genotype_prediction = case_when(
       # Samples with fetal fractions below 4% are inconclusive
       
-      z_score > 3 &
+      z_score > z_score_imbalance_threshold &
       fetal_percent > 4 &
       vf_assay_molecules > vf_assay_molecules_limit
       ~"HbSS",
       
-      z_score < -3 &
+      z_score < -z_score_imbalance_threshold &
       fetal_percent > 4 &
       vf_assay_molecules > vf_assay_molecules_limit
       ~"HbAA",
       
-      z_score < 2 &
-      z_score > -2 &
+      z_score < z_score_balance_threshold &
+      z_score > -z_score_balance_threshold &
       fetal_percent > 4 &
       vf_assay_molecules > vf_assay_molecules_limit
       ~"HbAS",
@@ -349,11 +349,11 @@ cfDNA_scd_predictions <- cfDNA_scd_data %>%
     
     z_score_clinical_prediction = case_when(
       
-      z_score > 3 &
+      z_score > z_score_imbalance_threshold &
         fetal_percent > 4 &
         vf_assay_molecules > vf_assay_molecules_limit
       ~"affected",
-      z_score < 2 &
+      z_score < z_score_balance_threshold &
         fetal_percent > 4 &
         vf_assay_molecules > vf_assay_molecules_limit
       ~ "unaffected",
@@ -381,6 +381,11 @@ cfDNA_scd_predictions <- cfDNA_scd_data %>%
     
     sample_id = 
              paste0("HBB-", as.character(row.names(cfDNA_scd_data))))
+
+
+count(cfDNA_scd_predictions %>%
+        filter(vf_assay_molecules > 4000 &
+                 fetal_percent > 4), z_score_genotype_prediction)
 
 #########################
 # Compare predictions against Biobank
