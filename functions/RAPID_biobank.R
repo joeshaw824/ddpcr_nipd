@@ -339,14 +339,14 @@ tray_coordinates <- data.frame(tray = c(),
                            y_coordinate = c())
 
 # Create a data-frame of every position in the biobank trays
-# Do for trays up to 54
+# Assume 58 trays 
 
-for (i in 1:54) {
+for (i in 1:58) {
   for (j in 1:10) {
     for (k in 1:40) {
       temp_output <- data.frame(tray = c(i),
-                                x_coordinate = c(j),
-                                y_coordinate = c(k))
+                                position_y  = c(k),
+                                position_x = c(j))
       tray_coordinates <- rbind(tray_coordinates, temp_output)
       rm(temp_output)
     }
@@ -357,6 +357,22 @@ for (i in 1:54) {
 # Get all tube locations
 #################################
 
+# All relevant plasma samples
+RAPID_plasma <- RAPID_biobank %>%
+  select(r_number, tubes_plasma_current, Plasma_location_tray_number,
+         Plasma_location_Y, Plasma_location_X) %>%
+  # Remove rows with NAs
+  drop_na() %>%
+  # Remove rows with no plasma left
+  filter(tubes_plasma_current != 0) %>%
+  mutate(tube = 1) %>%
+  dplyr::rename(
+    tray = Plasma_location_tray_number,
+    position_y = Plasma_location_Y,
+    position_x = Plasma_location_X) %>%
+  select(r_number, tubes_plasma_current, tube,
+         tray, position_y, position_x)
+
 # New strategy - make individual dataframes of long data for each r_number,
 # 1 row per tube. Then rbind all those tables together.
 
@@ -366,12 +382,19 @@ make_coord_long <- function(single_sample) {
   
   for(i in seq(2,(single_sample$tubes_plasma_current))) {
     
-    new_row <- c(single_sample$r_number, 
-                 single_sample$tubes_plasma_current, 
-                 i, 
-                 single_sample$tray, 
-                 single_sample$position_y, 
-                 single_sample$position_x + (i-1))
+    new_row <- c(
+      # R number
+      single_sample$r_number, 
+      # Tubes of plasma
+      single_sample$tubes_plasma_current,
+      # Tube number
+      i, 
+      # Tray
+      single_sample$tray, 
+      # Position y
+      single_sample$position_y, 
+      # Position x
+      single_sample$position_x + (i-1))
     
     new_data <- rbind(new_data, new_row)
     
@@ -380,42 +403,49 @@ make_coord_long <- function(single_sample) {
   return(new_data)
 }
 
-# All relevant plasma samples
-RAPID_plasma <- RAPID_biobank %>%
-  #Remove samples which got separated during the reorganisation
-  filter(is.na(Reorganisation_notes)) %>%
-  select(r_number, tubes_plasma_current, Plasma_location_tray_number,
-         Plasma_location_Y, Plasma_location_X) %>%
-  # Remove rows with NAs
-  drop_na() %>%
-  # Remove rows with no plasma left
-  filter(tubes_plasma_current != 0) %>%
-  filter(Plasma_location_tray_number < 55) %>%
-  mutate(tube = 1) %>%
-  dplyr::rename(
-    tray = Plasma_location_tray_number,
-    position_y = Plasma_location_Y,
-    position_x = Plasma_location_X) %>%
-  select(r_number, tubes_plasma_current, tube,
-         tray, position_y, position_x)
+# Identify the samples which only have one tube of plasma
 
-# For every row of RAPID_plasma, perform make_coord_long and then rbind together
+single_tube_cases <- RAPID_plasma %>%
+  filter(tubes_plasma_current == 1)
 
-total_coordinates <- data.frame()
+mutliple_tube_cases <- RAPID_plasma %>%
+  filter(tubes_plasma_current > 1)
 
-for (i in 1:nrow(RAPID_plasma)) {
+# For every row of RAPID_plasma with more than 1 tube of 
+# plasma, perform make_coord_long and then rbind together
+
+multiple_tube_coordinates <- data.frame()
+
+for (i in 1:nrow(mutliple_tube_cases)) {
   
-  next_sample <- make_coord_long(RAPID_plasma[i,])
+  next_sample <- make_coord_long(mutliple_tube_cases[i,])
   
-  total_coordinates <- rbind(total_coordinates, next_sample)
+  multiple_tube_coordinates <- rbind(multiple_tube_coordinates, next_sample)
   
   rm(next_sample)
   
 }
 
-# Now we need to apply the dimensions of the trays
+# Bind to single tube cases
+single_and_multiple_locations <- rbind(multiple_tube_coordinates, 
+                                       single_tube_cases) %>%
+  select(r_number, tray, position_y, position_x)
 
-total_test <- total_coordinates %>%
+# Add on the extra tubes from the reorganisation that were stored in
+# separate places
+
+extra_tube_locations <- read.csv("data/extra_tube_locations.csv")
+
+all_tube_locations <- rbind(single_and_multiple_locations, 
+                            extra_tube_locations %>%
+                              select(r_number, tray, 
+                                     position_y, position_x))
+  
+#################################
+# Apply tray dimensions
+#################################
+
+all_tubes_dimensions <- all_tube_locations %>%
   # Apply the x dimension
   mutate(position_x_new = ifelse(position_x > 10,
                                  position_x -10,
@@ -432,28 +462,54 @@ total_test <- total_coordinates %>%
         
         tray_new = ifelse(position_y_new > 40,
                           tray+1,
-                          tray),
-        
-        # Concatenate the coordinates in a single field
-        coordinate_string = paste(tray_new, position_y_newnew, position_x_new,
-                                  sep = "_"))
+                          tray)) %>%
+  select(r_number, tray_new, 
+         position_y_newnew, position_x_new) %>%
+  dplyr::rename(
+    tray = tray_new,
+    position_y = position_y_newnew,
+    position_x = position_x_new) %>%
+  arrange(tray, position_y, position_x) %>%
+  # Concatenate the coordinates in a single field
+  mutate(coordinate_string = paste(tray, position_y, position_x,
+                                 sep = "_"),
+         status = "occupied") %>%
+  select(tray, position_y, position_x, coordinate_string,
+         status, r_number)
 
 
-## Plot a graph of this
+#################################
+# Combine with all possible locations
+#################################
 
-ggplot(total_test %>%
-         filter(tray_new %in% c(14)), 
-       aes(x = position_x_new, y = position_y_newnew, 
-           label =  r_number))+
-  geom_point(size = 5, pch = 21)+
-  geom_text(size = 1) +
-  facet_wrap(~tray_new)+
+empty_coordinates <- tray_coordinates %>%
+  mutate(coordinate_string = paste(tray, position_y, position_x,
+                                   sep = "_")) %>%
+  filter(!coordinate_string %in% all_tubes_dimensions$coordinate_string) %>%
+  mutate(status = "empty",
+         r_number = NA)
+
+biobank_plasma_locations <- rbind(all_tubes_dimensions,
+                                  empty_coordinates) %>%
+  arrange(tray, position_y, position_x)
+
+write.csv(biobank_plasma_locations, "analysis_outputs/biobank_plasma_locations.csv",
+          row.names = FALSE)
+
+#################################
+# Plot graphs
+#################################
+
+ggplot(biobank_plasma_locations %>%
+         filter(tray %in% c(55:57)), 
+       aes(x = position_x, y = position_y))+
+  scale_alpha_manual(values = c(0, 0.5)) +
+  geom_point(size = 2, aes(alpha = status))+
+  facet_wrap(~tray)+
   theme_bw()+
   theme(panel.grid.major = element_line(colour="white", size=0.5)) +
   scale_y_continuous(minor_breaks = seq(0.5 , 40.5, 1), 
                      breaks = seq(0, 40, 10))+
   scale_x_continuous(minor_breaks = seq(0.5 , 10.5, 1), 
-                     breaks = seq(0, 10, 5))
-
-# Check for tubes in the same coordinates
-total_test[duplicated(total_test$coordinate_string),]
+                     breaks = seq(0, 10, 5)) +
+  theme(legend.position = "none")
