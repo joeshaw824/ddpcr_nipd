@@ -40,7 +40,7 @@ secondary_cohort <- c("14182", "19868", "20238", "20611",
                       "20874", "30063", "30068", "30113", "30142", 
                       "30206", "30228", "30230", "30078", "30065", 
                       "13402", "20939", "30215", "30203",
-                      "20911", "30236", "30112")
+                      "20911", "30236", "30112", "30251", "30257")
 
 cfDNA_scd_data <- ff_calculations(
   var_ref_calculations(cfdna_ddpcr_data)) %>%
@@ -124,7 +124,13 @@ ggplot(gDNA_scd_data, aes(x = vf_assay_molecules, y = variant_percent))+
                 colour = "black")+
   annotate(geom = "text", x = 20000, y = 50, label = "HbAS")+
   annotate(geom = "text", x = 20000, y = 47, label = "HbAA") +
-  annotate(geom = "text", x = 20000, y = 53, label = "HbSS")
+  annotate(geom = "text", x = 20000, y = 53, label = "HbSS") +
+  
+  # Circle the incorrect predictions
+  geom_point(data=subset(gDNA_scd_data, 
+                         sprt_prediction %in% c("HbSS",
+                                                "HbAA")),
+           pch=1, size=5, colour = "red", alpha = 0.8)
 
 #########################
 # Variation in HbAS gDNA controls
@@ -137,6 +143,10 @@ vf_assay_molecules_limit <- 4000
 
 gDNA_scd_data_4000 <- gDNA_scd_data %>%
   filter(vf_assay_molecules > 4000)
+
+# Get max and min values for the paper writeup
+max(gDNA_scd_data_4000$variant_percent)
+min(gDNA_scd_data_4000$variant_percent)
 
 # vp is "variant percent"
 gDNA_mean_vp <- mean(gDNA_scd_data_4000$variant_percent)            
@@ -318,7 +328,7 @@ ggplot(lod_data_merged,
 # way as NIPT for trisomy 21.
 
 lr_threshold <- 8
-z_score_imbalance_threshold <- 4
+z_score_imbalance_threshold <- 3
 z_score_balance_threshold <- 2
 
 cfDNA_scd_predictions <- cfDNA_scd_data %>%
@@ -382,11 +392,6 @@ cfDNA_scd_predictions <- cfDNA_scd_data %>%
     sample_id = 
              paste0("HBB-", as.character(row.names(cfDNA_scd_data))))
 
-
-count(cfDNA_scd_predictions %>%
-        filter(vf_assay_molecules > 4000 &
-                 fetal_percent > 4), z_score_genotype_prediction)
-
 #########################
 # Compare predictions against Biobank
 #########################
@@ -400,14 +405,21 @@ cfDNA_scd_outcomes <- left_join(
            date_of_blood_sample, Gestation_total_weeks,
            gestation_character, vacutainer,
            mutation_genetic_info_fetus, Partner_sample_available,
-           report_acquired),
+           report_acquired, time_to_first_spin,
+           time_to_storage),
   by = "r_number") %>%
-  mutate(outcome = case_when(
+  mutate(outcome_zscore = case_when(
     z_score_genotype_prediction == "inconclusive" ~"inconclusive",
     is.na(mutation_genetic_info_fetus) ~"awaiting result",
     z_score_genotype_prediction == mutation_genetic_info_fetus
     ~"correct",
-    TRUE ~"incorrect"))
+    TRUE ~"incorrect"),
+    outcome_sprt = case_when(
+      sprt_genotype_prediction == "inconclusive" ~"inconclusive",
+      is.na(mutation_genetic_info_fetus) ~"awaiting result",
+      sprt_genotype_prediction == mutation_genetic_info_fetus
+      ~"correct",
+      TRUE ~"incorrect"))
 
 #########################
 # Plot cfDNA results
@@ -458,7 +470,8 @@ ggplot(cfDNA_scd_outcomes, aes(x = vf_assay_molecules,
 
 scd_cohort_table <- cfDNA_scd_outcomes %>%
   select(sample_id, r_number, study_id, site, 
-         date_of_blood_sample, maternal_DOB, original_plasma_vol,
+         date_of_blood_sample, time_to_first_spin,
+         time_to_storage, original_plasma_vol,
          vacutainer, gestation_character, extraction_volume, 
          Partner_sample_available, vf_assay, 
          vf_assay_droplets, variant_positives,
@@ -466,9 +479,10 @@ scd_cohort_table <- cfDNA_scd_outcomes %>%
          maternal_positives, paternal_positives, variant_molecules, 
          reference_molecules, vf_assay_molecules,
          maternal_molecules, paternal_molecules,
-         variant_percent, fetal_percent, z_score,
-         z_score_genotype_prediction, z_score_clinical_prediction,
-         mutation_genetic_info_fetus, report_acquired, outcome) %>%
+         variant_percent, fetal_percent, z_score,likelihood_ratio,
+         sprt_genotype_prediction, z_score_genotype_prediction, 
+         z_score_clinical_prediction, mutation_genetic_info_fetus, 
+         report_acquired, outcome_zscore, outcome_sprt) %>%
   dplyr::rename(
     gestation = gestation_character, 
     "invasive genotype" = mutation_genetic_info_fetus,

@@ -102,7 +102,7 @@ calc_lr_autosomal <- function(fetal_fraction, overrep_fraction, total_copies) {
 
 # Variables for each function
 q0 <- 0.5
-q1 <- 0.5+(0.02/2)
+q1 <- 0.5+(0.04/2)
 delta <- (1- q1)/(1-q0)
 gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
 
