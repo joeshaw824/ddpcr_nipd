@@ -186,19 +186,22 @@ RAPID_biobank <- read_excel(paste0(biobank_filepath,biobank_current),
          sample_type = ifelse(startsWith(study_id, "Partner"), 
                               "Partner", "Pregnant woman"),
          
-         # Add times
+         # Convert times of processing into date-time format so that
+         # the intervals for "time to centrifugation" and "time to 
+         # storage" can be calculated.
          
          time_of_blood_sample = format(time_of_blood_sample, "%I:%M"),
-         date_of_blood_sample = as.POSIXct(date_of_blood_sample, format = "%Y-%m-%d", 
-                           tz = ""),
-         # Convert sampling time to date-time
+         date_of_blood_sample = as.POSIXct(date_of_blood_sample, 
+                                           format = "%Y-%m-%d", 
+                                           tz = ""),
          sampling_date_time = as.POSIXct(paste(date_of_blood_sample, 
                                                time_of_blood_sample), 
                                          format="%Y-%m-%d %H:%M",
                                          tz = "UTC"),
          
          time_first_spin = format(time_first_spin, "%I:%M"),
-         date_of_first_spin = as.POSIXct(date_of_first_spin, format = "%Y-%m-%d", 
+         date_of_first_spin = as.POSIXct(date_of_first_spin, 
+                                         format = "%Y-%m-%d", 
                                          tz = ""),
          
          first_spin_date_time = as.POSIXct(paste(date_of_first_spin, 
@@ -206,10 +209,12 @@ RAPID_biobank <- read_excel(paste0(biobank_filepath,biobank_current),
                                            format="%Y-%m-%d %H:%M",
                                            tz = "UTC"),
          
-         time_to_first_spin = round(difftime(first_spin_date_time, sampling_date_time,
+         hours_to_first_spin = round(difftime(first_spin_date_time, 
+                                             sampling_date_time,
                                              units = "hours")),
          
-         date_of_2nd_spin = as.POSIXct(date_of_2nd_spin, format = "%Y-%m-%d", 
+         date_of_2nd_spin = as.POSIXct(date_of_2nd_spin, 
+                                       format = "%Y-%m-%d", 
                                        tz = "") ,
          time_of_2nd_spin = format(time_of_2nd_spin, "%I:%M"),
          
@@ -219,61 +224,10 @@ RAPID_biobank <- read_excel(paste0(biobank_filepath,biobank_current),
                                            tz = "UTC"),
          
          # Assume samples were placed in storage after second spin
-         time_to_storage = round(difftime(second_spin_date_time, sampling_date_time,
+         days_to_storage = round(difftime(second_spin_date_time, 
+                                          sampling_date_time,
                                           units = "days")))
 
-#############################################################
-# Searching the biobank database
-#############################################################
-
-# Finding relevant samples in the RAPID biobank Excel spreadsheet is tricky
-# due to the use of free-type fields for sample indication/diagnosis etc and 
-# lack of standardisation.
-
-# There are several free-type columns that could have relevant information: 
-# indication, mutation_genetic_info_fetus, risk, 
-# confirmed_diagnosis, maternal_mutation, 
-# paternal_mutation, additional_comments.
-
-# The search_biobank function allows you to input various strings 
-# that you want to search for and then uses grep to find matches in 
-# the relevant columns, before filtering and and returning the results table. 
-# Search terms can be input as a character vector.
-# grep is set to ignore.case = TRUE, so search terms can be in any case.
-
-# Example: search_biobank(c("sma ", "spinal", "atrophy", "smn1"))
-# Example: search_biobank(c("CF", "cftr", "delta508", "cystic fibrosis"))
-
-search_biobank <- function(search_terms) {
-  search_hits <- unique(grep(paste(search_terms,collapse="|"), 
-                 # Columns to look in
-                 c(RAPID_biobank$indication, 
-                   RAPID_biobank$mutation_genetic_info_fetus,
-                   RAPID_biobank$risk, 
-                   RAPID_biobank$confirmed_diagnosis,
-                   RAPID_biobank$additional_comments, 
-                   RAPID_biobank$maternal_mutation,
-                   RAPID_biobank$paternal_mutation), 
-                 value=TRUE, ignore.case = TRUE))
-  
-  search_results <- RAPID_biobank %>%
-    filter(indication %in% search_hits 
-           | mutation_genetic_info_fetus %in% search_hits
-           | risk %in% search_hits
-           | confirmed_diagnosis %in% search_hits
-           | additional_comments %in% search_hits
-           | maternal_mutation %in% search_hits
-           | paternal_mutation %in% search_hits) %>%
-    # Only show samples which were not discarded in the reorganisation process
-    filter(r_number > 10444) %>%
-    select(r_number, study_id, site, date_of_blood_sample, 
-           maternal_DOB, indication, 
-           mutation_genetic_info_fetus,confirmed_diagnosis, 
-           additional_comments, maternal_mutation,
-           paternal_mutation, tubes_plasma_current)
-  
-  return(search_results)
-}
 
 
 

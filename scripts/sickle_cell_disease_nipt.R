@@ -101,8 +101,9 @@ ggplot(gDNA_scd_data, aes(x = vf_assay_molecules, y = variant_percent))+
     panel.grid.minor = element_blank(),
     legend.position = "none")+
   labs(x = "Genome equivalents (GE)",
-       y = "Variant fraction (%)",
-       title = "Heterozygous gDNA samples") +
+       y = "Variant fraction (%)"
+       #, title = "Heterozygous gDNA samples"
+       ) +
   xlim(0, 20000)+
   scale_y_continuous(breaks = c(40, 50, 60), 
                      limits = c(40,60))+
@@ -393,6 +394,14 @@ cfDNA_scd_predictions <- cfDNA_scd_data %>%
              paste0("HBB-", as.character(row.names(cfDNA_scd_data))))
 
 #########################
+# Extraction volumes
+#########################
+
+plasma_extractions <- read.csv("resources/extraction_volumes.csv") %>%
+  group_by(r_number) %>%
+  summarise(plasma_volume_ml = (sum(tubes_removed))*2)
+
+#########################
 # Compare predictions against Biobank
 #########################
 
@@ -400,8 +409,7 @@ cfDNA_scd_outcomes <- left_join(
   cfDNA_scd_predictions,
   RAPID_biobank %>%
     mutate(r_number = as.character(r_number)) %>%
-    select(r_number, study_id, site, maternal_DOB, 
-           original_plasma_vol,
+    select(r_number, study_id, site, 
            date_of_blood_sample, Gestation_total_weeks,
            gestation_character, vacutainer,
            mutation_genetic_info_fetus, Partner_sample_available,
@@ -419,7 +427,15 @@ cfDNA_scd_outcomes <- left_join(
       is.na(mutation_genetic_info_fetus) ~"awaiting result",
       sprt_genotype_prediction == mutation_genetic_info_fetus
       ~"correct",
-      TRUE ~"incorrect"))
+      TRUE ~"incorrect")) %>%
+  left_join(plasma_extractions %>%
+              mutate(r_number = as.character(r_number)), by = "r_number") %>%
+  
+  # Calculate the number of cfDNA molecules per ml plasma
+  
+  mutate(total_molecules = vf_assay_molecules + ff_assay_molecules,
+         
+         GE_ml_plasma = total_molecules / plasma_volume_ml)
 
 #########################
 # Plot cfDNA results
@@ -445,8 +461,9 @@ ggplot(cfDNA_scd_outcomes, aes(x = vf_assay_molecules,
     panel.grid.minor = element_blank(), 
     legend.position = "bottom",
     legend.title = element_blank()) +
-  labs(y = "Variant fraction (%)", x = "Genome equivalents (GE)",
-       title = "cfDNA fetal genotype predictions") +
+  labs(y = "Variant fraction (%)", x = "Genome equivalents (GE)"
+       #, title = "cfDNA fetal genotype predictions"
+       ) +
   ylim(40, 60) +
   xlim(0, 31000) +
   geom_vline(xintercept = vf_assay_molecules_limit, linetype = "dashed") +
@@ -471,14 +488,14 @@ ggplot(cfDNA_scd_outcomes, aes(x = vf_assay_molecules,
 scd_cohort_table <- cfDNA_scd_outcomes %>%
   select(sample_id, r_number, study_id, site, 
          date_of_blood_sample, time_to_first_spin,
-         time_to_storage, original_plasma_vol,
-         vacutainer, gestation_character, extraction_volume, 
+         time_to_storage,
+         vacutainer, gestation_character, plasma_volume_ml, 
          Partner_sample_available, vf_assay, 
          vf_assay_droplets, variant_positives,
          reference_positives, ff_assay, ff_assay_droplets, 
          maternal_positives, paternal_positives, variant_molecules, 
          reference_molecules, vf_assay_molecules,
-         maternal_molecules, paternal_molecules,
+         maternal_molecules, paternal_molecules, total_molecules, GE_ml_plasma,
          variant_percent, fetal_percent, z_score,likelihood_ratio,
          sprt_genotype_prediction, z_score_genotype_prediction, 
          z_score_clinical_prediction, mutation_genetic_info_fetus, 
@@ -488,8 +505,9 @@ scd_cohort_table <- cfDNA_scd_outcomes %>%
     "invasive genotype" = mutation_genetic_info_fetus,
     "HBB GE measured" = vf_assay_molecules)
 
-write.csv(scd_cohort_table, "analysis_outputs/Supplementary Table 1.csv",
+write.csv(scd_cohort_table, "analysis_outputs/Supplementary data.csv",
           row.names = FALSE)
+
 
 #########################
 # Sensitivity and specificity
@@ -544,4 +562,6 @@ z_score_plot <- ggplot(gDNA_cfDNA %>%
   ylim(-5, 20)
 
 #########################
+
+
 
