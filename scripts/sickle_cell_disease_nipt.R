@@ -26,11 +26,9 @@ source("functions/RAPID_biobank.R")
 # Select sickle cell disease cfDNA ddPCR data
 #########################
 
-# Samples to exclude:
+# Sample to exclude:
 # 13262 - this sample had contamination
-# 17004 - this sample was actually HbAC
-# 20915 - this sample was from a twin pregnancy
-samples_to_exclude <- c(13262, 17004, 20915)
+samples_to_exclude <- c(13262)
 
 # The "secondary cohort" refers to the most recent phase of the 
 # ddPCR sickle cell disease project, when all samples were extracted 
@@ -94,7 +92,14 @@ gDNA_scd_data <- parent_gDNA_var_ref %>%
 # inappropriate for this dataset
 
 ggplot(gDNA_scd_data, aes(x = vf_assay_molecules, y = variant_percent))+
-  geom_point(size = 2, pch=21, alpha =0.6)+
+  
+  # "#000000" = black; "#99CCFF" = light blue
+  # "#0000FF" = dark blue; "#999999" = grey
+  scale_fill_manual(values=c("#FFFFFF", "#FFFFFF", "#FFFFFF", "#999999")) +
+  scale_alpha_manual(values = c(1, 1, 1, 0.4)) +
+  geom_point(size = 2, aes(fill = sprt_prediction,
+                           alpha = sprt_prediction),
+             colour = "black", pch=21) +
   theme_bw()+
   theme(
     panel.grid.major = element_blank(),
@@ -102,7 +107,7 @@ ggplot(gDNA_scd_data, aes(x = vf_assay_molecules, y = variant_percent))+
     legend.position = "none")+
   labs(x = "Genome equivalents (GE)",
        y = "Variant fraction (%)"
-       #, title = "Heterozygous gDNA samples"
+       , title = "Heterozygous gDNA samples"
        ) +
   xlim(0, 20000)+
   scale_y_continuous(breaks = c(40, 50, 60), 
@@ -125,13 +130,11 @@ ggplot(gDNA_scd_data, aes(x = vf_assay_molecules, y = variant_percent))+
                 colour = "black")+
   annotate(geom = "text", x = 20000, y = 50, label = "HbAS")+
   annotate(geom = "text", x = 20000, y = 47, label = "HbAA") +
-  annotate(geom = "text", x = 20000, y = 53, label = "HbSS") +
+  annotate(geom = "text", x = 20000, y = 53, label = "HbSS")
   
-  # Circle the incorrect predictions
-  geom_point(data=subset(gDNA_scd_data, 
-                         sprt_prediction %in% c("HbSS",
-                                                "HbAA")),
-           pch=1, size=5, colour = "red", alpha = 0.8)
+# Circle the incorrect predictions
+# geom_point(data=subset(gDNA_scd_data, sprt_prediction %in% c("HbSS","HbAA")),
+           #pch=1, size=5, alpha = 0.8)
 
 #########################
 # Variation in HbAS gDNA controls
@@ -206,7 +209,6 @@ ggplot(gDNA_scd_data, aes(x = vf_assay_molecules,
            label = "HbAA") +
   annotate(geom = "text", x = 21000, y = 53, 
            label = "HbSS")
-
 
 #########################
 # Limit of detection study
@@ -322,7 +324,7 @@ ggplot(lod_data_merged,
   ylim(38, 62)
 
 #########################
-# Predict fetal genotypes using Z score analysis
+# Predict fetal genotypes
 #########################
 
 # The aim is to classify samples using z score analysis, in the same
@@ -388,18 +390,21 @@ cfDNA_scd_predictions <- cfDNA_scd_data %>%
       ~"HbAA",
       likelihood_ratio < 1/lr_threshold
       ~"HbAS",
-      TRUE ~"inconclusive"),
-    
-    sample_id = 
-             paste0("HBB-", as.character(row.names(cfDNA_scd_data))))
+      TRUE ~"inconclusive"))
 
 #########################
-# Extraction volumes
+# Extraction volumes and invasive sampling
 #########################
 
 plasma_extractions <- read.csv("resources/extraction_volumes.csv") %>%
   group_by(r_number) %>%
-  summarise(plasma_volume_ml = (sum(tubes_removed))*2)
+  summarise(plasma_volume_ml = (sum(tubes_removed))*2) 
+
+plasma_replicates <- read.csv("resources/extraction_volumes.csv") %>%
+  group_by(r_number) %>%
+  summarise(extraction_replicates = n())
+
+invasive_sampling <- read.csv("resources/confirmation_testing.csv")
 
 #########################
 # Compare predictions against Biobank
@@ -410,11 +415,11 @@ cfDNA_scd_outcomes <- left_join(
   RAPID_biobank %>%
     mutate(r_number = as.character(r_number)) %>%
     select(r_number, study_id, site, 
-           date_of_blood_sample, Gestation_total_weeks,
+           gestation_total_weeks,
            gestation_character, vacutainer,
-           mutation_genetic_info_fetus, Partner_sample_available,
-           report_acquired, time_to_first_spin,
-           time_to_storage),
+           mutation_genetic_info_fetus, partner_sample_available,
+           report_acquired, hours_to_first_spin,
+           days_to_storage, sampling_date_time),
   by = "r_number") %>%
   mutate(outcome_zscore = case_when(
     z_score_genotype_prediction == "inconclusive" ~"inconclusive",
@@ -430,7 +435,11 @@ cfDNA_scd_outcomes <- left_join(
       TRUE ~"incorrect")) %>%
   left_join(plasma_extractions %>%
               mutate(r_number = as.character(r_number)), by = "r_number") %>%
-  
+  left_join(plasma_replicates %>%
+              mutate(r_number = as.character(r_number)), by = "r_number") %>%
+  left_join(invasive_sampling %>%
+              mutate(r_number = as.character(r_number)), by = "r_number") %>%
+
   # Calculate the number of cfDNA molecules per ml plasma
   
   mutate(total_molecules = vf_assay_molecules + ff_assay_molecules,
@@ -441,8 +450,57 @@ cfDNA_scd_outcomes <- left_join(
 # Plot cfDNA results
 #########################
 
+# Z score plot (black and white)
 ggplot(cfDNA_scd_outcomes, aes(x = vf_assay_molecules, 
                                   y = variant_percent)) +
+  geom_errorbar(aes(ymin = variant_percent_min, ymax = variant_percent_max),
+                alpha = 0.2) +
+  geom_errorbarh(aes(xmin = vf_assay_molecules_min, 
+                     xmax = vf_assay_molecules_max),
+                 alpha = 0.2) +
+  scale_fill_manual(values=c("#FFFFFF", "#FFFFFF", "#FFFFFF", "#999999")) +
+  scale_alpha_manual(values = c(1, 1, 1, 0.4)) +
+  scale_shape_manual(values = c(23, 21, 22, 21)) +
+  geom_point(size = 2, aes(fill = z_score_genotype_prediction,
+                           alpha = z_score_genotype_prediction,
+                           shape = z_score_genotype_prediction),
+             colour = "black") +
+  theme_bw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), 
+    legend.position = "bottom",
+    legend.title = element_blank()) +
+  geom_vline(xintercept = vf_assay_molecules_limit, linetype = "dashed",
+             alpha =0.5) +
+  geom_hline(yintercept = gDNA_mean_vp+(2*gDNA_stand_dev_vp), 
+             linetype = "dashed", alpha =0.5) +
+  geom_hline(yintercept = gDNA_mean_vp-(2*gDNA_stand_dev_vp),
+             linetype = "dashed", alpha =0.5) +
+  geom_hline(yintercept = gDNA_mean_vp+(3*gDNA_stand_dev_vp),
+             linetype = "dashed", alpha =0.5) +
+  geom_hline(yintercept = gDNA_mean_vp-(3*gDNA_stand_dev_vp),
+             linetype = "dashed", alpha =0.5) +
+  annotate(geom = "text", x = 30000, y = 50, 
+           label = "HbAS") +
+  annotate(geom = "text", x = 30000, y = 47, 
+           label = "HbAA") +
+  annotate(geom = "text", x = 30000, y = 53, 
+           label = "HbSS") +
+  labs(y = "Variant fraction (%)", x = "Genome equivalents (GE)"
+       #, title = "cfDNA fetal genotype predictions"
+       ) +
+  ylim(42, 58) +
+  xlim(0, 31000) +
+  
+  # Circle the incorrect prediction
+  geom_point(data=subset(cfDNA_scd_outcomes, 
+                         r_number %in% c("20763")),
+             pch=1, size=5, alpha = 0.8)
+
+# SPRT plot
+ggplot(cfDNA_scd_outcomes, aes(x = vf_assay_molecules, 
+                               y = variant_percent)) +
   geom_errorbar(aes(ymin = variant_percent_min, ymax = variant_percent_max),
                 alpha = 0.2) +
   geom_errorbarh(aes(xmin = vf_assay_molecules_min, 
@@ -452,8 +510,8 @@ ggplot(cfDNA_scd_outcomes, aes(x = vf_assay_molecules,
   # "#0000FF" = dark blue; "#999999" = grey
   scale_fill_manual(values=c("#000000", "#99CCFF", "#0000FF", "#999999")) +
   scale_alpha_manual(values = c(1, 1, 1, 0.4)) +
-  geom_point(size = 2, aes(fill = z_score_genotype_prediction,
-                           alpha = z_score_genotype_prediction),
+  geom_point(size = 2, aes(fill = sprt_genotype_prediction,
+                           alpha = sprt_genotype_prediction),
              colour = "black", pch=21) +
   theme_bw() +
   theme(
@@ -463,22 +521,42 @@ ggplot(cfDNA_scd_outcomes, aes(x = vf_assay_molecules,
     legend.title = element_blank()) +
   labs(y = "Variant fraction (%)", x = "Genome equivalents (GE)"
        #, title = "cfDNA fetal genotype predictions"
-       ) +
+  ) +
   ylim(40, 60) +
   xlim(0, 31000) +
-  geom_vline(xintercept = vf_assay_molecules_limit, linetype = "dashed") +
-  geom_hline(yintercept = gDNA_mean_vp+(2*gDNA_stand_dev_vp), 
-                          linetype = "dashed") +
-  geom_hline(yintercept = gDNA_mean_vp-(2*gDNA_stand_dev_vp),
-                          linetype = "dashed") +
-  geom_hline(yintercept = gDNA_mean_vp+(3*gDNA_stand_dev_vp),
-                          linetype = "dashed") +
-  geom_hline(yintercept = gDNA_mean_vp-(3*gDNA_stand_dev_vp),
-                          linetype = "dashed") +
   
   # Circle the incorrect predictions
   geom_point(data=subset(cfDNA_scd_outcomes, 
-                         r_number %in% c("20763")),
+                         r_number %in% c("17006", "18836", "30065")),
+             pch=1, size=5, colour = "red", alpha = 0.8)
+
+# Plot to show the overlap in genotype predictions clearly
+cfDNA_scd_outcomes %>%
+  arrange(variant_percent) %>%
+  mutate(r_number = factor(r_number, levels = r_number)) %>%
+  ggplot(aes(x = r_number, 
+                               y = variant_percent)) +
+  # "#000000" = black; "#99CCFF" = light blue
+  # "#0000FF" = dark blue; "#999999" = grey
+  scale_fill_manual(values=c("#000000", "#99CCFF", "#0000FF", "#999999")) +
+  scale_alpha_manual(values = c(1, 1, 1, 0.4)) +
+  geom_point(size = 2, aes(fill = sprt_genotype_prediction,
+                           alpha = sprt_genotype_prediction),
+             colour = "black", pch=21) +
+  theme_bw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), 
+    legend.position = "bottom",
+    legend.title = element_blank(), 
+    axis.text.x = element_blank()) +
+  labs(y = "Variant fraction (%)", x = ""
+       #, title = "cfDNA SPRT predictions"
+  ) +
+  ylim(42, 58) +
+  # Circle the incorrect predictions
+  geom_point(data=subset(cfDNA_scd_outcomes, 
+                         r_number %in% c("17006", "18836", "30065")),
              pch=1, size=5, colour = "red", alpha = 0.8)
 
 #########################
@@ -486,28 +564,45 @@ ggplot(cfDNA_scd_outcomes, aes(x = vf_assay_molecules,
 #########################
 
 scd_cohort_table <- cfDNA_scd_outcomes %>%
+  arrange(sampling_date_time) %>%
+  mutate(sample_id = 
+           paste0("HBB-", as.character(row.names(cfDNA_scd_outcomes)))) %>%
   select(sample_id, r_number, study_id, site, 
-         date_of_blood_sample, time_to_first_spin,
-         time_to_storage,
+         sampling_date_time, hours_to_first_spin,
+         days_to_storage,
          vacutainer, gestation_character, plasma_volume_ml, 
-         Partner_sample_available, vf_assay, 
+         extraction_replicates, 
+         partner_sample_available, vf_assay, vf_assay_num_wells,  
          vf_assay_droplets, variant_positives,
-         reference_positives, ff_assay, ff_assay_droplets, 
+         reference_positives, ff_assay, ff_assay_num_wells, ff_assay_droplets, 
          maternal_positives, paternal_positives, variant_molecules, 
          reference_molecules, vf_assay_molecules,
          maternal_molecules, paternal_molecules, total_molecules, GE_ml_plasma,
          variant_percent, fetal_percent, z_score,likelihood_ratio,
          sprt_genotype_prediction, z_score_genotype_prediction, 
-         z_score_clinical_prediction, mutation_genetic_info_fetus, 
-         report_acquired, outcome_zscore, outcome_sprt) %>%
+         diagnostic_sampling,
+         mutation_genetic_info_fetus, 
+         outcome_zscore, outcome_sprt) %>%
+  # Rename columns for ease of reading
   dplyr::rename(
     gestation = gestation_character, 
-    "invasive genotype" = mutation_genetic_info_fetus,
-    "HBB GE measured" = vf_assay_molecules)
+    "invasive_genotype" = mutation_genetic_info_fetus,
+    "HBB_GE" = vf_assay_molecules,
+    "variant_fraction_assay" = vf_assay,
+    "fetal_fraction_assay" = ff_assay,
+    "fetal_fraction" = fetal_percent,
+    "variant_fraction" = variant_percent,
+    "variant_allele_positives" = variant_positives,
+    "reference_allele_positives" = reference_positives,
+    "maternal_allele_positives" = maternal_positives,
+    "paternal_allele_positives" = paternal_positives,
+    "variant_allele_molecules" = variant_molecules,
+    "reference_allele_molecules" = reference_molecules,
+    "maternal_allele_molecules" = maternal_molecules,
+    "paternal_allele_molecules" = paternal_molecules)
 
 write.csv(scd_cohort_table, "analysis_outputs/Supplementary data.csv",
           row.names = FALSE)
-
 
 #########################
 # Sensitivity and specificity

@@ -171,13 +171,13 @@ RAPID_biobank <- read_excel(paste0(biobank_filepath,biobank_current),
                               "text")) %>%
   # Convert gestation into numeric form
   mutate(gestation_days_as_weeks = gestation_days/7,
-         Gestation_total_weeks = gestation_weeks + gestation_days_as_weeks,
+         gestation_total_weeks = gestation_weeks + gestation_days_as_weeks,
          
          # Print the gestation in the way that fetal medicine units write it
          # I.e. "12+5" as 12 weeks and 5 days
          gestation_character = paste0(as.character(gestation_weeks), 
                                       "+", as.character(gestation_days)),
-         Partner_sample_available = ifelse(paste0("Partner",study_id) %in% 
+         partner_sample_available = ifelse(paste0("Partner",study_id) %in% 
                                              study_id, "Yes", "No"),
          year = year(date_of_blood_sample),
          
@@ -190,22 +190,23 @@ RAPID_biobank <- read_excel(paste0(biobank_filepath,biobank_current),
          # the intervals for "time to centrifugation" and "time to 
          # storage" can be calculated.
          
-         time_of_blood_sample = format(time_of_blood_sample, "%I:%M"),
-         date_of_blood_sample = as.POSIXct(date_of_blood_sample, 
+         date_of_blood_sample_format = as.POSIXct(date_of_blood_sample, 
                                            format = "%Y-%m-%d", 
-                                           tz = ""),
-         sampling_date_time = as.POSIXct(paste(date_of_blood_sample, 
-                                               time_of_blood_sample), 
+                                           tz = ""), 
+         time_of_blood_sample_format = format(time_of_blood_sample, "%I:%M"),
+         
+         sampling_date_time = as.POSIXct(paste(date_of_blood_sample_format, 
+                                               time_of_blood_sample_format), 
                                          format="%Y-%m-%d %H:%M",
                                          tz = "UTC"),
          
-         time_first_spin = format(time_first_spin, "%I:%M"),
-         date_of_first_spin = as.POSIXct(date_of_first_spin, 
+         date_of_first_spin_format = as.POSIXct(date_of_first_spin, 
                                          format = "%Y-%m-%d", 
                                          tz = ""),
+         time_first_spin_format = format(time_first_spin, "%H:%M"),
          
-         first_spin_date_time = as.POSIXct(paste(date_of_first_spin, 
-                                                 time_first_spin), 
+         first_spin_date_time = as.POSIXct(paste(date_of_first_spin_format, 
+                                                 time_first_spin_format), 
                                            format="%Y-%m-%d %H:%M",
                                            tz = "UTC"),
          
@@ -213,13 +214,13 @@ RAPID_biobank <- read_excel(paste0(biobank_filepath,biobank_current),
                                              sampling_date_time,
                                              units = "hours")),
          
-         date_of_2nd_spin = as.POSIXct(date_of_2nd_spin, 
+         date_of_2nd_spin_format = as.POSIXct(date_of_2nd_spin, 
                                        format = "%Y-%m-%d", 
                                        tz = "") ,
-         time_of_2nd_spin = format(time_of_2nd_spin, "%I:%M"),
+         time_of_2nd_spin_format = format(time_of_2nd_spin, "%I:%M"),
          
-         second_spin_date_time = as.POSIXct(paste(date_of_2nd_spin, 
-                                                  time_of_2nd_spin), 
+         second_spin_date_time = as.POSIXct(paste(date_of_2nd_spin_format, 
+                                                  time_of_2nd_spin_format), 
                                            format="%Y-%m-%d %H:%M",
                                            tz = "UTC"),
          
@@ -227,7 +228,5 @@ RAPID_biobank <- read_excel(paste0(biobank_filepath,biobank_current),
          days_to_storage = round(difftime(second_spin_date_time, 
                                           sampling_date_time,
                                           units = "days")))
-
-
 
 
