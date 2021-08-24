@@ -5,15 +5,15 @@ Testing Structure
 
 Each cfDNA test for a pathogenic variant comprises of two ddPCR assays: an assay to determine the variant fraction (vf_assay) and an assay to determine the fetal fraction (ff_assay).
 
-The targets contained within each assay fall into 4 categories. The vf_assay detects the “variant” allele (i.e. “mutant”) and the “reference” allele (i.e. “wild type” or “normal”). The ff_assay detects a “maternal” allele, which is homozygous in the maternal cfDNA and heterozygous/hemizygous in the fetal cfDNA, and a “paternal” allele, which is not present in the maternal cfDNA and is heterozygous/hemizygous in the fetal cfDNA. 
+The targets contained within each assay fall into 4 categories. The vf_assay detects the “variant” allele (i.e. “mutant”) and the “reference” allele (i.e. “wild type” or “normal”). The ff_assay detects a “maternal” allele, which is homozygous in the maternal cfDNA and heterozygous in the fetal cfDNA, and a “paternal” allele, which is not present in the maternal cfDNA and is heterozygous/hemizygous in the fetal cfDNA. 
 
 Naming Convention
 
-New variables are named in a consistent format: target_category_qualifier
-Target examples: variant, reference, paternal, maternal, fetal, difference, major_allele, minor_allele, ff_assay, vf_assay and total
-Category examples: molecules, fraction, percent, positives
-Qualifier examples: max, min
-Variable example: fetal_percent_max
+New variables are named in a consistent format: target_category_qualifier.
+Target examples: variant, reference, paternal, maternal, fetal, difference, major_allele, minor_allele, ff_assay, vf_assay and total.
+Category examples: molecules, fraction, percent, positives.
+Qualifier examples: max, min.
+Variable example: fetal_percent_max.
 
 Sample Identification
 
