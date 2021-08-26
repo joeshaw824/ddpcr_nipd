@@ -91,13 +91,15 @@ gDNA_scd_data <- parent_gDNA_var_ref %>%
 # This plot shows that the common form of the SPRT equation is 
 # inappropriate for this dataset
 
+ff_for_graph <- 0.04
+lr_for_graph <- 8
+
 ggplot(gDNA_scd_data, aes(x = vf_assay_molecules, y = variant_percent))+
   
-  scale_fill_manual(values=c("#FFFFFF", "#FFFFFF", "#FFFFFF", "#999999")) +
-  scale_alpha_manual(values = c(1, 1, 1, 0.4)) +
-  geom_point(size = 2, aes(fill = sprt_prediction,
-                           alpha = sprt_prediction),
-             colour = "black", pch=21) +
+  # scale_fill_manual(values=c("#FFFFFF", "#FFFFFF", "#FFFFFF", "#999999")) +
+  # scale_alpha_manual(values = c(1, 1, 1, 0.4)) +
+  geom_point(size = 2, colour = "black", fill = "white", pch=21,
+             alpha = 0.8) +
   theme_bw()+
   theme(
     panel.grid.major = element_blank(),
@@ -107,32 +109,56 @@ ggplot(gDNA_scd_data, aes(x = vf_assay_molecules, y = variant_percent))+
        y = "Variant fraction (%)"
        #, title = "Heterozygous gDNA samples"
        ) +
-  scale_y_continuous(breaks = c(45, 50, 55), 
-                     limits = c(45,55))+
   geom_function(fun = "calc_AS_upper_boundary",
                 aes(x = vf_assay_molecules, y =
-                      calc_AS_upper_boundary(vf_assay_molecules)),
-                colour = "black")+
+                      calc_AS_upper_boundary(vf_assay_molecules, ff_for_graph, 
+                                             lr_for_graph)),
+                colour = "black",
+                args = c(ff_for_graph, lr_for_graph)) +
+  
   geom_function(fun = "calc_AS_lower_boundary",
                 aes(x = vf_assay_molecules, y =
-                      calc_AS_lower_boundary(vf_assay_molecules)),
-                colour = "black") +
+                      calc_AS_lower_boundary(vf_assay_molecules, ff_for_graph, 
+                                             lr_for_graph)),
+                colour = "black",
+                args = c(ff_for_graph, lr_for_graph)) +
+  
   geom_function(fun = "calc_SS_boundary",
                 aes(x = vf_assay_molecules, y =
-                      calc_SS_boundary(vf_assay_molecules)),
-                colour = "black")+
+                      calc_SS_boundary(vf_assay_molecules, ff_for_graph, 
+                                       lr_for_graph)),
+                colour = "black",
+                args = c(ff_for_graph, lr_for_graph))+
+  
   geom_function(fun = "calc_AA_boundary",
                 aes(x = vf_assay_molecules, y =
-                      calc_AA_boundary(vf_assay_molecules)),
-                colour = "black")+
-  annotate(geom = "text", x = 45000, y = 50, label = "HbAS")+
+                      calc_AA_boundary(vf_assay_molecules, ff_for_graph, 
+                                       lr_for_graph)),
+                colour = "black",
+                args = c(ff_for_graph, lr_for_graph)) +
+  scale_y_continuous(breaks = c(45, 50, 55), 
+                     limits = c(45,55)) + 
+  annotate(geom = "text", x = 45000, y = 50, label = "HbAS") +
   annotate(geom = "text", x = 45000, y = 47, label = "HbAA") +
-  annotate(geom = "text", x = 45000, y = 53, label = "HbSS")
+  annotate(geom = "text", x = 45000, y = 53, label = "HbSS") +
   
-# Circle the incorrect predictions
-# geom_point(data=subset(gDNA_scd_data, sprt_prediction %in% c("HbSS","HbAA")),
-           #pch=1, size=5, alpha = 0.8)
-
+  # Add arrows to show the incorrect predictions
+  geom_segment(aes(x = 5500, y = 51.9, 
+                   xend = 4500, yend = 51.9),
+               arrow = arrow(length = unit(0.2, "cm"))) +
+  
+  geom_segment(aes(x = 4000, y = 53, 
+                   xend = 3000, yend = 53),
+               arrow = arrow(length = unit(0.2, "cm"))) +
+  
+  geom_segment(aes(x = 4000, y = 46.5, 
+                   xend = 3000, yend = 46.5),
+               arrow = arrow(length = unit(0.2, "cm"))) +
+  
+  geom_segment(aes(x = 7000, y = 47.7, 
+                   xend = 6000, yend = 47.7),
+               arrow = arrow(length = unit(0.2, "cm")))
+  
 #########################
 # Variation in HbAS gDNA controls
 #########################
@@ -222,10 +248,6 @@ geom_hline(yintercept = gDNA_mean_vp+(3*gDNA_stand_dev_vp),
   geom_hline(yintercept = gDNA_mean_vp-(3*gDNA_stand_dev_vp),
              linetype = "dashed")
 
-
-
-median(cfDNA_scd_data$vf_assay_molecules)
-  
 #########################
 # Limit of detection study
 #########################
@@ -680,7 +702,7 @@ cfDNA_scd_outcomes %>%
 
 # Modify the data for the plots
 cfdna_for_plot <- cfDNA_scd_outcomes %>%
-  filter(r_number != "17004") %>%
+  filter(!r_number %in% c("17004", "20915")) %>%
   arrange(variant_percent) %>%
   mutate(r_number = factor(r_number, levels = r_number),
          sprt_genotype_prediction = factor(sprt_genotype_prediction,
@@ -850,6 +872,134 @@ ggplot(for_overlay_plot %>%
   labs(title = "SPRT with gDNA data behind")
 
 
+ggplot(cfdna_for_plot %>%
+         filter(`SPRT prediction` != "inconclusive"), aes(x = `SPRT prediction`, 
+                           y = variant_percent))+
+  geom_jitter() +
+  geom_hline(yintercept = 47.8, linetype = "dashed") +
+  geom_hline(yintercept = 49, linetype = "dashed")
+
+
+## New plots to show diagnostic outcomes as well
+cfdna_for_plot2 <- cfDNA_scd_outcomes %>%
+  filter(!r_number %in% c("17004", "20915", "30230")) %>%
+  mutate(mutation_genetic_info_fetus = factor(mutation_genetic_info_fetus, 
+                                              levels = c("HbAA", "HbAS", "HbSS")),
+         
+         sprt_genotype_prediction = factor(sprt_genotype_prediction,
+                                           levels = c("HbAA", "HbAS", "HbSS",
+                                                      "inconclusive")),
+         
+         z_score_genotype_prediction = factor(z_score_genotype_prediction,
+                                              levels = c("HbAA", "HbAS", "HbSS",
+                                                         "inconclusive", 
+                                                         "insufficient data"))) %>%
+  arrange(mutation_genetic_info_fetus, variant_percent) %>%
+  mutate(r_number = factor(r_number, levels = r_number)) %>%
+  
+  # Rename for legend
+  dplyr::rename(
+    `SPRT prediction` = sprt_genotype_prediction,
+    `Z score prediction` = z_score_genotype_prediction)
+
+joe_look <- cfdna_for_plot2 %>%
+  select(r_number, mutation_genetic_info_fetus)
+
+# 17 HbAA samples, then HbSS begins at 74
+
+# SPRT plot with outcome genotypes in panels
+ggplot(cfdna_for_plot2, aes(x = r_number, 
+                           y = variant_percent)) +
+  geom_errorbar(aes(ymin = variant_percent_min, ymax = variant_percent_max),
+                alpha = 0.2) +
+  scale_shape_manual(values = c(22, 21, 24, 23)) +
+  scale_alpha_manual(values = c(1, 1, 1, 0.5)) +
+  scale_fill_manual(values = c("#FFFFFF", "#FFFFFF", "#FFFFFF", "#999999")) +
+  geom_point(size = 3, aes(shape = `SPRT prediction`,
+                           fill = `SPRT prediction`,
+                           alpha = `SPRT prediction`),
+             colour = "black") +
+  theme_bw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), 
+    legend.position = c(0.85, 0.2),
+    axis.text.x = element_blank(),
+    legend.background = element_blank(),
+    legend.box.background = element_rect(colour = "black")) +
+  labs(y = "Variant fraction (%)", x = "cfDNA sample",
+       title = "SPRT predictions for 86 cfDNA samples") +
+  ylim(42, 58) +
+  geom_vline(xintercept = 17.5, linetype = "dashed") +
+  geom_vline(xintercept = 73.5, linetype = "dashed") +
+  
+  # Add lines for incorrect results
+  geom_segment(aes(x = 19, y = 50, xend = 19, yend = 49.4),
+               arrow = arrow(length = unit(0.2, "cm"))) +
+  
+  geom_segment(aes(x = 21, y = 50.3, xend = 21, yend = 49.7),
+               arrow = arrow(length = unit(0.2, "cm"))) +
+  
+  geom_segment(aes(x = 25, y = 50.6, xend = 25, yend = 50),
+               arrow = arrow(length = unit(0.2, "cm"))) +
+  annotate(geom = "text", x = 8, y = 57, 
+           label = "HbAA fetuses") +
+  annotate(geom = "text", x = 43, y = 57, 
+           label = "HbAS fetuses") +
+  
+  annotate(geom = "text", x = 80, y = 57, 
+           label = "HbSS fetuses")
+
+
+# Z score plot with outcome genotypes in panels
+ggplot(cfdna_for_plot2, aes(x = r_number, 
+                            y = variant_percent)) +
+  geom_errorbar(aes(ymin = variant_percent_min, ymax = variant_percent_max), 
+                alpha = 0.5) +
+  scale_fill_manual(values = c("#FFFFFF", "#FFFFFF", "#FFFFFF", "#999999",
+                               "#999999")) +
+  scale_shape_manual(values = c(22, 21, 24, 23, 21)) +
+  scale_alpha_manual(values = c(1, 1, 1, 0.5, 0.5)) +
+  geom_point(size = 3, aes(shape = `Z score prediction`,
+                           fill = `Z score prediction`,
+                           alpha = `Z score prediction`),
+             colour = "black") +
+  theme_bw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), 
+    legend.position = c(0.85, 0.2),
+    axis.text.x = element_blank(),
+    legend.background = element_blank(),
+    legend.box.background = element_rect(colour = "black")) +
+  labs(y = "Variant fraction (%)", x = "cfDNA sample",
+       title = "Z score predictions for 86 cfDNA samples") +
+  ylim(42, 58) +
+  geom_vline(xintercept = 17.5, linetype = "dashed") +
+  geom_vline(xintercept = 73.5, linetype = "dashed") +
+  
+  # Add lines for incorrect results
+  geom_segment(aes(x = 18, y = 50.8, xend = 18, yend = 50.2),
+               arrow = arrow(length = unit(0.2, "cm"))) +
+  annotate(geom = "text", x = 8, y = 57, 
+           label = "HbAA fetuses") +
+  annotate(geom = "text", x = 43, y = 57, 
+           label = "HbAS fetuses") +
+  
+  annotate(geom = "text", x = 80, y = 57, 
+           label = "HbSS fetuses")
+
+
+
+  #geom_text(data = cfdna_for_plot %>%
+  #filter(outcome_sprt == "incorrect"),
+  #aes(label = r_number), size = 3, vjust = -7)
+  
+  
+  
+  
+  
+
 
 #########################
 # Results table
@@ -954,10 +1104,18 @@ z_score_plot <- ggplot(gDNA_cfDNA %>%
 
 #########################
 
+# SPRT in published papers
 
-##
+xiong_data <- read.csv("data/xiong_et_al_s2.csv")
 
+xiong_modified <- xiong_data %>%
+  mutate(vf_amplicon_1 = (reads_amplicon_1_mut / (reads_amplicon_1_mut +
+                                                   reads_amplicon_1_wt))*100) %>%
+  select(vf_amplicon_1, fetal_fraction, prediction_amplicon_1, outcome)
 
-ff_calculations(
-  var_ref_calculations(cfdna_ddpcr_data))
+ggplot(xiong_modified, aes(x = fetal_fraction, 
+                           y = vf_amplicon_1))+
+  geom_point(size = 2, aes(colour = outcome, shape = prediction_amplicon_1))
+
+  
 

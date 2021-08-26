@@ -101,32 +101,46 @@ calc_lr_autosomal <- function(fetal_fraction, overrep_fraction, total_copies) {
 # a fetal fraction of 4% and a likelihood ratio of 8.
 
 # Variables for each function
-q0 <- 0.5
-q1 <- 0.5+(0.04/2)
-delta <- (1- q1)/(1-q0)
-gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
 
-calc_SS_boundary <- function(total_copies) {
-  SS_boundary <- ((log(8)/total_copies) - log(delta))/log(gamma)
+
+# Fetal fraction supplied as a decimal
+calc_SS_boundary <- function(total_copies, ff, lr) {
+  q0 <- 0.5
+  q1 <- 0.5+(ff/2)
+  delta <- (1- q1)/(1-q0)
+  gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
+  SS_boundary <- ((log(lr)/total_copies) - log(delta))/log(gamma)
   # Convert to a percentage for output
   return(SS_boundary*100)
 }
 
-calc_AS_upper_boundary <- function(total_copies) {
-  AS_upper_boundary <- ((log(1/8)/total_copies) - log(delta))/log(gamma)
+calc_AS_upper_boundary <- function(total_copies, ff, lr) {
+  q0 <- 0.5
+  q1 <- 0.5+(ff/2)
+  delta <- (1- q1)/(1-q0)
+  gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
+  AS_upper_boundary <- ((log(1/lr)/total_copies) - log(delta))/log(gamma)
   # Convert to a percentage for output
   return(AS_upper_boundary*100)
 }
 
-calc_AS_lower_boundary <- function(total_copies) {
-  AS_upper_boundary <- ((log(1/8)/total_copies) - log(delta))/log(gamma)
+calc_AS_lower_boundary <- function(total_copies, ff, lr) {
+  q0 <- 0.5
+  q1 <- 0.5+(ff/2)
+  delta <- (1- q1)/(1-q0)
+  gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
+  AS_upper_boundary <- ((log(1/lr)/total_copies) - log(delta))/log(gamma)
   AS_lower_boundary <- 0.5-(AS_upper_boundary-0.5)
   # Convert to a percentage for output
   return(AS_lower_boundary*100)
 }
 
-calc_AA_boundary <- function(total_copies) {
-  SS_boundary <- ((log(8)/total_copies) - log(delta))/log(gamma)
+calc_AA_boundary <- function(total_copies, ff, lr) {
+  qq0 <- 0.5
+  q1 <- 0.5+(ff/2)
+  delta <- (1- q1)/(1-q0)
+  gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
+  SS_boundary <- ((log(lr)/total_copies) - log(delta))/log(gamma)
   AA_boundary <- 0.5-(SS_boundary-0.5)
   # Convert to a percentage for output
   return(AA_boundary*100)
