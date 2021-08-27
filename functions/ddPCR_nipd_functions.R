@@ -136,7 +136,7 @@ calc_AS_lower_boundary <- function(total_copies, ff, lr) {
 }
 
 calc_AA_boundary <- function(total_copies, ff, lr) {
-  qq0 <- 0.5
+  q0 <- 0.5
   q1 <- 0.5+(ff/2)
   delta <- (1- q1)/(1-q0)
   gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
