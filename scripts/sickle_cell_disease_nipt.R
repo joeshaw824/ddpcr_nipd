@@ -14,6 +14,7 @@
 ## Load necessary packages
 library(tidyverse)
 library(epiR)
+library(ggpubr)
 
 ## Set working directory
 setwd("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/ddPCR_R_Analysis/ddpcr_nipd")
@@ -206,16 +207,7 @@ gDNA_scd_data %>%
     panel.grid.major = element_blank(),
     panel.grid.minor = element_blank()) +
   labs(y = "Percentage of controls", x = "Variant percent (%)",
-       title = "Distrubution of HbAS gDNA controls") +
-  geom_segment(aes(x = gDNA_mean_vp+(2*gDNA_stand_dev_vp), y = 0, 
-                   xend = gDNA_mean_vp+(2*gDNA_stand_dev_vp), yend = 0.1),
-               linetype = "dashed") +
-  geom_segment(aes(x = gDNA_mean_vp+(3*gDNA_stand_dev_vp), y = 0, 
-                   xend = gDNA_mean_vp+(3*gDNA_stand_dev_vp), yend = 0.05),
-               linetype = "dashed") +
-  geom_segment(aes(x = gDNA_mean_vp+(-3*gDNA_stand_dev_vp), y = 0, 
-                   xend = gDNA_mean_vp+(-3*gDNA_stand_dev_vp), yend = 0.05),
-               linetype = "dashed")
+       title = "Distrubution of HbAS gDNA controls")
 
 #########################
 # Limit of detection study
@@ -599,9 +591,11 @@ z2_line <- geom_hline(yintercept = gDNA_mean_vp+(2*gDNA_stand_dev_vp),
 zminus2_line <- geom_hline(yintercept = gDNA_mean_vp-(2*gDNA_stand_dev_vp),
              linetype = "dashed", alpha = 0.5)
 
-
-
 # Plot 1: HbAS gDNA controls
+
+gdna_plot_title <- expression(paste("ddPCR for 38 ", italic("HBB"), 
+                  "c.20A>T gDNA controls"))
+
 gdna_plot <- ggplot(gDNA_scd_data %>%
                       mutate(sample_type = "HbAS gDNA"), 
                     aes(x = vf_assay_molecules, 
@@ -620,7 +614,8 @@ gdna_plot <- ggplot(gDNA_scd_data %>%
   theme_bw() +
   multiplot_theme +
   labs(y = "Variant fraction (%)", x = "",
-       title = "ddPCR for HBB c.20A>T gDNA controls")
+       title = gdna_plot_title)
+
 
 # Plot 2: limit of detection gDNA mixtures
 lod_plot <- ggplot(lod_data_merged, 
@@ -697,21 +692,24 @@ cfdna_plot <- cfDNA_scd_outcomes %>%
              colour = "black") +
   
   labs(y = "Variant fraction (%)", x = "Genome equivalents (GE)", 
-       title = "ddPCR for cfDNA with z score classification") +
+       title = "ddPCR for 86 cfDNA samples with z score classification") +
   geom_point(data = cfDNA_scd_outcomes %>%
                filter(r_number == "20763"),
              shape = 25, fill ="black")
 
 
 # Display 3 plots together
-multi_plot <- ggpubr::ggarrange(gdna_plot, lod_plot, cfdna_plot,
-                  ncol = 1, nrow = 3, align = "v") 
+
+multi_plot <- ggpubr::ggarrange(gdna_plot, lod_plot, 
+                                cfdna_plot,
+                                labels = c("A", "B", "C"),
+                                ncol = 1, nrow = 3, align = "v")
 
 ggsave(plot = multi_plot, 
        filename = "multi_plot.tiff",
        path = "plots/", device='tiff', dpi=300,
        units = "in",
-       width = 5.90,
+       width = 7,
        height = 11)
 
 #########################
