@@ -558,7 +558,7 @@ ggplot(xiong_modified, aes(x = fetal_fraction,
   geom_point(size = 2, aes(colour = outcome, shape = prediction_amplicon_1))
 
 #########################
-# Triptych figure
+# Figure 2
 #########################
 
 # Consistent theme and axes for plots
@@ -661,7 +661,7 @@ lod_plot <- ggplot(lod_data_merged,
 
 # Plot 3: cfDNA samples with z score analysis
 
-cfdna_plot <- cfDNA_scd_outcomes %>%
+cfdna_z_score_plot <- cfDNA_scd_outcomes %>%
   filter(!r_number %in% c("20915", "17004", "30230",
                           "20763")) %>%
            mutate(mutation_genetic_info_fetus = 
@@ -692,24 +692,65 @@ cfdna_plot <- cfDNA_scd_outcomes %>%
              colour = "black") +
   
   labs(y = "Variant fraction (%)", x = "Genome equivalents (GE)", 
-       title = "ddPCR for 86 cfDNA samples with z score classification") +
+       title = "ddPCR for 85 cfDNA samples with z score classification") +
   geom_point(data = cfDNA_scd_outcomes %>%
                filter(r_number == "20763"),
-             shape = 25, fill ="black")
+             shape = 25, fill ="black", size = 2)
+
+
+# Plot 4: cfDNA samples with SPRT analysis
+
+cfdna_sprt_plot <- cfDNA_scd_outcomes %>%
+  filter(!r_number %in% c("20915", "17004", "30230",
+                          "17006", "18836", "30065")) %>%
+  mutate(mutation_genetic_info_fetus = 
+           paste0(mutation_genetic_info_fetus, " fetus"),
+         mutation_genetic_info_fetus = factor(mutation_genetic_info_fetus,
+                                              levels = c("HbSS fetus","HbAS fetus",
+                                                         "HbAA fetus"))) %>%
+  ggplot(aes(x = vf_assay_molecules, 
+             y = variant_percent)) +
+  
+  theme_bw() +
+  multiplot_theme + 
+  vertical_line +
+  z3_line +
+  zminus3_line +
+  z2_line +
+  zminus2_line +
+  multiplot_y +
+  multiplot_x +
+  
+  scale_fill_manual(values=c("#FFFFFF", "#FFFFFF", "#FFFFFF", "#999999",
+                             "#999999"), guide = "none") +
+  scale_alpha_manual(values = c(1, 1, 1, 0.2, 0.2), guide = "none") +
+  scale_shape_manual(values = c(24, 21, 25)) +
+  geom_point(size = 2, aes(fill = sprt_genotype_prediction,
+                           alpha = sprt_genotype_prediction,
+                           shape = mutation_genetic_info_fetus),
+             colour = "black") +
+  
+  labs(y = "Variant fraction (%)", x = "Genome equivalents (GE)", 
+       title = "ddPCR for 85 cfDNA samples with SPRT classification") +
+  geom_point(data = cfDNA_scd_outcomes %>%
+               filter(r_number %in% c("17006", "18836", "30065")),
+             shape = 21, fill ="black", size = 2)
+
 
 
 # Display 3 plots together
 
 multi_plot <- ggpubr::ggarrange(gdna_plot, lod_plot, 
-                                cfdna_plot,
-                                labels = c("A", "B", "C"),
-                                ncol = 1, nrow = 3, align = "v")
+                                cfdna_z_score_plot,
+                                cfdna_sprt_plot,
+                                labels = c("A", "B", "C", "D"),
+                                ncol = 2, nrow = 2, align = "v")
 
 ggsave(plot = multi_plot, 
-       filename = "multi_plot.tiff",
+       filename = "multi_plot_test.tiff",
        path = "plots/", device='tiff', dpi=300,
        units = "in",
-       width = 7,
-       height = 11)
+       width = 12.5,
+       height = 7)
 
 #########################
