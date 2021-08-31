@@ -97,13 +97,8 @@ calc_lr_autosomal <- function(fetal_fraction, overrep_fraction, total_copies) {
   return(lr)
 }
 
-# These functions calculate the SPRT thresholds assuming 
-# a fetal fraction of 4% and a likelihood ratio of 8.
-
-# Variables for each function
-
-
-# Fetal fraction supplied as a decimal
+# These functions calculate the SPRT thresholds with likelihood ratio 
+#sipplied and fetal fraction supplied as a decimal.
 calc_SS_boundary <- function(total_copies, ff, lr) {
   q0 <- 0.5
   q1 <- 0.5+(ff/2)
@@ -563,7 +558,7 @@ parent_gDNA_ff <- ff_calculations(ddpcr_controls_with_target %>%
 # results for ddPCR, including parental gDNA controls. The amount of 
 # information on this plot can be modified to suit user preference.
 
-# Materal sample only example
+# Maternal sample only example
 # draw_rmd_plot("30065", "21-1863.csv_M07", "21-1862.csv_M10")
 
 # Maternal and paternal samples example
@@ -722,3 +717,9 @@ reverse_complement <- function(input_sequence){
   return(rev_comp)
   
 }
+
+
+sample_1 <- sample(1:88, 1)
+sample_2 <- sample(1:88, 1)
+sample_3 <- sample(1:88, 1)
+

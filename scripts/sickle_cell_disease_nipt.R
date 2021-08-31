@@ -21,7 +21,7 @@ setwd("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/ddP
 
 # Source functions (this includes loading ddPCR data)
 source("functions/ddPCR_nipd_functions.R")
-source("functions/RAPID_biobank.R")
+source("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/RAPID_project_biobank/scripts/RAPID_biobank.R")
 
 #########################
 # Select sickle cell disease cfDNA ddPCR data
@@ -46,8 +46,8 @@ cfDNA_scd_data <- ff_calculations(
   dplyr::rename(r_number = sample) %>%
   filter(vf_assay == "HBB c.20A>T" &
            !r_number %in% samples_to_exclude) %>%
-  mutate(extraction_volume = ifelse(r_number %in% secondary_cohort,
-                         "6ml", "2 or 4ml"),
+  mutate(cohort = ifelse(r_number %in% secondary_cohort,
+                         "secondary", "primary"),
          sample_type = "cfDNA")
 
 #########################
@@ -176,10 +176,15 @@ vf_assay_molecules_limit <- 4000
 gDNA_scd_data_4000 <- gDNA_scd_data %>%
   filter(vf_assay_molecules > vf_assay_molecules_limit)
 
+
+gDNA_scd_data_sub4000 <- gDNA_scd_data %>%
+  filter(vf_assay_molecules < vf_assay_molecules_limit)
+
 # Get max and min values for the paper writeup
 max(gDNA_scd_data_4000$variant_percent)
 min(gDNA_scd_data_4000$variant_percent)
-
+max(gDNA_scd_data_sub4000$variant_percent)
+min(gDNA_scd_data_sub4000$variant_percent)
 # vp is "variant percent"
 gDNA_mean_vp <- mean(gDNA_scd_data_4000$variant_percent)            
 
@@ -477,6 +482,13 @@ cfDNA_scd_outcomes <- left_join(
          report_acquired = ifelse(is.na(report_acquired), "No", 
                                   report_acquired))
 
+# Numbers for paper
+min(cfDNA_scd_outcomes$gestation_total_weeks)
+max(cfDNA_scd_outcomes$gestation_total_weeks)
+median(cfDNA_scd_outcomes$gestation_total_weeks)
+min(cfDNA_scd_outcomes$fetal_percent)
+max(cfDNA_scd_outcomes$fetal_percent)
+
 #########################
 # Results table
 #########################
@@ -488,7 +500,7 @@ scd_cohort_table <- cfDNA_scd_outcomes %>%
   select(sample_id, r_number, study_id, site, 
          sampling_date_time, hours_to_first_spin,
          days_to_storage,
-         vacutainer, gestation_character, plasma_volume_ml, 
+         vacutainer, gestation_character, cohort, plasma_volume_ml, 
          extraction_replicates, 
          partner_sample_available, vf_assay, vf_assay_num_wells,  
          vf_assay_droplets, variant_positives,
@@ -520,6 +532,17 @@ scd_cohort_table <- cfDNA_scd_outcomes %>%
     "maternal_allele_molecules" = maternal_molecules,
     "paternal_allele_molecules" = paternal_molecules)
 
+
+# Change the table to exclude HbAC and twin pregnancy
+scd_cohort_table[scd_cohort_table$r_number == 17004, "outcome_zscore"] <- 
+  "excluded: HbAC sample"
+scd_cohort_table[scd_cohort_table$r_number == 17004, "outcome_sprt"] <- 
+  "excluded: HbAC sample"
+scd_cohort_table[scd_cohort_table$r_number == 20915, "outcome_zscore"] <- 
+  "excluded: twin pregnancy"
+scd_cohort_table[scd_cohort_table$r_number == 20915, "outcome_sprt"] <- 
+  "excluded: twin pregnancy"
+
 write.csv(scd_cohort_table, "analysis_outputs/Supplementary data.csv",
           row.names = FALSE)
 
@@ -527,16 +550,21 @@ write.csv(scd_cohort_table, "analysis_outputs/Supplementary data.csv",
 # Sensitivity and specificity
 #########################
 
-# Use the epiR package to calculate sensitivity
+# Z score: balanced vs unbalanced
 count(cfDNA_scd_outcomes %>%
         filter(vf_assay_molecules > 4000 &
                  fetal_percent > 4), z_score_genotype_prediction, 
       mutation_genetic_info_fetus)
 
+# True positives (9+10), false positives (1), false negatives (0),
+# true negatives (35)
+scd_sprt_data <- as.table(matrix(c(19, 1, 0, 35), nrow = 2, byrow = TRUE))
+scd_sprt_metrics <- epi.tests(scd_sprt_data, conf.level = 0.95)
+
+# SPRT: balanced vs unbalanced
 count(cfDNA_scd_outcomes, sprt_genotype_prediction, 
       mutation_genetic_info_fetus)
 
-# SPRT: balanced vs unbalanced
 # True positives (15+12), false positives (3), false negatives (0),
 # true negatives (48)
 scd_sprt_data <- as.table(matrix(c(27, 3, 0, 48), nrow = 2, byrow = TRUE))
@@ -743,12 +771,12 @@ cfdna_sprt_plot <- cfDNA_scd_outcomes %>%
 multi_plot <- ggpubr::ggarrange(gdna_plot, lod_plot, 
                                 cfdna_z_score_plot,
                                 cfdna_sprt_plot,
-                                labels = c("A", "B", "C", "D"),
+                                labels = c("2A", "2B", "2C", "2D"),
                                 ncol = 2, nrow = 2, align = "v")
 
 ggsave(plot = multi_plot, 
-       filename = "multi_plot_test.tiff",
-       path = "plots/", device='tiff', dpi=300,
+       filename = "figure_2.tiff",
+       path = "plots/", device='tiff', dpi=600,
        units = "in",
        width = 12.5,
        height = 7)

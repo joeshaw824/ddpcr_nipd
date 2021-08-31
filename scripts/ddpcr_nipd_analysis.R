@@ -38,7 +38,7 @@ sample_wells <- read.csv("resources/sample_wells.csv",
 
 # Source functions (this includes loading ddPCR data)
 source("functions/ddPCR_nipd_functions.R")
-source("functions/RAPID_biobank.R")
+source("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/RAPID_project_biobank/scripts/RAPID_biobank.R")
 
 #########################
 # cfDNA SPRT analysis
