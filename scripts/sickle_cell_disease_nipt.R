@@ -413,6 +413,16 @@ cfDNA_scd_predictions <- cfDNA_scd_data %>%
     likelihood_ratio = calc_lr_autosomal(fetal_fraction,
                                          major_allele_percent/100,
                                          vf_assay_molecules),
+    
+    # Calculate the upper and lower SPRT boundaries to check that my 
+    # rearrangement of the SPRT likelihood ratio calculation doesn't contain
+    # any errors
+    upper_sprt_boundary = calc_SS_boundary(vf_assay_molecules,
+                     fetal_fraction, 8),
+    
+    lower_sprt_boundary = calc_AS_upper_boundary(vf_assay_molecules,
+                           fetal_fraction, 8),
+    
     sprt_genotype_prediction = case_when(
       likelihood_ratio > lr_threshold &
         major_allele == "variant allele"
@@ -488,6 +498,7 @@ max(cfDNA_scd_outcomes$gestation_total_weeks)
 median(cfDNA_scd_outcomes$gestation_total_weeks)
 min(cfDNA_scd_outcomes$fetal_percent)
 max(cfDNA_scd_outcomes$fetal_percent)
+median(cfDNA_scd_outcomes$fetal_percent)
 
 #########################
 # Results table
@@ -508,8 +519,10 @@ scd_cohort_table <- cfDNA_scd_outcomes %>%
          maternal_positives, paternal_positives, variant_molecules, 
          reference_molecules, vf_assay_molecules,
          maternal_molecules, paternal_molecules, total_molecules, GE_ml_plasma,
-         variant_percent, fetal_percent, z_score,likelihood_ratio,
-         sprt_genotype_prediction, z_score_genotype_prediction, 
+         variant_percent, fetal_percent, 
+         major_allele_percent, upper_sprt_boundary,
+         lower_sprt_boundary, likelihood_ratio,
+         sprt_genotype_prediction, z_score, z_score_genotype_prediction, 
          diagnostic_sampling,
          mutation_genetic_info_fetus,
          report_acquired,
@@ -543,7 +556,10 @@ scd_cohort_table[scd_cohort_table$r_number == 20915, "outcome_zscore"] <-
 scd_cohort_table[scd_cohort_table$r_number == 20915, "outcome_sprt"] <- 
   "excluded: twin pregnancy"
 
-write.csv(scd_cohort_table, "analysis_outputs/Supplementary data.csv",
+# Export table with time stamp
+write.csv(scd_cohort_table, 
+          file = (paste0("analysis_outputs/Supplementary_data ",
+                         format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv")),
           row.names = FALSE)
 
 #########################
