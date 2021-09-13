@@ -39,7 +39,8 @@ secondary_cohort <- c("14182", "19868", "20238", "20611",
                       "20874", "30063", "30068", "30113", "30142", 
                       "30206", "30228", "30230", "30078", "30065", 
                       "13402", "20939", "30215", "30203",
-                      "20911", "30236", "30112", "30251", "30257")
+                      "20911", "30236", "30112", "30251", "30257",
+                      "30216", "30232")
 
 cfDNA_scd_data <- ff_calculations(
   var_ref_calculations(cfdna_ddpcr_data)) %>%
@@ -196,6 +197,12 @@ gDNA_stand_dev_vp <- sd(gDNA_scd_data_4000$variant_percent)
 
 # Coefficient of variation
 gDNA_cv_vp <- (gDNA_stand_dev_vp/gDNA_mean_vp) * 100
+
+# Z score thresholds
+gDNA_mean_vp+(3*gDNA_stand_dev_vp)
+gDNA_mean_vp-(3*gDNA_stand_dev_vp)
+gDNA_mean_vp+(2*gDNA_stand_dev_vp)
+gDNA_mean_vp-(2*gDNA_stand_dev_vp)
 
 # Plot controls with normal distribution curve
 gDNA_scd_data %>%
@@ -572,34 +579,19 @@ count(cfDNA_scd_outcomes %>%
                  fetal_percent > 4), z_score_genotype_prediction, 
       mutation_genetic_info_fetus)
 
-# True positives (9+10), false positives (1), false negatives (0),
-# true negatives (35)
-scd_sprt_data <- as.table(matrix(c(19, 1, 0, 35), nrow = 2, byrow = TRUE))
+# True positives (8+10), false positives (1), false negatives (1),
+# true negatives (37)
+scd_sprt_data <- as.table(matrix(c(18, 1, 1, 37), nrow = 2, byrow = TRUE))
 scd_sprt_metrics <- epi.tests(scd_sprt_data, conf.level = 0.95)
 
 # SPRT: balanced vs unbalanced
 count(cfDNA_scd_outcomes, sprt_genotype_prediction, 
       mutation_genetic_info_fetus)
 
-# True positives (15+12), false positives (3), false negatives (0),
+# True positives (15+12), false positives (3), false negatives (1),
 # true negatives (48)
-scd_sprt_data <- as.table(matrix(c(27, 3, 0, 48), nrow = 2, byrow = TRUE))
+scd_sprt_data <- as.table(matrix(c(27, 3, 1, 48), nrow = 2, byrow = TRUE))
 scd_sprt_metrics <- epi.tests(scd_sprt_data, conf.level = 0.95)
-
-#########################
-# SPRT in published papers
-#########################
-
-xiong_data <- read.csv("data/xiong_et_al_s2.csv")
-
-xiong_modified <- xiong_data %>%
-  mutate(vf_amplicon_1 = (reads_amplicon_1_mut / (reads_amplicon_1_mut +
-                                                   reads_amplicon_1_wt))*100) %>%
-  select(vf_amplicon_1, fetal_fraction, prediction_amplicon_1, outcome)
-
-ggplot(xiong_modified, aes(x = fetal_fraction, 
-                           y = vf_amplicon_1))+
-  geom_point(size = 2, aes(colour = outcome, shape = prediction_amplicon_1))
 
 #########################
 # Figure 2
@@ -706,13 +698,16 @@ lod_plot <- ggplot(lod_data_merged,
 # Plot 3: cfDNA samples with z score analysis
 
 cfdna_z_score_plot <- cfDNA_scd_outcomes %>%
-  filter(!r_number %in% c("20915", "17004", "30230",
-                          "20763")) %>%
+  filter(!r_number %in% c("20915", "17004")) %>%
            mutate(mutation_genetic_info_fetus = 
                     paste0(mutation_genetic_info_fetus, " fetus"),
                   mutation_genetic_info_fetus = factor(mutation_genetic_info_fetus,
                                  levels = c("HbSS fetus","HbAS fetus",
-                                            "HbAA fetus"))) %>%
+                                            "HbAA fetus")),
+                  outcome_zscore = factor(outcome_zscore, levels = c(
+                    "correct", "incorrect", "insufficient data",
+                    "inconclusive"))
+                  ) %>%
                     ggplot(aes(x = vf_assay_molecules, 
                      y = variant_percent)) +
   
@@ -726,32 +721,29 @@ cfdna_z_score_plot <- cfDNA_scd_outcomes %>%
   multiplot_y +
   multiplot_x +
   
-  scale_fill_manual(values=c("#FFFFFF", "#FFFFFF", "#FFFFFF", "#999999",
+  scale_fill_manual(values=c("#FFFFFF", "#000000", "#999999",
                              "#999999"), guide = "none") +
-  scale_alpha_manual(values = c(1, 1, 1, 0.2, 0.2), guide = "none") +
+  scale_alpha_manual(values = c(1, 1, 0.2, 0.2), guide = "none") +
   scale_shape_manual(values = c(24, 21, 25)) +
-  geom_point(size = 2, aes(fill = z_score_genotype_prediction,
-                           alpha = z_score_genotype_prediction,
+  geom_point(size = 2, aes(fill = outcome_zscore,
+                           alpha = outcome_zscore,
                            shape = mutation_genetic_info_fetus),
              colour = "black") +
   
   labs(y = "Variant fraction (%)", x = "Genome equivalents (GE)", 
-       title = "ddPCR for 85 cfDNA samples with z score classification") +
-  geom_point(data = cfDNA_scd_outcomes %>%
-               filter(r_number == "20763"),
-             shape = 25, fill ="black", size = 2)
-
+       title = "ddPCR for 88 cfDNA samples with z score classification")
 
 # Plot 4: cfDNA samples with SPRT analysis
-
 cfdna_sprt_plot <- cfDNA_scd_outcomes %>%
-  filter(!r_number %in% c("20915", "17004", "30230",
-                          "17006", "18836", "30065")) %>%
+  filter(!r_number %in% c("20915", "17004")) %>%
   mutate(mutation_genetic_info_fetus = 
            paste0(mutation_genetic_info_fetus, " fetus"),
          mutation_genetic_info_fetus = factor(mutation_genetic_info_fetus,
                                               levels = c("HbSS fetus","HbAS fetus",
-                                                         "HbAA fetus"))) %>%
+                                                         "HbAA fetus")),
+         outcome_sprt = factor(outcome_sprt, levels = 
+                                 c("correct", "incorrect", 
+                                   "inconclusive"))) %>%
   ggplot(aes(x = vf_assay_molecules, 
              y = variant_percent)) +
   
@@ -765,24 +757,19 @@ cfdna_sprt_plot <- cfDNA_scd_outcomes %>%
   multiplot_y +
   multiplot_x +
   
-  scale_fill_manual(values=c("#FFFFFF", "#FFFFFF", "#FFFFFF", "#999999",
-                             "#999999"), guide = "none") +
-  scale_alpha_manual(values = c(1, 1, 1, 0.2, 0.2), guide = "none") +
+  scale_fill_manual(values=c("#FFFFFF", "#000000", "#999999"), 
+                    guide = "none") +
+  scale_alpha_manual(values = c(1, 1, 0.2), guide = "none") +
   scale_shape_manual(values = c(24, 21, 25)) +
-  geom_point(size = 2, aes(fill = sprt_genotype_prediction,
-                           alpha = sprt_genotype_prediction,
+  geom_point(size = 2, aes(fill = outcome_sprt,
+                           alpha = outcome_sprt,
                            shape = mutation_genetic_info_fetus),
              colour = "black") +
   
   labs(y = "Variant fraction (%)", x = "Genome equivalents (GE)", 
-       title = "ddPCR for 85 cfDNA samples with SPRT classification") +
-  geom_point(data = cfDNA_scd_outcomes %>%
-               filter(r_number %in% c("17006", "18836", "30065")),
-             shape = 21, fill ="black", size = 2)
+       title = "ddPCR for 85 cfDNA samples with SPRT classification") 
 
-
-
-# Display 3 plots together
+# Display 4 plots together
 
 multi_plot <- ggpubr::ggarrange(gdna_plot, lod_plot, 
                                 cfdna_z_score_plot,
