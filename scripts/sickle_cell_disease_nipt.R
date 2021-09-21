@@ -628,8 +628,7 @@ zminus2_line <- geom_hline(yintercept = gDNA_mean_vp-(2*gDNA_stand_dev_vp),
              linetype = "dashed", alpha = 0.5)
 
 # Plot 1: HbAS gDNA controls
-
-gdna_plot_title <- expression(paste("ddPCR for 38 ", italic("HBB"), 
+gdna_plot_title <- expression(paste("ddPCR for 41 ", italic("HBB"), 
                   "c.20A>T gDNA controls"))
 
 gdna_plot <- ggplot(gDNA_scd_data %>%
@@ -767,7 +766,7 @@ cfdna_sprt_plot <- cfDNA_scd_outcomes %>%
              colour = "black") +
   
   labs(y = "Variant fraction (%)", x = "Genome equivalents (GE)", 
-       title = "ddPCR for 85 cfDNA samples with SPRT classification") 
+       title = "ddPCR for 88 cfDNA samples with SPRT classification") 
 
 # Display 4 plots together
 
