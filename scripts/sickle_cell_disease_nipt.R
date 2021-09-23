@@ -1,6 +1,7 @@
 ################################################################################
-## ddPCR for Non Invasive Prenatal Testing of Sickle Cell Disease
-## July 2021
+## Accuracy of Non-Invasive Fetal Genotyping for Sickle Cell Disease 
+## with Droplet Digital PCR
+## September 2021
 ## Joseph.Shaw@gosh.nhs.uk
 ## This is an analysis script for the prediction of fetal 
 ## genotypes from cfDNA testing using ddPCR for sickle cell 
@@ -91,7 +92,7 @@ gDNA_scd_data <- parent_gDNA_var_ref %>%
   dplyr::rename(r_number = sample)
 
 #########################
-# SPRT with HbAS gDNA controls
+# Supplemental Figure 4: SPRT with HbAS gDNA controls
 #########################
 
 # This plot shows that the common form of the SPRT equation is 
@@ -164,7 +165,7 @@ ggplot(gDNA_scd_data, aes(x = vf_assay_molecules, y = variant_percent))+
   geom_segment(aes(x = 7000, y = 47.7, 
                    xend = 6000, yend = 47.7),
                arrow = arrow(length = unit(0.2, "cm")))
-  
+
 #########################
 # Variation in HbAS gDNA controls
 #########################
@@ -177,7 +178,6 @@ vf_assay_molecules_limit <- 4000
 gDNA_scd_data_4000 <- gDNA_scd_data %>%
   filter(vf_assay_molecules > vf_assay_molecules_limit)
 
-
 gDNA_scd_data_sub4000 <- gDNA_scd_data %>%
   filter(vf_assay_molecules < vf_assay_molecules_limit)
 
@@ -186,6 +186,7 @@ max(gDNA_scd_data_4000$variant_percent)
 min(gDNA_scd_data_4000$variant_percent)
 max(gDNA_scd_data_sub4000$variant_percent)
 min(gDNA_scd_data_sub4000$variant_percent)
+
 # vp is "variant percent"
 gDNA_mean_vp <- mean(gDNA_scd_data_4000$variant_percent)            
 
@@ -203,23 +204,6 @@ gDNA_mean_vp+(3*gDNA_stand_dev_vp)
 gDNA_mean_vp-(3*gDNA_stand_dev_vp)
 gDNA_mean_vp+(2*gDNA_stand_dev_vp)
 gDNA_mean_vp-(2*gDNA_stand_dev_vp)
-
-# Plot controls with normal distribution curve
-gDNA_scd_data %>%
-  mutate(variant_percent = round(variant_percent/0.5)*0.5) %>%
-  filter(vf_assay_molecules > 4000) %>%
-  ggplot(aes(x = variant_percent, y = )) +
-  geom_bar(aes(y = (..count..)/sum(..count..)), fill = "grey",
-           colour = "black") +
-  xlim(45, 55) +
-  #stat_function(fun = dnorm, n = 171, args = list(mean = 49.9, sd = 0.57),
-                #linetype = "dashed") +
-  theme_bw() +
-  theme(
-    panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank()) +
-  labs(y = "Percentage of controls", x = "Variant percent (%)",
-       title = "Distrubution of HbAS gDNA controls")
 
 #########################
 # Limit of detection study
@@ -282,82 +266,6 @@ lod_data_merged <- var_ref_calculations(rbind(
                   "0%",
                   "AA 2%", "AA 4%", "AA 6%", "AA 8%", "AA 10%", "AA 12%")),
          z_score = (variant_percent - gDNA_mean_vp) / gDNA_stand_dev_vp)
-
-# Compare the expected to measured copies
-expected_copies <- read.csv("data/lod_expected.csv") %>%
-  mutate(sample_GE = paste(sample, GE_level, sep = "_"))
-
-lod_obs_exp <- lod_data_merged %>%
-  mutate(sample_GE = paste(sample, GE_level, sep = "_")) %>%
-  left_join(expected_copies %>%
-              select(sample_GE, GE_expected, spike_in), by = "sample_GE") %>%
-  mutate(difference_molecules = case_when(
-    spike_in == "SS" ~variant_molecules - reference_molecules,
-    spike_in == "AA" ~reference_molecules - variant_molecules,
-    spike_in == "AS" ~major_allele_molecules - minor_allele_molecules),
-    
-    difference_molecules_max = case_when(
-      spike_in == "SS" ~variant_molecules_max - reference_molecules_min,
-      spike_in == "AA" ~reference_molecules_max - variant_molecules_min,
-      spike_in == "AS" ~major_allele_molecules_max - minor_allele_molecules_min),
-    
-    difference_molecules_min = case_when(
-      spike_in == "SS" ~variant_molecules_min - reference_molecules_max,
-      spike_in == "AA" ~reference_molecules_min - variant_molecules_max,
-      spike_in == "AS" ~major_allele_molecules_min - minor_allele_molecules_max))
-
-# Calculate the Pearson coefficients
-
-lod_AA <- lod_obs_exp %>%
-  filter(spike_in %in% c("AA", "AS"))
-
-lod_SS <- lod_obs_exp %>%
-  filter(spike_in %in% c("SS", "AS"))
-
-pearson_AA = round(cor(lod_AA$GE_expected, 
-                       lod_AA$difference_molecules,
-                       method = "pearson"), 2)
-
-pearson_SS = round(cor(lod_SS$GE_expected, 
-                       lod_SS$difference_molecules,
-                       method = "pearson"), 2)
-# AA plot
-ggplot(lod_AA, 
-       aes(x = GE_expected, y = difference_molecules)) +
-  geom_errorbar(aes(ymin = difference_molecules_min, 
-                    ymax = difference_molecules_max),
-                alpha = 0.5) +
-  geom_point(pch = 21, fill = "white", size = 3, alpha = 0.5) +
-  theme_bw() +
-  theme(panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank()) +
-  labs(y = "Detected difference in molecules",
-       x = "Expected difference in molecules",
-       title = "HbAA spike-ins") +
-  xlim(-200, 2500) +
-  ylim(-200, 2500) +
-  # Add on Pearson correlation coefficient
-  annotate(geom="text", x=2000, y=1, 
-           label= paste0("r = ", pearson_AA, size = 6))
-
-# SS plot
-ggplot(lod_SS, 
-       aes(x = GE_expected, y = difference_molecules)) +
-  geom_errorbar(aes(ymin = difference_molecules_min, 
-                    ymax = difference_molecules_max),
-                alpha = 0.5) +
-  geom_point(pch = 21, fill = "white", size = 3, alpha = 0.5) +
-  theme_bw() +
-  theme(panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank()) +
-  labs(y = "Detected difference in molecules",
-       x = "Expected difference in molecules",
-       title = "HbSS spike-ins") +
-  xlim(-200, 2500) +
-  ylim(-200, 2500) +
-  # Add on Pearson correlation coefficient
-  annotate(geom="text", x=2000, y=1, 
-           label= paste0("r = ", pearson_SS, size = 6))
 
 #########################
 # Predict fetal genotypes
@@ -581,16 +489,16 @@ count(cfDNA_scd_outcomes %>%
 
 # True positives (8+10), false positives (1), false negatives (1),
 # true negatives (37)
-scd_sprt_data <- as.table(matrix(c(18, 1, 1, 37), nrow = 2, byrow = TRUE))
-scd_sprt_metrics <- epi.tests(scd_sprt_data, conf.level = 0.95)
+scd_zscore_data <- as.table(matrix(c(18, 1, 1, 37), nrow = 2, byrow = TRUE))
+scd_zscore_metrics <- epi.tests(scd_zscore_data, conf.level = 0.95)
 
 # SPRT: balanced vs unbalanced
 count(cfDNA_scd_outcomes, sprt_genotype_prediction, 
       mutation_genetic_info_fetus)
 
 # True positives (15+12), false positives (3), false negatives (1),
-# true negatives (48)
-scd_sprt_data <- as.table(matrix(c(27, 3, 1, 48), nrow = 2, byrow = TRUE))
+# true negatives (50)
+scd_sprt_data <- as.table(matrix(c(27, 3, 1, 50), nrow = 2, byrow = TRUE))
 scd_sprt_metrics <- epi.tests(scd_sprt_data, conf.level = 0.95)
 
 #########################
@@ -612,7 +520,7 @@ multiplot_x <- scale_x_continuous(limits = c(0,30500),
                      breaks = c(0, 4000, 10000, 20000 ,30000))
 
 ## Lines
-vertical_line <- geom_vline(xintercept = vf_assay_molecules_limit, 
+vertical_line <- geom_vline(xintercept = 4000, 
                             linetype = "dashed", alpha = 0.5)
 
 z3_line <- geom_hline(yintercept = gDNA_mean_vp+(3*gDNA_stand_dev_vp),
@@ -692,7 +600,6 @@ lod_plot <- ggplot(lod_data_merged,
   labs(x = "",
        y = "Variant fraction (%)",
        title = "ddPCR for gDNA mixtures")
-
 
 # Plot 3: cfDNA samples with z score analysis
 
@@ -782,5 +689,3 @@ ggsave(plot = multi_plot,
        units = "in",
        width = 12.5,
        height = 7)
-
-#########################
