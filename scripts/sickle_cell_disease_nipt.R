@@ -199,8 +199,6 @@ gDNA_stand_dev_vp <- sd(gDNA_scd_data_4000$variant_percent)
 # Coefficient of variation
 gDNA_cv_vp <- (gDNA_stand_dev_vp/gDNA_mean_vp) * 100
 
-
-
 #########################
 # gDNA variant fraction vs normal distribution
 #########################
@@ -214,10 +212,10 @@ gDNA_scd_data_4000 %>%
     panel.grid.major = element_blank(),
     panel.grid.minor = element_blank()) +
   labs(y = "Proportion of controls", x = "Variant percent (%)",
-       title = "Distrubution of HbAS gDNA controls")
-  #stat_function(fun = dnorm, n = nrow(gDNA_scd_data_4000), 
-                #args = list(mean = gDNA_mean_vp, sd = gDNA_stand_dev_vp),
-                #linetype = "dashed")
+       title = "Distrubution of HbAS gDNA controls") +
+  stat_function(fun = dnorm, n = nrow(gDNA_scd_data_4000), 
+                args = list(mean = gDNA_mean_vp, sd = gDNA_stand_dev_vp),
+                linetype = "dashed")
 
 #########################
 # Limit of detection study
@@ -362,6 +360,50 @@ cfDNA_scd_predictions <- cfDNA_scd_data %>%
       likelihood_ratio < 1/lr_threshold
       ~"HbAS",
       TRUE ~"inconclusive"))
+
+#########################
+# Checking SPRT simplification
+#########################
+
+sprt_check <- cfDNA_scd_data %>%
+  mutate(lr_old = calc_lr_autosomal(fetal_fraction,
+                                     major_allele_percent/100,
+                                     vf_assay_molecules),
+         lr_new = calc_lr_new(fetal_fraction,
+                              major_allele_percent/100,
+                              vf_assay_molecules),
+         
+         difference = abs(lr_old - lr_new),
+         
+         sprt_prediction_old = case_when(
+           lr_old > lr_threshold &
+             major_allele == "variant allele"
+           ~"HbSS",
+           lr_old > lr_threshold &
+             major_allele == "reference allele"
+           ~"HbAA",
+           lr_old < 1/lr_threshold
+           ~"HbAS",
+           TRUE ~"inconclusive"),
+         
+         sprt_prediction_new = case_when(
+           lr_new > lr_threshold &
+             major_allele == "variant allele"
+           ~"HbSS",
+           lr_new > lr_threshold &
+             major_allele == "reference allele"
+           ~"HbAA",
+           lr_new < 1/lr_threshold
+           ~"HbAS",
+           TRUE ~"inconclusive"),
+         
+         concordance_check = sprt_prediction_old == sprt_prediction_new) %>%
+  select(r_number, lr_old, lr_new, difference, 
+         sprt_prediction_old, sprt_prediction_new,
+         concordance_check)
+
+write.csv(sprt_check, "analysis_outputs/sprt_check.csv",
+          row.names = FALSE)
 
 #########################
 # Extraction volumes and invasive sampling
