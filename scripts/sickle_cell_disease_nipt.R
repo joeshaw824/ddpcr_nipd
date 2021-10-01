@@ -182,10 +182,11 @@ gDNA_scd_data_sub4000 <- gDNA_scd_data %>%
   filter(vf_assay_molecules < vf_assay_molecules_limit)
 
 # Get max and min values for the paper writeup
-max(gDNA_scd_data_4000$variant_percent)
-min(gDNA_scd_data_4000$variant_percent)
-max(gDNA_scd_data_sub4000$variant_percent)
 min(gDNA_scd_data_sub4000$variant_percent)
+max(gDNA_scd_data_sub4000$variant_percent)
+
+min(gDNA_scd_data_4000$variant_percent)
+max(gDNA_scd_data_4000$variant_percent)
 
 # vp is "variant percent"
 gDNA_mean_vp <- mean(gDNA_scd_data_4000$variant_percent)            
@@ -200,22 +201,22 @@ gDNA_stand_dev_vp <- sd(gDNA_scd_data_4000$variant_percent)
 gDNA_cv_vp <- (gDNA_stand_dev_vp/gDNA_mean_vp) * 100
 
 #########################
-# gDNA variant fraction vs normal distribution
+# gDNA variant fraction distribution
 #########################
 
-gDNA_scd_data_4000 %>%
-  ggplot(aes(x = variant_percent, y = )) +
-  geom_density() +
-  xlim(46, 54) +
+gDNA_distribution <- ggplot(gDNA_scd_data_4000, aes(x=variant_percent)) + 
+  geom_histogram(aes(y=..density..),
+                 binwidth= 0.4,
+                 colour="black", fill="white") +
+  #stat_function(fun = dnorm, n = nrow(gDNA_scd_data_4000), 
+                #args = list(mean = gDNA_mean_vp, sd = gDNA_stand_dev_vp),
+                #linetype = "dashed") +
   theme_bw() +
-  theme(
-    panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank()) +
+  xlim(46, 54) +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()) +
   labs(y = "Proportion of controls", x = "Variant percent (%)",
-       title = "Distrubution of HbAS gDNA controls") +
-  stat_function(fun = dnorm, n = nrow(gDNA_scd_data_4000), 
-                args = list(mean = gDNA_mean_vp, sd = gDNA_stand_dev_vp),
-                linetype = "dashed")
+       title = "Distrubution of HbAS gDNA controls above 4000 GE")
 
 #########################
 # Limit of detection study
@@ -362,50 +363,6 @@ cfDNA_scd_predictions <- cfDNA_scd_data %>%
       TRUE ~"inconclusive"))
 
 #########################
-# Checking SPRT simplification
-#########################
-
-sprt_check <- cfDNA_scd_data %>%
-  mutate(lr_old = calc_lr_autosomal(fetal_fraction,
-                                     major_allele_percent/100,
-                                     vf_assay_molecules),
-         lr_new = calc_lr_new(fetal_fraction,
-                              major_allele_percent/100,
-                              vf_assay_molecules),
-         
-         difference = abs(lr_old - lr_new),
-         
-         sprt_prediction_old = case_when(
-           lr_old > lr_threshold &
-             major_allele == "variant allele"
-           ~"HbSS",
-           lr_old > lr_threshold &
-             major_allele == "reference allele"
-           ~"HbAA",
-           lr_old < 1/lr_threshold
-           ~"HbAS",
-           TRUE ~"inconclusive"),
-         
-         sprt_prediction_new = case_when(
-           lr_new > lr_threshold &
-             major_allele == "variant allele"
-           ~"HbSS",
-           lr_new > lr_threshold &
-             major_allele == "reference allele"
-           ~"HbAA",
-           lr_new < 1/lr_threshold
-           ~"HbAS",
-           TRUE ~"inconclusive"),
-         
-         concordance_check = sprt_prediction_old == sprt_prediction_new) %>%
-  select(r_number, lr_old, lr_new, difference, 
-         sprt_prediction_old, sprt_prediction_new,
-         concordance_check)
-
-write.csv(sprt_check, "analysis_outputs/sprt_check.csv",
-          row.names = FALSE)
-
-#########################
 # Extraction volumes and invasive sampling
 #########################
 
@@ -472,7 +429,7 @@ max(cfDNA_scd_outcomes$fetal_percent)
 median(cfDNA_scd_outcomes$fetal_percent)
 
 #########################
-# Results table
+# Supplementary data table
 #########################
 
 scd_cohort_table <- cfDNA_scd_outcomes %>%
@@ -514,16 +471,36 @@ scd_cohort_table <- cfDNA_scd_outcomes %>%
     "variant_allele_molecules" = variant_molecules,
     "reference_allele_molecules" = reference_molecules,
     "maternal_allele_molecules" = maternal_molecules,
-    "paternal_allele_molecules" = paternal_molecules)
+    "paternal_allele_molecules" = paternal_molecules) %>%
+  
+  # Change z_score_genotype_prediction and sprt_genotype_prediction to
+  # character vectors
+  mutate(z_score_genotype_prediction = as.character(z_score_genotype_prediction),
+         sprt_genotype_prediction = as.character(sprt_genotype_prediction))
 
 
 # Change the table to exclude HbAC and twin pregnancy
+scd_cohort_table[scd_cohort_table$r_number == 17004, 
+                 "z_score_genotype_prediction"] <- "excluded: HbAC sample"
+
+scd_cohort_table[scd_cohort_table$r_number == 17004, 
+                 "sprt_genotype_prediction"] <- "excluded: HbAC sample"
+
 scd_cohort_table[scd_cohort_table$r_number == 17004, "outcome_zscore"] <- 
   "excluded: HbAC sample"
+
 scd_cohort_table[scd_cohort_table$r_number == 17004, "outcome_sprt"] <- 
   "excluded: HbAC sample"
+
+scd_cohort_table[scd_cohort_table$r_number == 20915, 
+                 "z_score_genotype_prediction"] <- "excluded: twin pregnancy"
+
+scd_cohort_table[scd_cohort_table$r_number == 20915, 
+                 "sprt_genotype_prediction"] <- "excluded: twin pregnancy"
+
 scd_cohort_table[scd_cohort_table$r_number == 20915, "outcome_zscore"] <- 
   "excluded: twin pregnancy"
+
 scd_cohort_table[scd_cohort_table$r_number == 20915, "outcome_sprt"] <- 
   "excluded: twin pregnancy"
 
@@ -537,10 +514,17 @@ write.csv(scd_cohort_table,
 # Sensitivity and specificity
 #########################
 
-# Z score: balanced vs unbalanced
+# Exclude the HbAC and twin pregnancy samples
+excluded_samples <- c(20915, 17004)
+
+# Z score: balanced vs unbalanced. These numbers should match those
+# in Figure 1.
 count(cfDNA_scd_outcomes %>%
-        filter(vf_assay_molecules > 4000 &
-                 fetal_percent > 4), z_score_genotype_prediction, 
+        filter(!r_number %in% excluded_samples &
+          vf_assay_molecules > 4000 &
+                 fetal_percent > 4 &
+                 z_score_genotype_prediction != "inconclusive"), 
+      z_score_genotype_prediction, 
       mutation_genetic_info_fetus)
 
 # True positives (8+10), false positives (1), false negatives (1),
@@ -548,8 +532,12 @@ count(cfDNA_scd_outcomes %>%
 scd_zscore_data <- as.table(matrix(c(18, 1, 1, 37), nrow = 2, byrow = TRUE))
 scd_zscore_metrics <- epi.tests(scd_zscore_data, conf.level = 0.95)
 
-# SPRT: balanced vs unbalanced
-count(cfDNA_scd_outcomes, sprt_genotype_prediction, 
+# SPRT: balanced vs unbalanced. These numbers should match those
+# in Figure 1.
+count(cfDNA_scd_outcomes %>%
+        filter(!r_number %in% excluded_samples &
+                 sprt_genotype_prediction != "inconclusive"),
+      sprt_genotype_prediction, 
       mutation_genetic_info_fetus)
 
 # True positives (15+12), false positives (3), false negatives (1),
@@ -663,7 +651,8 @@ cfdna_z_score_plot <- cfDNA_scd_outcomes %>%
   filter(!r_number %in% c("20915", "17004")) %>%
            mutate(mutation_genetic_info_fetus = 
                     paste0(mutation_genetic_info_fetus, " fetus"),
-                  mutation_genetic_info_fetus = factor(mutation_genetic_info_fetus,
+                  mutation_genetic_info_fetus = 
+                    factor(mutation_genetic_info_fetus,
                                  levels = c("HbSS fetus","HbAS fetus",
                                             "HbAA fetus")),
                   outcome_zscore = factor(outcome_zscore, levels = c(
@@ -745,3 +734,5 @@ ggsave(plot = multi_plot,
        units = "in",
        width = 12.5,
        height = 7)
+
+#########################

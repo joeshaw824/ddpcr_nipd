@@ -97,16 +97,6 @@ calc_lr_autosomal <- function(fetal_fraction, overrep_fraction, total_copies) {
   return(lr)
 }
 
-# Write a new function for George's calculation modifications.
-
-calc_lr_new <- function(fetal_fraction, overrep_fraction, total_copies) {
-  q1 <- 0.5+(fetal_fraction/2)
-  delta <- 1 - fetal_fraction
-  gamma <- (1 + fetal_fraction) / (1 - fetal_fraction)
-  lr <- (gamma^overrep_fraction * delta)^total_copies
-  return(lr)
-}
-
 # These functions calculate the SPRT thresholds with likelihood ratio 
 # supplied and fetal fraction supplied as a decimal.
 calc_SS_boundary <- function(total_copies, ff, lr) {

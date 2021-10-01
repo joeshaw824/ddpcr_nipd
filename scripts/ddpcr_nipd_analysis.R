@@ -274,7 +274,7 @@ ddpcr_mcmc_analysed <- ddpcr_with_fits %>%
     p_G1 < mcmc_threshold ~"inconclusive"))
 
 #########################
-# Collation of results
+# Collation of results with MCMC
 #########################
 
 # This stage joins the SPRT and MCMC results together, and then compares
@@ -309,6 +309,10 @@ ddpcr_nipd_unblinded <- left_join(
 write.csv(ddpcr_nipd_unblinded, "analysis_outputs/ddpcr_nipd_unblinded_20210811.csv",
           row.names = FALSE)
 
+#########################
+# Collation of results without MCMC
+#########################
+
 # If you don't want to run the MCMC pipeline every time, 
 # just compare using SPRT
 
@@ -319,15 +323,18 @@ ddpcr_sprt_unblinded <- left_join(
     mutate(r_number = as.character(r_number)) %>%
     filter(r_number %in% ddpcr_sprt_analysed$r_number) %>%
     select(r_number, study_id, gestation_weeks, gestation_days, 
-           Gestation_total_weeks, gestation_character, 
+           gestation_total_weeks, gestation_character, 
            date_of_blood_sample, vacutainer, mutation_genetic_info_fetus, 
-           Partner_sample_available, original_plasma_vol, 
+           partner_sample_available, original_plasma_vol, 
            tubes_plasma_current, report_acquired),
   by = "r_number")
 
 #########################
 # Plot bespoke cohort cases
 #########################
+
+# "Bespoke" is any assay other than the HBB c.20A>T assay for sickle cell
+# disease.
 
 bespoke_cases <- ddpcr_sprt_analysed %>%
   filter(vf_assay != "HBB c.20A>T")
