@@ -380,6 +380,8 @@ invasive_sampling <- read.csv("resources/confirmation_testing.csv")
 # Compare predictions against Biobank
 #########################
 
+RAPID_biobank <- load_biobank()
+
 cfDNA_scd_outcomes <- left_join(
   cfDNA_scd_predictions,
   RAPID_biobank %>%

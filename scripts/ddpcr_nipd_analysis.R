@@ -40,6 +40,8 @@ sample_wells <- read.csv("resources/sample_wells.csv",
 source("functions/ddPCR_nipd_functions.R")
 source("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/RAPID_project_biobank/scripts/RAPID_biobank.R")
 
+RAPID_biobank <- load_biobank()
+
 #########################
 # cfDNA SPRT analysis
 #########################
@@ -277,6 +279,8 @@ ddpcr_mcmc_analysed <- ddpcr_with_fits %>%
 # Collation of results with MCMC
 #########################
 
+RAPID_biobank <- load_biobank()
+
 # This stage joins the SPRT and MCMC results together, and then compares
 # them to the diagnostic results from RAPID Biobank.
 
@@ -337,10 +341,14 @@ ddpcr_sprt_unblinded <- left_join(
 # disease.
 
 bespoke_cases <- ddpcr_sprt_analysed %>%
-  filter(vf_assay != "HBB c.20A>T")
+  # Apply quality control filters to select only cases with 
+  # sufficient total cfDNA (over 3000 molecules detected)
+  filter(vf_assay != "HBB c.20A>T" &
+           vf_assay_molecules >= 3000)
 
 bespoke_wells <- sample_wells %>%
-  filter(cfdna_sample %in% bespoke_cases$r_number)
+  filter(cfdna_sample %in% bespoke_cases$r_number) %>%
+  arrange(cfdna_sample)
 
 bespoke_plots <-list()
 
@@ -358,7 +366,7 @@ for (i in bespoke_wells$cfdna_sample) {
 }
 
 # Export bespoke cohort plots a single pdf
-ggexport(plotlist = bespoke_plots, filename = "plots/bespoke_cohort.pdf",
+ggexport(plotlist = bespoke_plots, filename = "plots/bespoke_cohort_qc.pdf",
          width=15, height=8, res=300)
 
 #########################
@@ -505,3 +513,10 @@ IDS_only <- ddpcr_sprt_analysed %>%
          amplifiability_ZFXY = (ff_assay_molecules/ZFXY_expected)*100) %>%
   select(vf_assay_molecules, IDS_expected, ff_assay_molecules,
          ZFXY_expected, amplifiability_IDS, amplifiability_ZFXY)
+
+#########################
+# Cystic fibrosis: haplotype dosage vs mutation dosage
+#########################
+
+
+

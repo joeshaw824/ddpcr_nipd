@@ -1,0 +1,175 @@
+assay,assay_type,inheritance_chromosomal,inheritance_pattern,target,target_category,fluorophore
+rs1941702,ff_assay,NA,NA,rs1941702_G,ff_allele1,FAM
+rs1941702,ff_assay,NA,NA,rs1941702_C,ff_allele2,VIC
+rs193588,ff_assay,NA,NA,rs193588_G,ff_allele1,FAM
+rs193588,ff_assay,NA,NA,rs193588_C,ff_allele2,VIC
+rs38308,ff_assay,NA,NA,rs38308_G,ff_allele1,FAM
+rs38308,ff_assay,NA,NA,rs38308_C,ff_allele2,VIC
+rs4405424,ff_assay,NA,NA,rs4405424_G,ff_allele1,FAM
+rs4405424,ff_assay,NA,NA,rs4405424_C,ff_allele2,VIC
+rs10091913,ff_assay,NA,NA,rs10091913_G,ff_allele1,FAM
+rs10091913,ff_assay,NA,NA,rs10091913_C,ff_allele2,VIC
+rs2797820,ff_assay,NA,NA,rs2797820_G,ff_allele1,FAM
+rs2797820,ff_assay,NA,NA,rs2797820_C,ff_allele2,VIC
+rs7549293,ff_assay,NA,NA,rs7549293_C,ff_allele1,FAM
+rs7549293,ff_assay,NA,NA,rs7549293_G ,ff_allele2,VIC
+rs565522,ff_assay,NA,NA,rs565522_T,ff_allele1,FAM
+rs565522,ff_assay,NA,NA,rs565522_C,ff_allele2,VIC
+rs2737654,ff_assay,NA,NA,rs2737654_T,ff_allele1,FAM
+rs2737654,ff_assay,NA,NA,rs2737654_G,ff_allele2,VIC
+rs2576241,ff_assay,NA,NA,rs2576241_C,ff_allele1,FAM
+rs2576241,ff_assay,NA,NA,rs2576241_A,ff_allele2,VIC
+rs1160680,ff_assay,NA,NA,rs1160680_A,ff_allele1,FAM
+rs1160680,ff_assay,NA,NA,rs1160680_G,ff_allele2,VIC
+rs701232,ff_assay,NA,NA,rs701232_G,ff_allele1,FAM
+rs701232,ff_assay,NA,NA,rs701232_A,ff_allele2,VIC
+rs1914748,ff_assay,NA,NA,rs1914748_C,ff_allele1,FAM
+rs1914748,ff_assay,NA,NA,rs1914748_T,ff_allele2,VIC
+rs12694624,ff_assay,NA,NA,rs12694624_A,ff_allele1,FAM
+rs12694624,ff_assay,NA,NA,rs12694624_G,ff_allele2,VIC
+rs1399629,ff_assay,NA,NA,rs1399629_G,ff_allele1,FAM
+rs1399629,ff_assay,NA,NA,rs1399629_A,ff_allele2,VIC
+rs2276702,ff_assay,NA,NA,rs2276702_A,ff_allele1,FAM
+rs2276702,ff_assay,NA,NA,rs2276702_G,ff_allele2,VIC
+rs6781236,ff_assay,NA,NA,rs6781236_G,ff_allele1,FAM
+rs6781236,ff_assay,NA,NA,rs6781236_A,ff_allele2,VIC
+rs7653090,ff_assay,NA,NA,rs7653090_A,ff_allele1,FAM
+rs7653090,ff_assay,NA,NA,rs7653090_G,ff_allele2,VIC
+rs357485,ff_assay,NA,NA,rs357485_C,ff_allele1,FAM
+rs357485,ff_assay,NA,NA,rs357485_T,ff_allele2,VIC
+rs9290003,ff_assay,NA,NA,rs9290003_T,ff_allele1,FAM
+rs9290003,ff_assay,NA,NA,rs9290003_C,ff_allele2,VIC
+rs6802328,ff_assay,NA,NA,rs6802328_C,ff_allele1,FAM
+rs6802328,ff_assay,NA,NA,rs6802328_G,ff_allele2,VIC
+rs17017347,ff_assay,NA,NA,rs17017347_A,ff_allele1,FAM
+rs17017347,ff_assay,NA,NA,rs17017347_G,ff_allele2,VIC
+rs10027026,ff_assay,NA,NA,rs10027026_G,ff_allele1,FAM
+rs10027026,ff_assay,NA,NA,rs10027026_A,ff_allele2,VIC
+rs4975819,ff_assay,NA,NA,rs4975819_C,ff_allele1,FAM
+rs4975819,ff_assay,NA,NA,rs4975819_T,ff_allele2,VIC
+rs6899022,ff_assay,NA,NA,rs6899022_C,ff_allele1,FAM
+rs6899022,ff_assay,NA,NA,rs6899022_A,ff_allele2,VIC
+rs1185246,ff_assay,NA,NA,rs1185246_C,ff_allele1,FAM
+rs1185246,ff_assay,NA,NA,rs1185246_T,ff_allele2,VIC
+rs6877199,ff_assay,NA,NA,rs6877199_C,ff_allele1,FAM
+rs6877199,ff_assay,NA,NA,rs6877199_A,ff_allele2,VIC
+rs13218440,ff_assay,NA,NA,rs13218440_G,ff_allele1,FAM
+rs13218440,ff_assay,NA,NA,rs13218440_A,ff_allele2,VIC
+rs6924733,ff_assay,NA,NA,rs6924733_G,ff_allele1,FAM
+rs6924733,ff_assay,NA,NA,rs6924733_T,ff_allele2,VIC
+rs2535290,ff_assay,NA,NA,rs2535290_A,ff_allele1,FAM
+rs2535290,ff_assay,NA,NA,rs2535290_G,ff_allele2,VIC
+rs172275,ff_assay,NA,NA,rs172275_A,ff_allele1,FAM
+rs172275,ff_assay,NA,NA,rs172275_G,ff_allele2,VIC
+rs4644087,ff_assay,NA,NA,rs4644087_A,ff_allele1,FAM
+rs4644087,ff_assay,NA,NA,rs4644087_C,ff_allele2,VIC
+rs12690832,ff_assay,NA,NA,rs12690832_C,ff_allele1,FAM
+rs12690832,ff_assay,NA,NA,rs12690832_T,ff_allele2,VIC
+rs9792284,ff_assay,NA,NA,rs9792284_A,ff_allele1,FAM
+rs9792284,ff_assay,NA,NA,rs9792284_T,ff_allele2,VIC
+rs7827391,ff_assay,NA,NA,rs7827391_T,ff_allele1,FAM
+rs7827391,ff_assay,NA,NA,rs7827391_C,ff_allele2,VIC
+rs2319150,ff_assay,NA,NA,rs2319150_T,ff_allele1,FAM
+rs2319150,ff_assay,NA,NA,rs2319150_G,ff_allele2,VIC
+rs1410059,ff_assay,NA,NA,rs1410059_T,ff_allele1,FAM
+rs1410059,ff_assay,NA,NA,rs1410059_C,ff_allele2,VIC
+rs10821808,ff_assay,NA,NA,rs10821808_G,ff_allele1,FAM
+rs10821808,ff_assay,NA,NA,rs10821808_A,ff_allele2,VIC
+rs2370764,ff_assay,NA,NA,rs2370764_A,ff_allele1,FAM
+rs2370764,ff_assay,NA,NA,rs2370764_G,ff_allele2,VIC
+rs1498553,ff_assay,NA,NA,rs1498553_C,ff_allele1,FAM
+rs1498553,ff_assay,NA,NA,rs1498553_T,ff_allele2,VIC
+rs2256111,ff_assay,NA,NA,rs2256111_A,ff_allele1,FAM
+rs2256111,ff_assay,NA,NA,rs2256111_G,ff_allele2,VIC
+rs12423234,ff_assay,NA,NA,rs12423234_G,ff_allele1,FAM
+rs12423234,ff_assay,NA,NA,rs12423234_A,ff_allele2,VIC
+rs7325978,ff_assay,NA,NA,rs7325978_T,ff_allele1,FAM
+rs7325978,ff_assay,NA,NA,rs7325978_C,ff_allele2,VIC
+rs3742560,ff_assay,NA,NA,rs3742560_G,ff_allele1,FAM
+rs3742560,ff_assay,NA,NA,rs3742560_A,ff_allele2,VIC
+rs12148532,ff_assay,NA,NA,rs12148532_C,ff_allele1,FAM
+rs12148532,ff_assay,NA,NA,rs12148532_T,ff_allele2,VIC
+rs249290,ff_assay,NA,NA,rs249290_G,ff_allele1,FAM
+rs249290,ff_assay,NA,NA,rs249290_A,ff_allele2,VIC
+rs1544724,ff_assay,NA,NA,rs1544724_T,ff_allele1,FAM
+rs1544724,ff_assay,NA,NA,rs1544724_G,ff_allele2,VIC
+rs3760269,ff_assay,NA,NA,rs3760269_T,ff_allele1,FAM
+rs3760269,ff_assay,NA,NA,rs3760269_G,ff_allele2,VIC
+rs1736442,ff_assay,NA,NA,rs1736442_T,ff_allele1,FAM
+rs1736442,ff_assay,NA,NA,rs1736442_C,ff_allele2,VIC
+rs7233004,ff_assay,NA,NA,rs7233004_G,ff_allele1,FAM
+rs7233004,ff_assay,NA,NA,rs7233004_T,ff_allele2,VIC
+rs2304102,ff_assay,NA,NA,rs2304102_G,ff_allele1,FAM
+rs2304102,ff_assay,NA,NA,rs2304102_A,ff_allele2,VIC
+rs4801945,ff_assay,NA,NA,rs4801945_C,ff_allele1,FAM
+rs4801945,ff_assay,NA,NA,rs4801945_A,ff_allele2,VIC
+rs271981,ff_assay,NA,NA,rs271981_C,ff_allele1,FAM
+rs271981,ff_assay,NA,NA,rs271981_T,ff_allele2,VIC
+HBB c.20A>T,vf_assay,autosomal,recessive,HbS,variant,FAM
+HBB c.20A>T,vf_assay,autosomal,recessive,HbA,reference,VIC
+ZFXY,ff_assay,NA,NA,ZFX,ff_allele1,FAM
+ZFXY,ff_assay,NA,NA,ZFY,ff_allele2,VIC
+F8 c.6544C>T,vf_assay,x_linked,recessive,F8 c.6544_T,variant,
+F8 c.6544C>T,vf_assay,x_linked,recessive,F8 c.6544_C,reference,
+ATP7A c.2916+1G>A,vf_assay,x_linked,recessive,ATP7A c.2916+1_A,variant,
+ATP7A c.2916+1G>A,vf_assay,x_linked,recessive,ATP7A c.2916+1_G,reference,
+IDS c.879+1G>T,vf_assay,x_linked,recessive,IDS c.879+1_T,variant,
+IDS c.879+1G>T,vf_assay,x_linked,recessive,IDS c.879+1_G,reference,
+ATP7A c.1949G>A,vf_assay,x_linked,recessive,ATP7A c.1949_A,variant,
+ATP7A c.1949G>A,vf_assay,x_linked,recessive,ATP7A c.1949_G,reference,
+F8 c.6046C>T,vf_assay,x_linked,recessive,F8 c.6046_T,variant,
+F8 c.6046C>T,vf_assay,x_linked,recessive,F8 c.6046_C,reference,
+F8 c.1409C>T,vf_assay,x_linked,recessive,F8 c.1409_T,variant,
+F8 c.1409C>T,vf_assay,x_linked,recessive,F8 c.1409_C,reference,
+F8 c.6686T>C,vf_assay,x_linked,recessive,F8 c.6686_C,variant,
+F8 c.6686T>C,vf_assay,x_linked,recessive,F8 c.6686_T,reference,
+FGFR3 c.1138G>A,vf_assay,autosomal,recessive,FGFR3 c.1138_A,variant,
+FGFR3 c.1138G>A,vf_assay,autosomal,recessive,FGFR3 c.1138_G,reference,
+FOXP3 c.1010G>A,vf_assay,x_linked,recessive,FOXP3 c.1010_A,variant,
+FOXP3 c.1010G>A,vf_assay,x_linked,recessive,FOXP3 c.1010_G,reference,
+F8 c.1595G>A,vf_assay,x_linked,recessive,F8 c.1595_A,variant,
+F8 c.1595G>A,vf_assay,x_linked,recessive,F8 c.1595_G,reference,
+FLNA c.5169T>G,vf_assay,x_linked,recessive,FLNA c.5169_G,variant,
+FLNA c.5169T>G,vf_assay,x_linked,recessive,FLNA c.5169_T,reference,
+F8 c.5999G>T,vf_assay,x_linked,recessive,F8 c.5999_T,variant,
+F8 c.5999G>T,vf_assay,x_linked,recessive,F8 c.5999_G,reference,
+L1CAM c.23T>A,vf_assay,x_linked,recessive,L1CAM c.23_A,variant,
+L1CAM c.23T>A,vf_assay,x_linked,recessive,L1CAM c.23_T,reference,
+NDP c.163T>C ,vf_assay,x_linked,recessive,NDP c.163_C,variant,
+NDP c.163T>C ,vf_assay,x_linked,recessive,NDP c.163_T,reference,
+XIAP c.356_359del,vf_assay,x_linked,recessive,XIAP c.356_359del,variant,
+XIAP c.356_359del,vf_assay,x_linked,recessive,XIAP c.356_359,reference,
+COL4A5 c.1295G>A,vf_assay,x_linked,dominant,COL4A5 c.1295_A,variant,
+COL4A5 c.1295G>A,vf_assay,x_linked,dominant,COL4A5 c.1295_G,reference,
+ABCD1 c.3G>A,vf_assay,x_linked,recessive,ABCD1 c.3_A,variant,
+ABCD1 c.3G>A,vf_assay,x_linked,recessive,ABCD1 c.3_G,reference,
+VHL c.583C>T,vf_assay,autosomal,dominant,VHL c.583_T,variant,
+VHL c.583C>T,vf_assay,autosomal,dominant,VHL c.583_C,reference,
+FGFR2 c.1024T>A,vf_assay,autosomal,dominant,FGFR2 c.1024_A,variant,
+FGFR2 c.1024T>A,vf_assay,autosomal,dominant,FGFR2 c.1024_T,reference,
+NF1 c.6792 C>A ,vf_assay,autosomal,dominant,NF1 c.6792_A,variant,
+NF1 c.6792 C>A ,vf_assay,autosomal,dominant,NF1 c.6792_C,reference,
+TCOF1 c.3611 C>A ,vf_assay,autosomal,dominant,TCOF1 c.3611_A,variant,
+TCOF1 c.3611 C>A ,vf_assay,autosomal,dominant,TCOF1 c.3611_C,reference,
+ADAR c.2997 G>T,vf_assay,autosomal,recessive,ADAR c.2997_T,variant,
+ADAR c.2997 G>T,vf_assay,autosomal,recessive,ADAR c.2997_G,reference,
+RNASEH2C c.205C>T,vf_assay,autosomal,recessive,RNASEH2C c.205_T,variant,
+RNASEH2C c.205C>T,vf_assay,autosomal,recessive,RNASEH2C c.205_C,reference,
+ALPL c.331G>A,vf_assay,autosomal,dominant,ALPL c.331_A,variant,
+ALPL c.331G>A,vf_assay,autosomal,dominant,ALPL c.331_G,reference,
+IDS c.182_189del,vf_assay,x_linked,recessive,IDS c.182_189del,variant,VIC
+IDS c.182_189del,vf_assay,x_linked,recessive,IDS c.182_189,reference,FAM
+MAGED2 c.1426C>T,vf_assay,x_linked,recessive,MAGED2 c.1426_T,variant,FAM
+MAGED2 c.1426C>T,vf_assay,x_linked,recessive,MAGED2 c.1426_C,reference,VIC
+OTC c.905A>G,vf_assay,x_linked,recessive,OTC c.905_G,variant,
+OTC c.905A>G,vf_assay,x_linked,recessive,OTC c.905_A,reference,
+CHM c.1342C>T,vf_assay,x_linked,recessive,CHM c.1342_T,variant,
+CHM c.1342C>T,vf_assay,x_linked,recessive,CHM c.1342_C,reference,
+ADA c.556G>A,vf_assay,autosomal,recessive,ADA c.556_A,variant,VIC
+ADA c.556G>A,vf_assay,autosomal,recessive,ADA c.556_G,reference,FAM
+PMM2 c.691G>A ,vf_assay,autosomal,recessive,PMM2 c.691_A,variant,
+PMM2 c.691G>A ,vf_assay,autosomal,recessive,PMM2 c.691_G,reference,
+CFTR c.1521_1523del,vf_assay,autosomal,recessive,CFTR c.1521_1523del,variant,VIC
+CFTR c.1521_1523del,vf_assay,autosomal,recessive,CFTR c.1521_1523,reference,FAM
+HBB c.93-21G>A,vf_assay,autosomal,recessive,HBB c.93-21_A,variant,FAM
+HBB c.93-21G>A,vf_assay,autosomal,recessive,HBB c.93-21_G,reference,VIC
