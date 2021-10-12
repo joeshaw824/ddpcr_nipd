@@ -1,13 +1,14 @@
 ################################################################################
 ## ddPCR for Non Invasive Prenatal Diagnosis (NIPD)
-## January 2021
+## November 2021
 ## Joseph.Shaw@gosh.nhs.uk
 ## This is an analysis script for the prediction of fetal genotypes from 
 ## cfDNA testing using ddPCR for maternally-inherited
 ## variants. This includes modules for analysis of ddPCR data
 ## using the sequential probability ratio test (SPRT) (Lo et al,
-## 2008; PMID:  17664418), and via MonteCarlo Markov Chain 
-## (MCMC) analysis (Caswell et al, 2020; PMID:  32533152).
+## 2008; PMID:  17664418), MonteCarlo Markov Chain 
+## (MCMC) analysis (Caswell et al, 2020; PMID:  32533152) and z score
+## analysis (Chiu et al, 2008; PMID:  19073917).
 ## The MCMC analysis section  is compiled from scripts and
 ## models supplied by Tristan Snowsill (Exeter).
 ################################################################################
@@ -47,7 +48,7 @@ RAPID_biobank <- load_biobank()
 #########################
 
 # Set likelihood ratio threshold
-lr_threshold <- 250
+lr_threshold <- 8
 
 ddpcr_sprt_analysed <- ff_calculations(
   var_ref_calculations(cfdna_ddpcr_data)) %>% 
@@ -157,7 +158,7 @@ initialise_chains_recessive <- function() list(rho = runif(1, 0.1, 0.5),
 mcmc_threshold <- 0.95
 
 # Analyse the entire ddPCR cohort using Tristan's MCMC pipeline.
-# (11/06/2021: this takes approximately 13 minutes)
+# (12/10/2021: this takes approximately 14.5 minutes)
 # This generates the probabilities for the fetal genotype based on 
 # the inheritance pattern of the variant.
 
@@ -276,65 +277,143 @@ ddpcr_mcmc_analysed <- ddpcr_with_fits %>%
     p_G1 < mcmc_threshold ~"inconclusive"))
 
 #########################
-# Collation of results with MCMC
+# Collation of SPRT and MCMC results for all samples
 #########################
 
-RAPID_biobank <- load_biobank()
-
-# This stage joins the SPRT and MCMC results together, and then compares
-# them to the diagnostic results from RAPID Biobank.
-
-# Samples to exlude:
-# 13262 - this sample had contamination
-# 17004 - this sample was actually HbAC
-# 20915 - this sample was from a twin pregnancy
-samples_to_exclude <- c(13262, 17004, 20915)
-
-ddpcr_analysed <- left_join(
+ddpcr_sprt_mcmc <- left_join(
   ddpcr_sprt_analysed,
   ddpcr_mcmc_analysed %>%
     select(r_number, p_G0, p_G1, p_G2, p_G3, mcmc_prediction),
   by = "r_number") %>%
-  filter(!r_number %in% samples_to_exclude)
+  left_join(RAPID_biobank %>%
+              # Change r_number to a character to match ddpcr_sprt_analysed
+              mutate(r_number = as.character(r_number)) %>%
+              filter(r_number %in% ddpcr_sprt_analysed$r_number) %>%
+              select(r_number, study_id, gestation_weeks, gestation_days, 
+                     gestation_total_weeks, gestation_character, 
+                     date_of_blood_sample, vacutainer, mutation_genetic_info_fetus, 
+                     partner_sample_available, original_plasma_vol, 
+                     tubes_plasma_current, report_acquired),
+            by = "r_number") %>%
+  
+  # Change the nomenclature of the outcomes for sickle cell disease
+  mutate(fetal_genotype = case_when(
+    mutation_genetic_info_fetus == "HbSS" ~"homozygous variant",
+    mutation_genetic_info_fetus == "HbAS" ~"heterozygous",
+    mutation_genetic_info_fetus == "HbAA" ~"homozygous reference",
+    TRUE ~mutation_genetic_info_fetus),
+    
+    # Compare predictions to invasive testing
+    outcome_sprt = case_when(
+      sprt_prediction == "inconclusive" ~"inconclusive",
+      sprt_prediction == fetal_genotype
+      ~"correct",
+      TRUE ~"incorrect"),
+    
+    outcome_mcmc = case_when(
+      mcmc_prediction == "inconclusive" ~"inconclusive",
+      mcmc_prediction == fetal_genotype
+      ~"correct",
+      TRUE ~"incorrect"))
 
-ddpcr_nipd_unblinded <- left_join(
-  ddpcr_analysed,
-  RAPID_biobank %>%
-    # Change r_number to a character to match ddpcr_analysed
-    mutate(r_number = as.character(r_number)) %>%
-    filter(r_number %in% ddpcr_analysed$r_number) %>%
-    select(r_number, study_id, gestation_weeks, gestation_days, 
-           Gestation_total_weeks, gestation_character, 
-           date_of_blood_sample, vacutainer, mutation_genetic_info_fetus, 
-           Partner_sample_available, original_plasma_vol, 
-           tubes_plasma_current, report_acquired),
-  by = "r_number")
-
-write.csv(ddpcr_nipd_unblinded, "analysis_outputs/ddpcr_nipd_unblinded_20210811.csv",
+write.csv(ddpcr_sprt_mcmc, 
+          file = (paste0("analysis_outputs/total_cohort_sprt_mcmc",
+                         format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv")),
           row.names = FALSE)
 
 #########################
-# Collation of results without MCMC
+# Select bespoke case parental data for z score analysis
 #########################
 
-# If you don't want to run the MCMC pipeline every time, 
-# just compare using SPRT
+bespoke_gdna <- parent_gDNA_var_ref %>%
+  filter(sample %in% controls$sample & 
+           # Remove sickle cell disease samples
+           vf_assay != "HBB c.20A>T") %>%
+  mutate(sample_type = "het gDNA") %>%
+  filter(variant_percent > 40 &
+           vf_assay_molecules < 25000)
 
-ddpcr_sprt_unblinded <- left_join(
-  ddpcr_sprt_analysed,
-  RAPID_biobank %>%
-    # Change r_number to a character to match ddpcr_analysed
-    mutate(r_number = as.character(r_number)) %>%
-    filter(r_number %in% ddpcr_sprt_analysed$r_number) %>%
-    select(r_number, study_id, gestation_weeks, gestation_days, 
-           gestation_total_weeks, gestation_character, 
-           date_of_blood_sample, vacutainer, mutation_genetic_info_fetus, 
-           partner_sample_available, original_plasma_vol, 
-           tubes_plasma_current, report_acquired),
-  by = "r_number")
+# vp is "variant percent"
+bespoke_gdna_mean_vp <- mean(bespoke_gdna$variant_percent)            
+
+# Find standard deviation of variant percent
+bespoke_gdna_sd_vp <- sd(bespoke_gdna$variant_percent)
+
+# Coefficient of variation
+bespoke_gdna_cv_vp <- (bespoke_gdna_sd_vp/bespoke_gdna_mean_vp) * 100
 
 #########################
-# Plot bespoke cohort cases
+# cfDNA z score analysis
+#########################
+
+z_score_imbalance_threshold <- 3
+z_score_balance_threshold <- 2
+
+bespoke_z_score <- ddpcr_sprt_mcmc %>%
+  filter(vf_assay != "HBB c.20A>T"  &
+         # Remove 30116 as we don't have an outcome (yet)
+         r_number != "30116") %>%
+  mutate(z_score = (variant_percent-bespoke_gdna_mean_vp) / bespoke_gdna_sd_vp,
+         
+         z_score_prediction = case_when(
+           
+           # Exclude cases with low cffDNA
+           fetal_percent < 4 ~"low fetal fraction",
+           
+           # Predict fetal genotypes for X-linked cases
+           inheritance_chromosomal == "x_linked" &
+             z_score > z_score_imbalance_threshold ~ "hemizygous variant",
+           
+           inheritance_chromosomal == "x_linked" &
+             z_score < -z_score_imbalance_threshold ~ "hemizygous reference",
+           
+           inheritance_chromosomal == "x_linked" &
+             z_score > -z_score_imbalance_threshold &
+             z_score < z_score_imbalance_threshold ~ "inconclusive",
+           
+           # Predict fetal genotypes for autosomal cases
+           inheritance_chromosomal == "autosomal" &
+             z_score > z_score_imbalance_threshold ~ "homozygous variant",
+           
+           inheritance_chromosomal == "autosomal" &
+             z_score < -z_score_imbalance_threshold ~ "homozygous reference",
+           
+           inheritance_chromosomal == "autosomal" &
+             z_score < z_score_balance_threshold &
+             z_score > -z_score_balance_threshold ~ "heterozygous",
+           
+           inheritance_chromosomal == "autosomal" &
+             z_score < z_score_imbalance_threshold &
+             z_score > z_score_balance_threshold ~ "inconclusive",
+           
+           inheritance_chromosomal == "autosomal" &
+             z_score > -z_score_imbalance_threshold &
+             z_score < -z_score_balance_threshold ~ "inconclusive"),
+         
+         # Compare z score results to invasive testing
+         
+         outcome_zscore = case_when(
+           z_score_prediction == "inconclusive" ~"inconclusive",
+           z_score_prediction == "low fetal fraction" ~"inconclusive",
+           z_score_prediction == mutation_genetic_info_fetus
+           ~"correct",
+           TRUE ~"incorrect"),
+         
+         outcome_zscore = factor(outcome_zscore, levels = c(
+           "correct", "incorrect", "inconclusive")),
+         
+         mutation_genetic_info_fetus = 
+           paste0(mutation_genetic_info_fetus, " fetus"),
+         
+         mutation_genetic_info_fetus = factor(mutation_genetic_info_fetus,
+                                    levels = c("hemizygous variant fetus",
+                                               "homozygous variant fetus",
+                                               "heterozygous fetus",
+                                               "homozygous reference fetus",
+                                               "hemizygous reference fetus")))
+
+#########################
+# Individual plots for bespoke cases
 #########################
 
 # "Bespoke" is any assay other than the HBB c.20A>T assay for sickle cell
@@ -368,6 +447,129 @@ for (i in bespoke_wells$cfdna_sample) {
 # Export bespoke cohort plots a single pdf
 ggexport(plotlist = bespoke_plots, filename = "plots/bespoke_cohort_qc.pdf",
          width=15, height=8, res=300)
+
+#########################
+# cfDNA z score plots
+#########################
+
+# Consistent theme and axes
+multiplot_theme <- theme(
+  panel.grid.major = element_blank(),
+  panel.grid.minor = element_blank(),
+  plot.title = element_text(size = 11),
+  axis.text.x = element_text(size = 9),
+  legend.title = element_blank(),
+  legend.text = element_text(size = 9),
+  legend.position = "bottom")
+
+multiplot_y <- ylim(37, 63)
+
+multiplot_x <- scale_x_continuous(limits = c(0,20000),
+                                  breaks = c(0, 10000, 20000))
+
+## Lines
+
+z3_line <- geom_hline(yintercept = bespoke_gdna_mean_vp+(3*bespoke_gdna_sd_vp),
+                      linetype = "dashed", alpha = 0.5) 
+
+zminus3_line <- geom_hline(yintercept = bespoke_gdna_mean_vp-(3*bespoke_gdna_sd_vp),
+                           linetype = "dashed", alpha = 0.5) 
+
+z2_line <- geom_hline(yintercept = bespoke_gdna_mean_vp+(2*bespoke_gdna_sd_vp), 
+                      linetype = "dashed", alpha = 0.5)
+
+zminus2_line <- geom_hline(yintercept = bespoke_gdna_mean_vp-(2*bespoke_gdna_sd_vp),
+                           linetype = "dashed", alpha = 0.5)
+
+# Plot 1: heterozygous gDNA
+
+plot1 <- ggplot(bespoke_gdna, aes(x = vf_assay_molecules, y = variant_percent))+
+  scale_shape_manual(values = c(21)) +
+  z3_line +
+  zminus3_line +
+  z2_line +
+  zminus2_line +
+  geom_point(size = 2, colour = "black", fill = "white", 
+             aes(shape = sample_type),
+             alpha = 0.8) +
+  theme_bw()+
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.position = "none")+
+  labs(x = "",
+       y = "Variant fraction (%)") +
+  theme_bw() +
+  multiplot_theme +
+  multiplot_y +
+  multiplot_x +
+  labs(x = "", y = "Variant fraction (%)",
+       title = "Heterozygous parental gDNA") +
+  guides(shape=guide_legend(ncol=1))
+
+# Plot 2: autosomal cases cfDNA
+
+plot2 <- ggplot(bespoke_z_score %>%
+         filter(inheritance_chromosomal == "autosomal"),
+       aes(x = vf_assay_molecules, 
+               y = variant_percent)) +
+  z3_line +
+  zminus3_line +
+  z2_line +
+  zminus2_line +
+  
+  # No incorrect results, so black option removed
+  scale_fill_manual(values=c("#FFFFFF", "#999999"), guide = "none") +
+  scale_alpha_manual(values = c(1, 0.2), guide = "none") +
+  scale_shape_manual(values = c(24, 21, 25)) +
+  geom_point(size = 2, aes(fill = outcome_zscore,
+                           alpha = outcome_zscore,
+                           shape = mutation_genetic_info_fetus),
+             colour = "black") +
+  theme_bw() +
+  multiplot_theme +
+  multiplot_y +
+  multiplot_x +
+  labs(x = "Genome equivalents (GE)", y = "",
+       title = "cfDNA: autosomal variant cases") +
+  guides(shape=guide_legend(ncol=1))
+
+# Plot 3: x-linked cases cfDNA
+
+plot3 <- ggplot(bespoke_z_score  %>%
+         filter(inheritance_chromosomal == "x_linked"),
+       aes(x = vf_assay_molecules, 
+           y = variant_percent)) +
+  z3_line +
+  zminus3_line +
+  z2_line +
+  zminus2_line +
+  scale_fill_manual(values=c("#FFFFFF", "#000000", "#999999"), guide = "none") +
+  scale_alpha_manual(values = c(1, 1, 0.2), guide = "none") +
+  # No "heterozygous" genotype option
+  scale_shape_manual(values = c(24, 25)) +
+  geom_point(size = 2, aes(fill = outcome_zscore,
+                           alpha = outcome_zscore,
+                           shape = mutation_genetic_info_fetus),
+             colour = "black") +
+  theme_bw() +
+  multiplot_theme +
+  multiplot_y +
+  multiplot_x +
+  labs(x = "", y = "",
+       title = "cfDNA: X-linked variant cases") +
+  theme(legend.position = "bottom") +
+  guides(shape=guide_legend(ncol=1))
+
+triptych <- ggpubr::ggarrange(plot1, plot2, plot3,
+                                ncol = 3, nrow = 1, align = "h")
+
+ggsave(plot = triptych, 
+       filename = "bespoke_cohort_triptych.tiff",
+       path = "plots/", device='tiff', dpi=600,
+       units = "in",
+       width = 10,
+       height = 5)
 
 #########################
 # Plot sickle cell disease cohort cases
@@ -514,8 +716,6 @@ IDS_only <- ddpcr_sprt_analysed %>%
   select(vf_assay_molecules, IDS_expected, ff_assay_molecules,
          ZFXY_expected, amplifiability_IDS, amplifiability_ZFXY)
 
-#########################
-# Cystic fibrosis: haplotype dosage vs mutation dosage
 #########################
 
 
