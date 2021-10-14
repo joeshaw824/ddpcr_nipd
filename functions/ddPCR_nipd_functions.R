@@ -706,20 +706,12 @@ draw_rmd_plot <- function(cfdna_sample, parent_vf_wells, parent_ff_wells) {
   return(rmd_plot)
 }
 
-#########################
-# Sequence functions
-#########################
+# Standardise coloration of variant and reference alleles for plots
 
-reverse_complement <- function(input_sequence){
-  
-  rev_comp <- stri_reverse(chartr("ATGC","TACG",input_sequence))
-  
-  return(rev_comp)
-  
-}
+variant_colour <- "#3366FF"
+reference_colour <- "#FF0000"
 
 
-sample_1 <- sample(1:88, 1)
-sample_2 <- sample(1:88, 1)
-sample_3 <- sample(1:88, 1)
+
+
 

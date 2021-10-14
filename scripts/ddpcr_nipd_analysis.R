@@ -321,6 +321,11 @@ write.csv(ddpcr_sprt_mcmc,
                          format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv")),
           row.names = FALSE)
 
+# If you don't want to run the whole MCMC analysis, here is the most
+# recent run
+
+#ddpcr_sprt_mcmc <- read.csv("analysis_outputs/total_cohort_sprt_mcmc20211013_111254.csv")
+
 #########################
 # Select bespoke case parental data for z score analysis
 #########################
@@ -342,6 +347,26 @@ bespoke_gdna_sd_vp <- sd(bespoke_gdna$variant_percent)
 # Coefficient of variation
 bespoke_gdna_cv_vp <- (bespoke_gdna_sd_vp/bespoke_gdna_mean_vp) * 100
 
+# Number of parental samples included
+length(unique(bespoke_gdna$sample))
+
+# Number of ddPCR wells included
+length(unique(bespoke_gdna$worksheet_well_sample))
+
+# Number of variant assays included
+length(unique(bespoke_gdna$vf_assay))
+
+# Number of wells per parental sample
+bespoke_gdna_summary <- bespoke_gdna %>%
+  group_by(sample) %>%
+  summarise(n = n())
+
+ggplot(bespoke_gdna_summary, aes(x = reorder(sample, n), y = n))+
+  geom_point(size = 2, shape = 21)+
+  ylim(0, 25) +
+  theme_bw() +
+  theme(axis.text.x = element_blank())
+
 #########################
 # cfDNA z score analysis
 #########################
@@ -350,9 +375,7 @@ z_score_imbalance_threshold <- 3
 z_score_balance_threshold <- 2
 
 bespoke_z_score <- ddpcr_sprt_mcmc %>%
-  filter(vf_assay != "HBB c.20A>T"  &
-         # Remove 30116 as we don't have an outcome (yet)
-         r_number != "30116") %>%
+  filter(vf_assay != "HBB c.20A>T") %>%
   mutate(z_score = (variant_percent-bespoke_gdna_mean_vp) / bespoke_gdna_sd_vp,
          
          z_score_prediction = case_when(
@@ -717,6 +740,153 @@ IDS_only <- ddpcr_sprt_analysed %>%
          ZFXY_expected, amplifiability_IDS, amplifiability_ZFXY)
 
 #########################
+# CFTR: haplotype dosage vs mutation dosage
+#########################
+
+# Get RHDO dataExample worksheet: 21-0894
+rhdo_worksheet <- "W:/MolecularGenetics/NIPD worksheets/CFTR_RHDO/2021/21-0894/Results - Type 3 SNPs/210320_M04766_CF_1_Z750627_50000_type3_nimble_results.xlsx"
+
+type4a <- read_excel(rhdo_worksheet, sheet = "Type 4A SNPs")
+type4b <- read_excel(rhdo_worksheet, sheet = "Type 4B SNPs")
+
+type4_data <- rbind(type4a %>%
+                      select(POS, hap1, hap2),
+                    type4b %>%
+                      select(POS, hap1, hap2)) %>%
+  arrange(POS) %>%
+  mutate(snp_number = seq(1:433)) %>%
+  select(snp_number, hap1, hap2)
+
+# Compare the counts of read depth for individudal SNPs (RHDO) and the 
+# molecular counts for the CFTR p.(508del) variant for ddPCR, and plot the 
+# results.
+
+read_comparison <- rbind(
+  # RHDO data
+  type4_data %>%
+   pivot_longer(
+     cols = -snp_number,
+     names_to = "haplotype",
+     values_to = "count"), 
+  # ddPCR data 
+  bespoke_z_score %>%
+     filter(vf_assay == "CFTR c.1521_1523del") %>%
+     select(variant_molecules, reference_molecules) %>%
+     dplyr::rename(hap1 = variant_molecules,
+                   hap2 = reference_molecules) %>%
+     mutate(sample = "CFTR ddPCR") %>%
+     pivot_longer(cols = -sample,
+                  names_to = "haplotype",
+                  values_to = "count") %>%
+     mutate(snp_number = 434) %>%
+     select(snp_number, haplotype, count)) %>%
+  mutate(haplotype = case_when(
+    haplotype == "hap1" ~"hap1/variant allele",
+    haplotype == "hap2" ~"hap2/reference allele"
+  ))
+
+ggplot(read_comparison, aes(x = snp_number, y = count,
+                                  fill = haplotype)) +
+  scale_fill_manual(values = c(reference_colour, variant_colour)) +
+  geom_col(position = position_dodge(width = 0.9),
+           alpha = 0.6) +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), 
+        legend.position = "bottom",
+        axis.text.x = element_blank(),
+        legend.title = element_blank()) +
+  labs(x = "", y = "Count", title = "Comparison of RHDO (NGS) and RMD (ddPCR)") +
+  annotate(geom = "text", x = 200, y = 1500, label = 
+  "NGS data for individual SNPS in RHDO 
+  (worksheet 21-0894)",
+           size = 3) +
+  annotate(geom = "text", x = 350, y = 2500, label = 
+  "ddPCR data for CFTR p.(508del) 
+  (worksheet 21-3418)",
+           size = 3) +
+  geom_segment(aes(x = 410, y = 2500, 
+                   xend = 430, yend = 2500),
+               arrow = arrow(length = unit(0.2, "cm")))
+
+# Compare the sum counts of read depth for all SNPs (RHDO) and the 
+# molecular counts for the CFTR p.(508del) variant for ddPCR.
+
+sum_comparison <- rbind(
+  # ddPCR data for CFTR case
+  bespoke_z_score %>%
+    filter(vf_assay == "CFTR c.1521_1523del") %>%
+    select(variant_molecules, reference_molecules) %>%
+    dplyr::rename(hap1 = variant_molecules,
+                  hap2 = reference_molecules) %>%
+    mutate(sample = "CFTR ddPCR") %>%
+    pivot_longer(cols = -sample,
+                 names_to = "haplotype",
+                 values_to = "count"), 
+  # Type 4 SNP NGS data for CFTR case
+  type4_data %>%
+    summarise(hap1 = sum(hap1),
+              hap2 = sum(hap2)) %>%
+    mutate(sample = "CFTR RHDO") %>%
+    pivot_longer(cols = -sample,
+                 names_to = "haplotype",
+                 values_to = "count")) %>%
+  # Factorise for correct order on plot
+  mutate(sample = factor(sample, levels = c("CFTR RHDO",
+                                            "CFTR ddPCR")),
+         
+         haplotype = case_when(
+           haplotype == "hap1" ~"hap1/variant allele",
+           haplotype == "hap2" ~"hap2/reference allele"
+         ))
+
+# Column plot - sum comparison of RMD and RHDO 
+ggplot(sum_comparison, aes(x = sample, y = count,
+                          fill = haplotype)) +
+  scale_fill_manual(values = c(reference_colour, variant_colour)) +
+  geom_col(position = position_dodge(width = 0.9), colour="black",
+           alpha = 0.6) +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.position = "bottom",
+        legend.title = element_blank()) +
+  labs(x = "", title = "Comparison of RHDO (NGS) and RMD (ddPCR)") +
+  geom_text(aes(x = sample, y = count+1000, label = count), 
+            position = position_dodge(width = 0.9), vjust = -1) +
+  ylim(0, 110000)
+
+#########################
+
+cf_results <- search_biobank(c("CF", "cystic", "delta", "fibr"))
+
+cftr_cases <- RAPID_biobank %>%
+  filter(r_number %in% c(11165, 11640, 11934, 12050,  
+                         12226, 12414, 12516, 12647, 
+                         12812, 13296, 13345, 13350, 
+                         13456, 13768, 13932, 14226, 16680, 
+                         16735, 18317, 18854, 19224, 19373)) %>%
+  select(r_number, study_id, gestation_character, date_of_blood_sample,
+         tubes_plasma_current, partner_sample_available,
+         mutation_genetic_info_fetus, 
+         maternal_mutation, paternal_mutation) %>%
+  arrange(date_of_blood_sample)
+
+write.csv(cftr_cases, "analysis_outputs/cftr_cases.csv",
+          row.names = FALSE)
+
+
+rare_recessive_cases <- RAPID_biobank %>%
+  filter(r_number %in% c(30290, 30283, 
+                         30264, 30253, 30248, 30225, 30237,
+                         30124, 30106)) %>%
+  select(r_number, study_id, gestation_character, indication, 
+         maternal_mutation, paternal_mutation,
+         tubes_plasma_current,
+         partner_sample_available)
+
+write.csv(sickle_cell_cases, "analysis_outputs/sickle_cell_cases.csv",
+          row.names = FALSE)
 
 
 
