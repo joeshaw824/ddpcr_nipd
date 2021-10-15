@@ -435,6 +435,12 @@ bespoke_z_score <- ddpcr_sprt_mcmc %>%
                                                "homozygous reference fetus",
                                                "hemizygous reference fetus")))
 
+
+write.csv(bespoke_z_score, 
+          file = (paste0("analysis_outputs/bespoke_z_score",
+                         format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv")),
+          row.names = FALSE)
+
 #########################
 # Individual plots for bespoke cases
 #########################
@@ -857,36 +863,49 @@ ggplot(sum_comparison, aes(x = sample, y = count,
   ylim(0, 110000)
 
 #########################
+# Heterozygous gDNA results
+#########################
 
-cf_results <- search_biobank(c("CF", "cystic", "delta", "fibr"))
+# Variant fraction assay results for every heterozygous gDNA tested
+# with any assay
 
-cftr_cases <- RAPID_biobank %>%
-  filter(r_number %in% c(11165, 11640, 11934, 12050,  
-                         12226, 12414, 12516, 12647, 
-                         12812, 13296, 13345, 13350, 
-                         13456, 13768, 13932, 14226, 16680, 
-                         16735, 18317, 18854, 19224, 19373)) %>%
-  select(r_number, study_id, gestation_character, date_of_blood_sample,
-         tubes_plasma_current, partner_sample_available,
-         mutation_genetic_info_fetus, 
-         maternal_mutation, paternal_mutation) %>%
-  arrange(date_of_blood_sample)
-
-write.csv(cftr_cases, "analysis_outputs/cftr_cases.csv",
-          row.names = FALSE)
+parent_het_gDNA <- parent_gDNA_var_ref %>%
+  filter(variant_percent > 25 &
+           variant_percent < 75 &
+           # No cfDNA sample has had more than 30000 GE
+           vf_assay_molecules < 30000)
 
 
-rare_recessive_cases <- RAPID_biobank %>%
-  filter(r_number %in% c(30290, 30283, 
-                         30264, 30253, 30248, 30225, 30237,
-                         30124, 30106)) %>%
-  select(r_number, study_id, gestation_character, indication, 
-         maternal_mutation, paternal_mutation,
-         tubes_plasma_current,
-         partner_sample_available)
+ggplot(parent_het_gDNA, aes(x = vf_assay_molecules, 
+                                y = variant_percent)) +
+  geom_point(shape = 21, size = 2) +
+  theme_bw() +
+  multiplot_theme +
+  ylim(40, 60) +
+  labs(x = "Genome equivalents", y = "Variant fraction")
 
-write.csv(sickle_cell_cases, "analysis_outputs/sickle_cell_cases.csv",
-          row.names = FALSE)
+# Most het gDNA replicates have under 200 molecules of difference
+ggplot(parent_het_gDNA, aes(x = reorder(worksheet_well_sample, 
+                                        difference_molecules), 
+           y = difference_molecules)) +
+  geom_point(shape = 21, size = 2) +
+  theme_bw() +
+  multiplot_theme +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()) +
+  ylim(0, 400) +
+  labs(y = "Molecules of difference", x = "",
+       title = "Molecules of difference in heterozygous gDNA samples")
 
-
-
+# Distribution of het gDNA variant fractions
+ggplot(parent_het_gDNA %>%
+         filter(vf_assay_molecules > 4000), aes(x=variant_percent)) + 
+  geom_histogram(aes(y=..density..),
+                 binwidth= 0.4,
+                 colour="black", fill="white") +
+  theme_bw() +
+  xlim(46, 54) +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()) +
+  labs(y = "Proportion of controls", x = "Variant percent (%)",
+       title = "Parental heteryzgous gDNA controls over 4000 genome equivalents")
