@@ -5,17 +5,31 @@
 ################################################################################
 
 #########################
-# Load libraries
+# Load packages and resources
 #########################
 
-# Load packages
+## Load packages
 library(tidyverse)
 library(janitor)
 library(stringi)
 
-# Load resources
+# Control gDNA information
 controls <- readr::read_csv("resources/controls.csv")
+
+# Target panel
 ddpcr_target_panel <- readr::read_csv("resources/ddpcr_target_panel.csv") 
+
+# Number and type of plasma extractions
+plasma_extractions <- read.csv("resources/extraction_volumes.csv") %>%
+  group_by(r_number) %>%
+  summarise(plasma_volume_ml = (sum(tubes_removed))*2) 
+
+plasma_replicates <- read.csv("resources/extraction_volumes.csv") %>%
+  group_by(r_number) %>%
+  summarise(extraction_replicates = n())
+
+# Type of invasive sampling
+invasive_sampling <- read.csv("resources/confirmation_testing.csv")
 
 #########################
 # ddPCR functions
@@ -97,36 +111,45 @@ calc_lr_autosomal <- function(fetal_fraction, overrep_fraction, total_copies) {
   return(lr)
 }
 
-# These functions calculate the SPRT thresholds assuming 
-# a fetal fraction of 4% and a likelihood ratio of 8.
-
-# Variables for each function
-q0 <- 0.5
-q1 <- 0.5+(0.04/2)
-delta <- (1- q1)/(1-q0)
-gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
-
-calc_SS_boundary <- function(total_copies) {
-  SS_boundary <- ((log(8)/total_copies) - log(delta))/log(gamma)
+# These functions calculate the SPRT thresholds with likelihood ratio 
+# supplied and fetal fraction supplied as a decimal.
+calc_SS_boundary <- function(total_copies, ff, lr) {
+  q0 <- 0.5
+  q1 <- 0.5+(ff/2)
+  delta <- (1- q1)/(1-q0)
+  gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
+  SS_boundary <- ((log(lr)/total_copies) - log(delta))/log(gamma)
   # Convert to a percentage for output
   return(SS_boundary*100)
 }
 
-calc_AS_upper_boundary <- function(total_copies) {
-  AS_upper_boundary <- ((log(1/8)/total_copies) - log(delta))/log(gamma)
+calc_AS_upper_boundary <- function(total_copies, ff, lr) {
+  q0 <- 0.5
+  q1 <- 0.5+(ff/2)
+  delta <- (1- q1)/(1-q0)
+  gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
+  AS_upper_boundary <- ((log(1/lr)/total_copies) - log(delta))/log(gamma)
   # Convert to a percentage for output
   return(AS_upper_boundary*100)
 }
 
-calc_AS_lower_boundary <- function(total_copies) {
-  AS_upper_boundary <- ((log(1/8)/total_copies) - log(delta))/log(gamma)
+calc_AS_lower_boundary <- function(total_copies, ff, lr) {
+  q0 <- 0.5
+  q1 <- 0.5+(ff/2)
+  delta <- (1- q1)/(1-q0)
+  gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
+  AS_upper_boundary <- ((log(1/lr)/total_copies) - log(delta))/log(gamma)
   AS_lower_boundary <- 0.5-(AS_upper_boundary-0.5)
   # Convert to a percentage for output
   return(AS_lower_boundary*100)
 }
 
-calc_AA_boundary <- function(total_copies) {
-  SS_boundary <- ((log(8)/total_copies) - log(delta))/log(gamma)
+calc_AA_boundary <- function(total_copies, ff, lr) {
+  q0 <- 0.5
+  q1 <- 0.5+(ff/2)
+  delta <- (1- q1)/(1-q0)
+  gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
+  SS_boundary <- ((log(lr)/total_copies) - log(delta))/log(gamma)
   AA_boundary <- 0.5-(SS_boundary-0.5)
   # Convert to a percentage for output
   return(AA_boundary*100)
@@ -549,7 +572,7 @@ parent_gDNA_ff <- ff_calculations(ddpcr_controls_with_target %>%
 # results for ddPCR, including parental gDNA controls. The amount of 
 # information on this plot can be modified to suit user preference.
 
-# Materal sample only example
+# Maternal sample only example
 # draw_rmd_plot("30065", "21-1863.csv_M07", "21-1862.csv_M10")
 
 # Maternal and paternal samples example
@@ -697,14 +720,12 @@ draw_rmd_plot <- function(cfdna_sample, parent_vf_wells, parent_ff_wells) {
   return(rmd_plot)
 }
 
-#########################
-# Sequence functions
-#########################
+# Standardise coloration of variant and reference alleles for plots
 
-reverse_complement <- function(input_sequence){
-  
-  rev_comp <- stri_reverse(chartr("ATGC","TACG",input_sequence))
-  
-  return(rev_comp)
-  
-}
+variant_colour <- "#3366FF"
+reference_colour <- "#FF0000"
+
+
+
+
+
