@@ -173,3 +173,7 @@ CFTR c.1521_1523del,vf_assay,autosomal,recessive,CFTR c.1521_1523del,variant,VIC
 CFTR c.1521_1523del,vf_assay,autosomal,recessive,CFTR c.1521_1523,reference,FAM
 HBB c.93-21G>A,vf_assay,autosomal,recessive,HBB c.93-21_A,variant,FAM
 HBB c.93-21G>A,vf_assay,autosomal,recessive,HBB c.93-21_G,reference,VIC
+MMAA c.733+1G>A,vf_assay,autosomal,recessive,MMAA c733+1A,variant,FAM
+MMAA c.733+1G>A,vf_assay,autosomal,recessive,MMAA c733+1G,reference,VIC
+HBB c.126_129del,vf_assay,autosomal,recessive,HBB_c126_129del,variant,VIC
+HBB c.126_129del,vf_assay,autosomal,recessive,HBB_c126_129,reference,FAM

@@ -363,20 +363,6 @@ cfDNA_scd_predictions <- cfDNA_scd_data %>%
       TRUE ~"inconclusive"))
 
 #########################
-# Extraction volumes and invasive sampling
-#########################
-
-plasma_extractions <- read.csv("resources/extraction_volumes.csv") %>%
-  group_by(r_number) %>%
-  summarise(plasma_volume_ml = (sum(tubes_removed))*2) 
-
-plasma_replicates <- read.csv("resources/extraction_volumes.csv") %>%
-  group_by(r_number) %>%
-  summarise(extraction_replicates = n())
-
-invasive_sampling <- read.csv("resources/confirmation_testing.csv")
-
-#########################
 # Compare predictions against Biobank
 #########################
 

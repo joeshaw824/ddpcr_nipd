@@ -1,6 +1,6 @@
 ################################################################################
 ## ddPCR for Non Invasive Prenatal Diagnosis (NIPD)
-## November 2021
+## October 2021
 ## Joseph.Shaw@gosh.nhs.uk
 ## This is an analysis script for the prediction of fetal genotypes from 
 ## cfDNA testing using ddPCR for maternally-inherited
@@ -44,29 +44,53 @@ source("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/RA
 RAPID_biobank <- load_biobank()
 
 #########################
-# cfDNA SPRT analysis
+# Prepare cfDNA ddPCR data
 #########################
 
-# Set likelihood ratio threshold
-lr_threshold <- 8
-
-ddpcr_sprt_analysed <- ff_calculations(
+cfdna_data_analysed <- ff_calculations(
   var_ref_calculations(cfdna_ddpcr_data)) %>% 
   
   # Rename sample to r_number to allow merge with RAPID Biobank data.
   rename(r_number = sample) %>%
   
+  # Add information about extractions
+  left_join(plasma_extractions %>%
+            mutate(r_number = as.character(r_number)), by = "r_number") %>%
+  left_join(plasma_replicates %>%
+              mutate(r_number = as.character(r_number)), by = "r_number") %>%
+  left_join(invasive_sampling %>%
+              mutate(r_number = as.character(r_number)), by = "r_number") %>%
   mutate(
     total_molecules = vf_assay_molecules + ff_assay_molecules,
+    totalGE_ml_plasma = total_molecules / plasma_volume_ml,
+    fetalGE_ml_plasma = paternal_molecules / plasma_volume_ml)
 
-  # Perform SPRT and return the likelihood ratio
-  likelihood_ratio = case_when(
-     inheritance_chromosomal == "x_linked" ~ 
-       calc_lr_x_linked(fetal_fraction, (major_allele_percent/100), 
-                        vf_assay_molecules),
-     inheritance_chromosomal == "autosomal" ~ 
-       calc_lr_autosomal(fetal_fraction, (major_allele_percent/100), 
-                         vf_assay_molecules)),
+bespoke_analysed <- cfdna_data_analysed %>%
+  filter(vf_assay != "HBB c.20A>T")
+
+min(bespoke_analysed$totalGE_ml_plasma)
+max(bespoke_analysed$totalGE_ml_plasma)
+min(bespoke_analysed$fetalGE_ml_plasma)
+max(bespoke_analysed$fetalGE_ml_plasma)
+
+#########################
+# SPRT analysis
+#########################
+
+# Set likelihood ratio threshold
+lr_threshold <- 8
+
+ddpcr_sprt_analysed <- cfdna_data_analysed %>%
+  mutate(
+    
+    # Perform SPRT and return the likelihood ratio
+    likelihood_ratio = case_when(
+       inheritance_chromosomal == "x_linked" ~ 
+         calc_lr_x_linked(fetal_fraction, (major_allele_percent/100), 
+                          vf_assay_molecules),
+       inheritance_chromosomal == "autosomal" ~ 
+         calc_lr_autosomal(fetal_fraction, (major_allele_percent/100), 
+                           vf_assay_molecules)),
    
   # Classify based on likelihood ratio threshold supplied
   # Fetal genotype predictions are named consistently as 
@@ -433,13 +457,23 @@ bespoke_z_score <- ddpcr_sprt_mcmc %>%
                                                "homozygous variant fetus",
                                                "heterozygous fetus",
                                                "homozygous reference fetus",
-                                               "hemizygous reference fetus")))
+                                               "hemizygous reference fetus"))) %>%
+  arrange(inheritance_chromosomal, inheritance_pattern, study_id)
 
 
 write.csv(bespoke_z_score, 
           file = (paste0("analysis_outputs/bespoke_z_score",
                          format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv")),
           row.names = FALSE)
+
+
+
+
+
+
+
+
+
 
 #########################
 # Individual plots for bespoke cases
@@ -538,8 +572,10 @@ plot1 <- ggplot(bespoke_gdna, aes(x = vf_assay_molecules, y = variant_percent))+
 
 # Plot 2: autosomal cases cfDNA
 
-plot2 <- ggplot(bespoke_z_score %>%
-         filter(inheritance_chromosomal == "autosomal"),
+autosomal_cases <- bespoke_z_score %>%
+  filter(inheritance_chromosomal == "autosomal")
+
+plot2 <- ggplot(autosomal_cases,
        aes(x = vf_assay_molecules, 
                y = variant_percent)) +
   z3_line +
@@ -551,6 +587,10 @@ plot2 <- ggplot(bespoke_z_score %>%
   scale_fill_manual(values=c("#FFFFFF", "#999999"), guide = "none") +
   scale_alpha_manual(values = c(1, 0.2), guide = "none") +
   scale_shape_manual(values = c(24, 21, 25)) +
+  #geom_errorbar(aes(ymin = variant_percent_min, 
+                   #ymax = variant_percent_max), alpha = 0.5) +
+  #geom_errorbarh(aes(xmin = vf_assay_molecules_min, 
+                     #xmax = vf_assay_molecules_max), alpha = 0.5) +
   geom_point(size = 2, aes(fill = outcome_zscore,
                            alpha = outcome_zscore,
                            shape = mutation_genetic_info_fetus),
@@ -562,11 +602,15 @@ plot2 <- ggplot(bespoke_z_score %>%
   labs(x = "Genome equivalents (GE)", y = "",
        title = "cfDNA: autosomal variant cases") +
   guides(shape=guide_legend(ncol=1))
-
+  
 # Plot 3: x-linked cases cfDNA
 
-plot3 <- ggplot(bespoke_z_score  %>%
-         filter(inheritance_chromosomal == "x_linked"),
+x_linked_cases <- bespoke_z_score  %>%
+  filter(inheritance_chromosomal == "x_linked")
+
+nrow(x_linked_cases)
+
+plot3 <- ggplot(x_linked_cases,
        aes(x = vf_assay_molecules, 
            y = variant_percent)) +
   z3_line +
@@ -599,6 +643,36 @@ ggsave(plot = triptych,
        units = "in",
        width = 10,
        height = 5)
+
+#########################
+# Supplementary Table 1
+#########################
+
+# Assign each study id a "family number" for the paper
+families <- data.frame(
+  study_id = unique(bespoke_z_score$study_id))
+
+families <- mutate(families, 
+                   family_number = rownames(families))
+  
+supplementary_table_1 <- families %>%
+  full_join(bespoke_z_score,
+            by = "study_id") %>%
+  mutate(sample_id = 
+         paste0("cfDNA-", as.character(row.names(bespoke_z_score)))) %>%
+  # Order columns for export
+  select(sample_id,  family_number, r_number, study_id, inheritance_chromosomal,
+         inheritance_pattern, vf_assay, ff_assay, gestation_character,
+         partner_sample_available, 
+         variant_molecules, reference_molecules, maternal_molecules,
+         paternal_molecules, variant_percent, fetal_percent,
+         z_score, z_score_prediction, fetal_genotype, outcome_zscore,
+         report_acquired)
+
+count(supplementary_table_1, 
+      outcome_zscore)
+
+median(bespoke_z_score$vf_assay_molecules)
 
 #########################
 # Plot sickle cell disease cohort cases
@@ -718,7 +792,7 @@ ggplot(parents_and_cfDNA %>%
                     xmax = vf_assay_molecules_max), alpha = 0.2) +
   geom_point(size = 3, aes(shape = sample_type)) +
   scale_shape_manual(values = c(19, 1)) +
-  ylim(40, 60) +
+  ylim(43, 57) +
   xlim(0, 10000) +
   theme_bw() +
   theme(legend.title = element_blank(),
@@ -909,3 +983,5 @@ ggplot(parent_het_gDNA %>%
         panel.grid.minor = element_blank()) +
   labs(y = "Proportion of controls", x = "Variant percent (%)",
        title = "Parental heteryzgous gDNA controls over 4000 genome equivalents")
+
+#########################

@@ -5,17 +5,31 @@
 ################################################################################
 
 #########################
-# Load libraries
+# Load packages and resources
 #########################
 
-# Load packages
+## Load packages
 library(tidyverse)
 library(janitor)
 library(stringi)
 
-# Load resources
+# Control gDNA information
 controls <- readr::read_csv("resources/controls.csv")
+
+# Target panel
 ddpcr_target_panel <- readr::read_csv("resources/ddpcr_target_panel.csv") 
+
+# Number and type of plasma extractions
+plasma_extractions <- read.csv("resources/extraction_volumes.csv") %>%
+  group_by(r_number) %>%
+  summarise(plasma_volume_ml = (sum(tubes_removed))*2) 
+
+plasma_replicates <- read.csv("resources/extraction_volumes.csv") %>%
+  group_by(r_number) %>%
+  summarise(extraction_replicates = n())
+
+# Type of invasive sampling
+invasive_sampling <- read.csv("resources/confirmation_testing.csv")
 
 #########################
 # ddPCR functions
