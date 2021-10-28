@@ -6,22 +6,26 @@
 ## This is an analysis script for the prediction of fetal 
 ## genotypes from cfDNA testing using ddPCR for sickle cell 
 ## disease, based on dosage experiments with heterozygous gDNA controls.
+## This code is for the paper draft with the same title. 
 ################################################################################
 
 #########################
-# Load libraries and resources
+# Load packages, functions and data
 #########################
 
-## Load necessary packages
-library(tidyverse)
+# Source functions
+source("functions/ddPCR_nipd_functions.R")
+
+# Source data
+source("scripts/load_ddpcr_data.R")
+
+# epiR for sensitivity calculations
 library(epiR)
+
+#ggpubr for plot collation
 library(ggpubr)
 
-## Set working directory
-setwd("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/ddPCR_R_Analysis/ddpcr_nipd")
-
-# Source functions (this includes loading ddPCR data)
-source("functions/ddPCR_nipd_functions.R")
+# Source RAPID biobank
 source("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/RAPID_project_biobank/scripts/RAPID_biobank.R")
 
 #########################
@@ -43,9 +47,7 @@ secondary_cohort <- c("14182", "19868", "20238", "20611",
                       "20911", "30236", "30112", "30251", "30257",
                       "30216", "30232")
 
-cfDNA_scd_data <- ff_calculations(
-  var_ref_calculations(cfdna_ddpcr_data)) %>%
-  dplyr::rename(r_number = sample) %>%
+cfDNA_scd_data <- cfdna_ddpcr_data_molecules %>%
   filter(vf_assay == "HBB c.20A>T" &
            !r_number %in% samples_to_exclude) %>%
   mutate(cohort = ifelse(r_number %in% secondary_cohort,
@@ -365,8 +367,6 @@ cfDNA_scd_predictions <- cfDNA_scd_data %>%
 #########################
 # Compare predictions against Biobank
 #########################
-
-RAPID_biobank <- load_biobank()
 
 cfDNA_scd_outcomes <- left_join(
   cfDNA_scd_predictions,
