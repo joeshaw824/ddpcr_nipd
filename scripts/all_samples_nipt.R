@@ -1,5 +1,5 @@
 ################################################################################
-## ddPCR NIPT analysis for All Samples
+## ddPCR NIPT Analysis for All Samples
 ## October 2021
 ## Joseph.Shaw@gosh.nhs.uk
 ## This analysis script performs 3 different analyses on the entire cohort
@@ -18,7 +18,7 @@
 # Source functions
 source("functions/ddPCR_nipd_functions.R")
 
-# Source data
+# Load ddPCR data
 source("scripts/load_ddpcr_data.R")
 
 # epiR for sensitivity calculations
@@ -32,6 +32,9 @@ library(cmdstanr)
 
 # Source RAPID biobank
 source("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/RAPID_project_biobank/scripts/RAPID_biobank.R")
+
+# Load ddPCR SNP panel (from Camunas Soler et al 2018)
+ddpcr_snp_panel <- read.csv("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/ddPCR SNP Panel/Camunas_Soler_panel_47_GnomAD_frequencies.csv")
 
 #########################
 # SPRT analysis
@@ -89,7 +92,6 @@ all_samples_sprt <- cfdna_ddpcr_data_molecules %>%
       inheritance_chromosomal == "x_linked" &
         likelihood_ratio < lr_threshold 
       ~ "inconclusive"))
-
 
 #########################
 # MCMC analysis
@@ -358,6 +360,12 @@ all_samples_zscore <- cfdna_ddpcr_data_molecules %>%
 # Collate analyses 
 #########################
 
+# Samples to exclude
+# 13262 - this sample had contamination
+# 17004 - father was HbAC
+# 20915 - twin pregnancy
+samples_to_exclude <- c("13262", "20915", "17004")
+
 all_samples_blinded <- left_join(
   all_samples_sprt,
   all_samples_mcmc %>%
@@ -366,26 +374,18 @@ all_samples_blinded <- left_join(
   left_join(
     all_samples_zscore %>%
       select(r_number, z_score, z_score_prediction),
-    by = "r_number")
+    by = "r_number") %>%
+  filter(!r_number %in% samples_to_exclude)
 
-
-all_samples_blinded
 #########################
 # Compare predictions against Biobank
 #########################
 
-# Samples to exclude
-# 13262 - this sample had contamination
-# 17004 - father was HbAC
-# 20915 - twin pregnancy
-samples_to_exclude <- c("13262", "20915", "17004")
-
 all_samples_unblinded <- all_samples_blinded %>%
-  filter(!r_number %in% samples_to_exclude) %>%
   left_join(RAPID_biobank %>%
             # Change r_number to a character
             mutate(r_number = as.character(r_number)) %>%
-            select(r_number, study_id, gestation_weeks, gestation_days, 
+            select(r_number, study_id, site, gestation_weeks, gestation_days, 
                    gestation_total_weeks, gestation_character, 
                    date_of_blood_sample, vacutainer, 
                    mutation_genetic_info_fetus, 
@@ -439,6 +439,69 @@ all_samples_unblinded <- all_samples_blinded %>%
          outcome_sprt = factor(outcome_sprt,
                                levels = c("correct", "incorrect", 
                                           "inconclusive")))
+
+#########################
+# Summary of all results
+#########################
+
+all_samples_arranged <- all_samples_unblinded %>%
+  mutate(cohort = ifelse(vf_assay == "HBB c.20A>T", "sickle cell disease",
+                       "bespoke design"),
+         cohort = factor(cohort, levels = c("sickle cell disease",
+                                          "bespoke design"))) %>%
+  arrange(cohort, inheritance_chromosomal, inheritance_pattern, study_id)
+  
+families <- data.frame(
+  study_id = unique(all_samples_arranged$study_id))
+
+families <- mutate(families, 
+                  family_number = rownames(families))
+
+supplementary_table <- families %>%
+  full_join(all_samples_arranged,
+            by = "study_id") %>%
+  mutate(sample_id = 
+         paste0("cfDNA-", as.character(row.names(all_samples_arranged))),
+         
+         # Specify the method used to determine the fetal fraction
+         ff_determination = case_when(
+           inheritance_chromosomal == "x_linked" ~ "ZFXY",
+           inheritance_chromosomal == "autosomal" & ff_assay %in%
+             ddpcr_snp_panel$dbSNP ~ "ddPCR SNP panel - workflow 2",
+           TRUE ~"NGS SNP panel - workflow 1")) %>%
+  
+  # Reorder columns
+  select(
+    # Sample identifiers
+    sample_id, r_number, family_number, study_id, 
+    # Sampling information
+    date_of_blood_sample, vacutainer, 
+    site, gestation_character,
+    diagnostic_sampling, 
+    # Extraction information
+    plasma_volume_ml, extraction_replicates, 
+    # Variant information
+    inheritance_chromosomal, inheritance_pattern, vf_assay,
+    ff_determination, ff_assay, vf_assay_num_wells, 
+    vf_assay_droplets, reference_positives,
+    variant_positives, ff_assay_num_wells, ff_assay_droplets, 
+    maternal_positives, paternal_positives,
+    # Molecules
+    variant_molecules, reference_molecules, vf_assay_molecules,
+    variant_percent,
+    maternal_molecules, paternal_molecules, fetal_percent,
+    ff_assay_molecules, total_molecules, totalGE_ml_plasma,
+    # Analysis
+    likelihood_ratio, sprt_prediction, p_G0, p_G1, p_G2,
+    p_G3, mcmc_prediction, z_score, z_score_prediction,
+    # Outcome
+    fetal_genotype, outcome_sprt, outcome_mcmc, outcome_zscore)
+
+# Export the results
+write.csv(supplementary_table, 
+          file = (paste0("analysis_outputs/all_samples_ddpcr ",
+               format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv")),
+          row.names = FALSE)
 
 #########################
 # Plot results
@@ -540,11 +603,11 @@ plot_3 <- ggplot(all_samples_unblinded, aes(x = vf_assay_molecules,
                                   y = variant_percent)) +
   theme_bw() +
   multiplot_theme + 
-  z3_line +
-  zminus3_line +
-  z2_line +
-  zminus2_line +
-  vertical_line +
+  #z3_line +
+  #zminus3_line +
+  #z2_line +
+  #zminus2_line +
+  #vertical_line +
   multiplot_y +
   multiplot_x +
   cfdna_fill +
@@ -566,11 +629,11 @@ plot_4 <- ggplot(all_samples_unblinded, aes(x = vf_assay_molecules,
                                   y = variant_percent)) +
   theme_bw() +
   multiplot_theme + 
-  z3_line +
-  zminus3_line +
-  z2_line +
-  zminus2_line +
-  vertical_line +
+  #z3_line +
+  #zminus3_line +
+  #z2_line +
+  #zminus2_line +
+  #vertical_line +
   multiplot_y +
   multiplot_x +
   cfdna_fill +
@@ -590,7 +653,8 @@ plot_4 <- ggplot(all_samples_unblinded, aes(x = vf_assay_molecules,
 
 ddpcr_cohort <- ggpubr::ggarrange(plot_1, plot_2, 
                                 plot_3, plot_4,
-                                ncol = 2, nrow = 2, align = "v")
+                                ncol = 2, nrow = 2, align = "v",
+                                labels = c("A", "B", "C", "D"))
 
 ggsave(plot = ddpcr_cohort, 
        filename = "ddpcr_cohort.tiff",
@@ -638,3 +702,56 @@ ggplot(analysis_summary, aes(x = outcome, y = n))+
         panel.grid.minor = element_blank())
 
 ###################
+# Sensitivity and specificity 4x4 tables
+###################
+
+analysis_prediction <- "z_score_prediction"
+analysis_outcome <- "outcome_zscore"
+
+
+method_sensitivity <- function(analysis_prediction, analysis_outcome) {
+  
+  unbalanced_genotypes <- c("homozygous variant",
+                            "hemizygous variant",
+                            "homozygous reference",
+                            "hemizygous reference")
+  
+  true_positives <- supplementary_table %>%
+    filter(analysis_prediction %in% unbalanced_genotypes &
+             analysis_outcome == "correct")
+  
+  true_negatives <- supplementary_table %>%
+    filter(analysis_prediction == "heterozygous" &
+             analysis_outcome == "correct")
+  
+  false_positives <- supplementary_table %>%
+    filter(analysis_prediction %in% unbalanced_genotypes &
+             analysis_outcome == "incorrect")
+  
+  false_negatives <- supplementary_table %>%
+    filter(analysis_prediction == "heterozygous" &
+             analysis_outcome == "incorrect")
+  
+  # True positives, false positives, false negatives, true negatives
+  sensitivity_data <- as.table(matrix(c(nrow(true_positives), 
+                                        nrow(true_negatives),
+                                        nrow(false_positives),
+                                        nrow(false_negatives)), 
+                                      nrow = 2, byrow = TRUE))
+  
+  return(sensitivity_data)
+}
+
+
+supplementary_table %>%
+  
+
+sensitivity_metrics <- epi.tests(sensitivity_data, conf.level = 0.95)
+
+
+method_sensitivity(`z_score_prediction`, `outcome_zscore`)
+
+
+
+count(supplementary_table, outcome_zscore)
+

@@ -420,6 +420,7 @@ count(supplementary_table_1,
 
 median(bespoke_z_score$vf_assay_molecules)
 
+
 #########################
 # Plot sickle cell disease cohort cases
 #########################
