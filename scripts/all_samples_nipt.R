@@ -503,6 +503,57 @@ write.csv(supplementary_table,
                format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv")),
           row.names = FALSE)
 
+###################
+# Sensitivity and specificity 4x4 tables
+###################
+
+method_sensitivity <- function(df, prediction, outcome) {
+  
+  unbalanced_genotypes <- c("homozygous variant",
+                            "hemizygous variant",
+                            "homozygous reference",
+                            "hemizygous reference")
+  
+  true_positives <- df %>%
+    filter(!!prediction %in% unbalanced_genotypes &
+             !!outcome == "correct")
+  
+  true_negatives <- df %>%
+    filter(!!prediction == "heterozygous" &
+             !!outcome == "correct")
+  
+  false_positives <- df %>%
+    filter(!!prediction %in% unbalanced_genotypes &
+             !!outcome == "incorrect")
+  
+  false_negatives <- df %>%
+    filter(!!prediction == "heterozygous" &
+             !!outcome == "incorrect")
+  
+  # True positives, false positives, false negatives, true negatives
+  sensitivity_data <- as.table(matrix(c(nrow(true_positives), 
+                                        nrow(false_positives),
+                                        nrow(false_negatives),
+                                        nrow(true_negatives)), 
+                                      nrow = 2, byrow = TRUE))
+  
+  sensitivity_metrics <- epiR::epi.tests(sensitivity_data, conf.level = 0.95)
+  
+  return(sensitivity_metrics)
+}
+
+method_sensitivity(df = supplementary_table,
+                   prediction = quo(sprt_prediction), 
+                   outcome = quo(outcome_sprt))
+
+method_sensitivity(df = supplementary_table,
+                   prediction = quo(z_score_prediction), 
+                   outcome = quo(outcome_zscore))
+
+method_sensitivity(df = supplementary_table,
+                   prediction = quo(mcmc_prediction), 
+                   outcome = quo(outcome_mcmc))
+
 #########################
 # Plot results
 #########################
@@ -701,57 +752,5 @@ ggplot(analysis_summary, aes(x = outcome, y = n))+
   theme(panel.grid.major = element_blank(), 
         panel.grid.minor = element_blank())
 
-###################
-# Sensitivity and specificity 4x4 tables
-###################
 
-analysis_prediction <- "z_score_prediction"
-analysis_outcome <- "outcome_zscore"
-
-
-method_sensitivity <- function(analysis_prediction, analysis_outcome) {
-  
-  unbalanced_genotypes <- c("homozygous variant",
-                            "hemizygous variant",
-                            "homozygous reference",
-                            "hemizygous reference")
-  
-  true_positives <- supplementary_table %>%
-    filter(analysis_prediction %in% unbalanced_genotypes &
-             analysis_outcome == "correct")
-  
-  true_negatives <- supplementary_table %>%
-    filter(analysis_prediction == "heterozygous" &
-             analysis_outcome == "correct")
-  
-  false_positives <- supplementary_table %>%
-    filter(analysis_prediction %in% unbalanced_genotypes &
-             analysis_outcome == "incorrect")
-  
-  false_negatives <- supplementary_table %>%
-    filter(analysis_prediction == "heterozygous" &
-             analysis_outcome == "incorrect")
-  
-  # True positives, false positives, false negatives, true negatives
-  sensitivity_data <- as.table(matrix(c(nrow(true_positives), 
-                                        nrow(true_negatives),
-                                        nrow(false_positives),
-                                        nrow(false_negatives)), 
-                                      nrow = 2, byrow = TRUE))
-  
-  return(sensitivity_data)
-}
-
-
-supplementary_table %>%
-  
-
-sensitivity_metrics <- epi.tests(sensitivity_data, conf.level = 0.95)
-
-
-method_sensitivity(`z_score_prediction`, `outcome_zscore`)
-
-
-
-count(supplementary_table, outcome_zscore)
 
