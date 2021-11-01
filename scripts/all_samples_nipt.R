@@ -386,8 +386,8 @@ all_samples_unblinded <- all_samples_blinded %>%
             # Change r_number to a character
             mutate(r_number = as.character(r_number)) %>%
             select(r_number, study_id, site, gestation_weeks, gestation_days, 
-                   gestation_total_weeks, gestation_character, 
-                   date_of_blood_sample, vacutainer, 
+                   gestation_total_weeks, gestation_character,
+                   hours_to_first_spin, days_to_storage, vacutainer, 
                    mutation_genetic_info_fetus, 
                    partner_sample_available, original_plasma_vol, 
                    tubes_plasma_current, report_acquired),
@@ -475,8 +475,8 @@ supplementary_table <- families %>%
     # Sample identifiers
     sample_id, r_number, family_number, study_id, 
     # Sampling information
-    date_of_blood_sample, vacutainer, 
-    site, gestation_character,
+    hours_to_first_spin, days_to_storage,
+    vacutainer, gestation_character,
     diagnostic_sampling, 
     # Extraction information
     plasma_volume_ml, extraction_replicates, 
@@ -503,56 +503,88 @@ write.csv(supplementary_table,
                format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv")),
           row.names = FALSE)
 
+
+xl_count_table <- all_samples_arranged %>%
+  filter(inheritance_chromosomal == "x_linked") %>%
+  count(vf_assay)
+
+ad_count_table <- all_samples_arranged %>%
+  filter(inheritance_chromosomal == "autosomal" &
+           inheritance_pattern == "dominant") %>%
+  count(vf_assay)
+
+ar_count_table <- all_samples_arranged %>%
+  filter(inheritance_chromosomal == "autosomal" &
+           inheritance_pattern == "recessive") %>%
+  count(vf_assay)
+
+vf_assay_count_table <- rbind(xl_count_table, 
+                              ad_count_table,
+                              ar_count_table)
+
+write.csv(vf_assay_count_table, 
+          "analysis_outputs/vf_assay_count_table.csv",
+          row.names = FALSE)
+
 ###################
 # Sensitivity and specificity 4x4 tables
 ###################
 
-method_sensitivity <- function(df, prediction, outcome) {
+sensitivity_scores <- function(df, prediction, outcome) {
   
   unbalanced_genotypes <- c("homozygous variant",
                             "hemizygous variant",
                             "homozygous reference",
                             "hemizygous reference")
   
-  true_positives <- df %>%
+  true_positives <- nrow(df %>%
     filter(!!prediction %in% unbalanced_genotypes &
-             !!outcome == "correct")
+             !!outcome == "correct"))
   
-  true_negatives <- df %>%
+  true_negatives <- nrow(df %>%
     filter(!!prediction == "heterozygous" &
-             !!outcome == "correct")
+             !!outcome == "correct"))
   
-  false_positives <- df %>%
+  false_positives <- nrow(df %>%
     filter(!!prediction %in% unbalanced_genotypes &
-             !!outcome == "incorrect")
+             !!outcome == "incorrect"))
   
-  false_negatives <- df %>%
+  false_negatives <- nrow(df %>%
     filter(!!prediction == "heterozygous" &
-             !!outcome == "incorrect")
+             !!outcome == "incorrect"))
   
-  # True positives, false positives, false negatives, true negatives
-  sensitivity_data <- as.table(matrix(c(nrow(true_positives), 
-                                        nrow(false_positives),
-                                        nrow(false_negatives),
-                                        nrow(true_negatives)), 
-                                      nrow = 2, byrow = TRUE))
+  inconclusives <- nrow(df %>%
+    filter(!!prediction == "inconclusive"))
   
-  sensitivity_metrics <- epiR::epi.tests(sensitivity_data, conf.level = 0.95)
+  output <- data.frame(
+    "analysis" = c(as_label(prediction)),
+    "true_positives" = c(true_positives),
+    "true_negatives" = c(true_negatives),
+    "false_positives" = c(false_positives),
+    "false_negatives" = c(false_negatives),
+    "inconclusive" = c(inconclusives))
   
-  return(sensitivity_metrics)
+  return(output)
 }
 
-method_sensitivity(df = supplementary_table,
+sensitivity_table <- rbind(
+  # SPRT results
+  sensitivity_scores(df = supplementary_table,
                    prediction = quo(sprt_prediction), 
-                   outcome = quo(outcome_sprt))
-
-method_sensitivity(df = supplementary_table,
-                   prediction = quo(z_score_prediction), 
-                   outcome = quo(outcome_zscore))
-
-method_sensitivity(df = supplementary_table,
-                   prediction = quo(mcmc_prediction), 
-                   outcome = quo(outcome_mcmc))
+                   outcome = quo(outcome_sprt)),
+  # MCMC results
+  sensitivity_scores(df = supplementary_table,
+                     prediction = quo(mcmc_prediction), 
+                     outcome = quo(outcome_mcmc)),
+  # Z score results
+  sensitivity_scores(df = supplementary_table,
+                     prediction = quo(z_score_prediction), 
+                     outcome = quo(outcome_zscore))) %>%
+  
+  # Calculate sensitivity and specificity
+  mutate(
+    sensitivity = round((true_positives / (true_positives + false_negatives))*100, 1),
+    specificity = round((true_negatives / (false_positives + true_negatives))*100, 1))
 
 #########################
 # Plot results
@@ -745,12 +777,102 @@ ggplot(analysis_summary, aes(x = outcome, y = n))+
   geom_col(fill = "white", colour = "black") +
   facet_wrap(~analysis) +
   ylim(0, 120) +
-  labs(y = "", x = "",
-       title = "Summary of 3 analyses on 124 ddPCR cases") +
+  labs(y = "Samples", x = "",
+       title = "") +
   theme_bw() +
   geom_text(aes(x = outcome, y = n, label = n), vjust = -1) +
   theme(panel.grid.major = element_blank(), 
         panel.grid.minor = element_blank())
 
+###################
+# ROC curve analysis
+###################
+
+roc_binary_calls <- all_samples_unblinded %>%
+  # Convert invasive results to binary outcomes
+  mutate(unbalanced = case_when(
+    fetal_genotype %in% c("homozygous reference fetus", 
+                          "hemizygous variant fetus",
+                          "homozygous variant fetus",
+                          "hemizygous reference fetus") ~"TRUE",
+    fetal_genotype == "heterozygous fetus" ~"FALSE"),
+    
+    # Convert "unbalanced" column to Boolean vector
+    unbalanced = as.logical(unbalanced),
+    # Convert the MCMC calls to a binary outcome
+    # Annoyingly, pG2 has different meanings for recessive and dominant
+    # cases.
+    mcmc_unbalanced_call = case_when(
+      inheritance_chromosomal == "autosomal" &
+        inheritance_pattern == "recessive" ~pmax(p_G1, p_G3),
+      inheritance_chromosomal == "autosomal" &
+        inheritance_pattern == "dominant" ~p_G2,
+      inheritance_chromosomal == "x_linked" ~pmax(p_G0, p_G1)),
+    # Remove minus signs from z score
+    zscore_unbalanced_call = abs(z_score))
+
+sprt_roc <- roc_binary_calls %>%
+  arrange(desc(likelihood_ratio)) %>%
+  # tpr is "true positive rate" and fpr is "false positive rate"
+  mutate(sprt_tpr = cumsum(unbalanced)/sum(unbalanced)) %>%
+  mutate(sprt_fpr = cumsum(!unbalanced)/sum(!unbalanced)) %>%
+  select(r_number, likelihood_ratio, sprt_tpr, sprt_fpr, unbalanced)
+
+mcmc_roc <- roc_binary_calls %>%
+  arrange(desc(mcmc_unbalanced_call)) %>%
+  mutate(mcmc_tpr = cumsum(unbalanced)/sum(unbalanced)) %>%
+  mutate(mcmc_fpr = cumsum(!unbalanced)/sum(!unbalanced)) %>%
+  select(r_number, mcmc_unbalanced_call, mcmc_tpr, mcmc_fpr)
+
+zscore_roc <- roc_binary_calls %>%
+  arrange(desc(zscore_unbalanced_call)) %>%
+  mutate(zscore_tpr = cumsum(unbalanced)/sum(unbalanced)) %>%
+  mutate(zscore_fpr = cumsum(!unbalanced)/sum(!unbalanced)) %>%
+  select(r_number, zscore_tpr, zscore_fpr)
+
+sprt_roc_plot <- ggplot(sprt_roc, aes(x = sprt_fpr, y = sprt_tpr))+
+  geom_line(size = 2)+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  geom_abline(linetype = "dashed")+
+  ylim(0, 1)+
+  xlim(0,1)+
+  labs(x = "",
+       y = "True positive rate", 
+       title = "SPRT analysis")
+
+mcmc_roc_plot <- ggplot(mcmc_roc, aes(x = mcmc_fpr, y = mcmc_tpr))+
+  geom_line(size = 2)+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  geom_abline(linetype = "dashed")+
+  ylim(0, 1)+
+  xlim(0,1)+
+  labs(x = "False positive rate",
+       y = "", 
+       title = "MCMC analysis")
+
+zscore_roc_plot <- ggplot(zscore_roc, aes(x = zscore_fpr, y = zscore_tpr))+
+  geom_line(size = 2)+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  geom_abline(linetype = "dashed")+
+  ylim(0, 1)+
+  xlim(0,1)+
+  labs(x = "",
+       y = "", 
+       title = "Z score analysis")
+
+# All plots together
+roc_plot <- ggpubr::ggarrange(sprt_roc_plot, mcmc_roc_plot, 
+                  zscore_roc_plot, 
+                  ncol = 3, nrow = 1)
+
+ggsave(plot = roc_plot, 
+       filename = "roc_plot.tiff",
+       path = "plots/", device='tiff')
 
 
+unique(all_samples_unblinded$site)
+
+###################
