@@ -36,6 +36,8 @@ source("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/RA
 # Load ddPCR SNP panel (from Camunas Soler et al 2018)
 ddpcr_snp_panel <- read.csv("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/ddPCR SNP Panel/Camunas_Soler_panel_47_GnomAD_frequencies.csv")
 
+gene_info <- read.csv("resources/vf_assay_gene_information.csv")
+
 #########################
 # SPRT analysis
 #########################
@@ -481,7 +483,7 @@ supplementary_table <- families %>%
     # Extraction information
     plasma_volume_ml, extraction_replicates, 
     # Variant information
-    inheritance_chromosomal, inheritance_pattern, vf_assay,
+    cohort, inheritance_chromosomal, inheritance_pattern, vf_assay,
     ff_determination, ff_assay, vf_assay_num_wells, 
     vf_assay_droplets, reference_positives,
     variant_positives, ff_assay_num_wells, ff_assay_droplets, 
@@ -503,6 +505,9 @@ write.csv(supplementary_table,
                format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv")),
           row.names = FALSE)
 
+###################
+# Gene information table
+###################
 
 xl_count_table <- all_samples_arranged %>%
   filter(inheritance_chromosomal == "x_linked") %>%
@@ -520,7 +525,50 @@ ar_count_table <- all_samples_arranged %>%
 
 vf_assay_count_table <- rbind(xl_count_table, 
                               ad_count_table,
-                              ar_count_table)
+                              ar_count_table) %>%
+  dplyr::rename(samples = n) %>%
+  
+  # Bind to gene information
+  left_join(gene_info,
+            by = "vf_assay") %>%
+  
+  # Add inheritance information
+  left_join(
+    ddpcr_target_panel %>%
+      select(assay, inheritance_chromosomal, inheritance_pattern) %>%
+      #Remove duplicate rows
+      distinct(.keep_all = TRUE) %>%
+      dplyr::rename(vf_assay = assay),
+    by = "vf_assay") %>%
+  
+  # Add on abbreviation of inheritance patterns
+  mutate(inheritance_abbreviation = case_when(
+    inheritance_chromosomal == "autosomal" &
+      inheritance_pattern == "recessive" ~"AR",
+    inheritance_chromosomal == "autosomal" &
+      inheritance_pattern == "dominant" ~"AD",
+    inheritance_chromosomal == "x_linked" &
+      inheritance_pattern == "dominant" ~"XLD",
+    inheritance_chromosomal == "x_linked" &
+      inheritance_pattern == "recessive" ~"XLR"),
+    
+    # Factorise for ordering
+    inheritance_abbreviation = factor(inheritance_abbreviation,
+                                      levels = c("AR", "AD", "XLR", "XLD"))) %>%
+  
+  arrange(inheritance_abbreviation, vf_assay) %>%
+  
+  select(inheritance_abbreviation, gene, transcript, variant_dna, 
+         variant_protein, condition,
+         samples) %>%
+  
+  dplyr::rename(Inheritance = inheritance_abbreviation,
+                Gene = gene,
+                Transcript = transcript,
+                DNA = variant_dna,
+                Protein = variant_protein,
+                Condition = condition,
+                Samples = samples)
 
 write.csv(vf_assay_count_table, 
           "analysis_outputs/vf_assay_count_table.csv",
@@ -585,6 +633,128 @@ sensitivity_table <- rbind(
   mutate(
     sensitivity = round((true_positives / (true_positives + false_negatives))*100, 1),
     specificity = round((true_negatives / (false_positives + true_negatives))*100, 1))
+
+
+test_table <- supplementary_table %>%
+  mutate(sprt_binary = case_when(
+    # Autosomal dominant inheritance
+    inheritance_chromosomal == "autosomal" &
+      inheritance_pattern == "dominant" &
+      sprt_prediction == "heterozygous" ~"positive",
+    inheritance_chromosomal == "autosomal" &
+      inheritance_pattern == "dominant" &
+      sprt_prediction == "homozygous reference" ~"negative",
+    
+    # Autosomal recessive inheritance
+    inheritance_chromosomal == "autosomal" &
+      inheritance_pattern == "recessive" &
+      sprt_prediction %in% c("homozygous variant", 
+                             "homozygous reference")  ~"positive",
+    inheritance_chromosomal == "autosomal" &
+      inheritance_pattern == "recessive" &
+      sprt_prediction == "heterozygous" ~"negative",
+    
+    # X linked inheritance
+    inheritance_chromosomal == "x_linked" &
+      sprt_prediction == "hemizygous variant"  ~"positive",
+    sprt_prediction == "hemizygous reference"  ~"negative",
+    TRUE ~"inconclusive")) %>%
+  select(r_number, cohort, inheritance_chromosomal, 
+         inheritance_pattern, sprt_prediction, sprt_binary,
+         outcome_sprt)
+
+count(test_table, sprt_binary, outcome_sprt) %>%
+  mutate(cohort = "all") %>%
+  pivot_wider(id_cols = c(cohort),
+              names_from = c(sprt_binary, outcome_sprt),
+              values_from = n) %>%
+  dplyr::rename(true_negative = negative_correct,
+                false_negative = negative_incorrect,
+                true_positive = positive_correct,
+                false_positive = positive_incorrect,
+                inconclusive = inconclusive_inconclusive) %>%
+  select(cohort, true_positive, true_negative, false_positive, 
+         false_negative, inconclusive) %>%
+  mutate(
+    sensitivity = round((true_positive / (true_positive + false_negative))*100, 1),
+    specificity = round((true_negative / (false_positive + true_negative))*100, 1)) %>%
+  pivot_longer(cols = c(-cohort),
+               names_to = "category",
+                 values_to = "sprt")
+
+###################
+# Text for paper
+###################
+
+paste0("Overall, we analysed ", nrow(all_samples_unblinded), " samples from ", 
+       nrow(families),
+       " families, for ", length(unique(all_samples_unblinded$vf_assay)), 
+       " pathogenic variants.")
+
+paste0("Samples were collected from between ", 
+       min(all_samples_unblinded$gestation_weeks),
+       " and ", max(all_samples_unblinded$gestation_weeks),
+       " weeks gestation (median: ", 
+       round(median(all_samples_unblinded$gestation_total_weeks), 1),
+       ") with fetal fractions ranging from ",
+       round(min(all_samples_unblinded$fetal_percent), 1), "-", 
+       round(max(all_samples_unblinded$fetal_percent), 1),
+       "% (median: ", round(median(all_samples_unblinded$fetal_percent), 1),
+       "%).")
+
+
+unique(all_samples_unblinded$fetal_genotype)
+
+
+paste0("When compared to the results of invasive testing, SPRT and MCMC analysis generated ",
+       nrow(all_samples_unblinded %>%
+              filter(vf_assay == "HBB c.20A>T" &
+                       outcome_sprt == "correct")),
+       " and ",
+       nrow(all_samples_unblinded %>%
+              filter(vf_assay == "HBB c.20A>T" &
+                       outcome_mcmc == "correct")),
+       " correct fetal genotype predictions, respectively, including ",
+       nrow(all_samples_unblinded %>%
+              filter(vf_assay == "HBB c.20A>T" &
+                       fetal_genotype == "homozygous variant fetus",
+                       outcome_sprt == "correct")),
+       " and ",
+       nrow(all_samples_unblinded %>%
+              filter(vf_assay == "HBB c.20A>T" &
+                       fetal_genotype == "homozygous variant fetus",
+                     outcome_mcmc == "correct")),
+       " fetuses affected with sickle cell disease. However, each method also generated ",
+       nrow(all_samples_unblinded %>%
+              filter(vf_assay == "HBB c.20A>T" &
+                       outcome_sprt == "incorrect")),
+       " and ",
+       nrow(all_samples_unblinded %>%
+              filter(vf_assay == "HBB c.20A>T" &
+                       outcome_mcmc == "incorrect")),
+       " incorrect fetal gentoype predictions.")
+
+
+nrow(all_samples_unblinded %>%
+       filter(vf_assay != "HBB c.20A>T" &
+                outcome_sprt == "correct"))
+
+nrow(all_samples_unblinded %>%
+       filter(vf_assay != "HBB c.20A>T" &
+                outcome_mcmc == "correct"))
+
+nrow(all_samples_unblinded %>%
+       filter(vf_assay != "HBB c.20A>T" &
+                outcome_sprt == "incorrect"))
+
+nrow(all_samples_unblinded %>%
+       filter(vf_assay != "HBB c.20A>T" &
+                outcome_mcmc == "incorrect"))
+
+all_samples_unblinded %>%
+  filter(outcome_mcmc == "incorrect" |
+           outcome_sprt == "incorrect") %>%
+  select(r_number, z_score_prediction, outcome_zscore)
 
 #########################
 # Plot results
@@ -651,6 +821,25 @@ plot_1 <- ggplot(het_gdna %>%
   multiplot_theme +
   labs(y = "Variant fraction (%)", x = "",
        title = "ddPCR for 82 heterozygous gDNA controls")
+
+
+ggplot(het_gdna %>%
+         filter(vf_assay == "HBB c.20A>T") %>%
+                   mutate(sample_type = "het gDNA"), 
+                 aes(x = vf_assay_molecules, 
+                     y = variant_percent)) +
+  geom_hline(yintercept = 50,
+             linetype = "dashed", alpha = 0.5) +
+  ylim(43, 57)+
+  scale_x_continuous(limits = c(0,30000),
+                     breaks = c(0, 10000, 20000 ,30000)) +
+  scale_shape_manual(values = c(21)) +
+  geom_point(size = 3, aes(shape = sample_type), fill= "white",
+             colour = "black", alpha =0.7) +
+  theme_bw() +
+  multiplot_theme +
+  labs(y = "Variant fraction (%)", x = "DNA input (molecules)",
+       title = "ddPCR for 42 HBB c.20A>T gDNA controls")
 
 ###################
 # Plot 2: z score analysis
@@ -874,5 +1063,65 @@ ggsave(plot = roc_plot,
 
 
 unique(all_samples_unblinded$site)
+
+###################
+# SPRT on gDNA controls
+###################
+
+# This plot shows that the common form of the SPRT equation is 
+# inappropriate for this dataset
+
+ff_for_graph <- 0.04
+lr_for_graph <- 8
+
+het_dna_sprt <- ggplot(het_gdna, aes(x = vf_assay_molecules, y = variant_percent))+
+  geom_point(size = 2, colour = "black", fill = "white", pch=21,
+             alpha = 0.8) +
+  theme_bw()+
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.position = "none")+
+  labs(x = "Genome equivalents (GE)",
+       y = "Variant fraction (%)") +
+  geom_function(fun = "calc_AS_upper_boundary",
+                aes(x = vf_assay_molecules, y =
+                      calc_AS_upper_boundary(vf_assay_molecules, ff_for_graph, 
+                                             lr_for_graph)),
+                colour = "black",
+                args = c(ff_for_graph, lr_for_graph)) +
+  
+  geom_function(fun = "calc_AS_lower_boundary",
+                aes(x = vf_assay_molecules, y =
+                      calc_AS_lower_boundary(vf_assay_molecules, ff_for_graph, 
+                                             lr_for_graph)),
+                colour = "black",
+                args = c(ff_for_graph, lr_for_graph)) +
+  
+  geom_function(fun = "calc_SS_boundary",
+                aes(x = vf_assay_molecules, y =
+                      calc_SS_boundary(vf_assay_molecules, ff_for_graph, 
+                                       lr_for_graph)),
+                colour = "black",
+                args = c(ff_for_graph, lr_for_graph))+
+  
+  geom_function(fun = "calc_AA_boundary",
+                aes(x = vf_assay_molecules, y =
+                      calc_AA_boundary(vf_assay_molecules, ff_for_graph, 
+                                       lr_for_graph)),
+                colour = "black",
+                args = c(ff_for_graph, lr_for_graph)) +
+  scale_y_continuous(limits = c(43,57)) + 
+  annotate(geom = "text", x = 28000, y = 50, label = "heterozygous") +
+  annotate(geom = "text", x = 28000, y = 47, label = "homozygous reference") +
+  annotate(geom = "text", x = 28000, y = 53, label = "homozygous variant") +
+  xlim(0, 30000)
+
+ggsave(plot = het_dna_sprt, 
+       filename = "het_dna_sprt.tiff",
+       path = "plots/", device='tiff', dpi=600,
+       units = "in",
+       width = 12.5,
+       height = 7)
 
 ###################

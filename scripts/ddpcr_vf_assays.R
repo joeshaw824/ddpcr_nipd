@@ -12,6 +12,9 @@
 # Load packages
 library(tidyverse)
 
+# Source functions
+source("functions/ddPCR_nipd_functions.R")
+
 #########################
 # Load sequences
 #########################
