@@ -134,6 +134,25 @@ calc_AA_boundary <- function(total_copies, ff, lr) {
   return(AA_boundary*100)
 }
 
+calc_hemi_var_boundary <- function(total_copies, ff, lr) {
+  q0 <- (1 - ff) / (2 - ff)
+  q1 <- 1 / (2 - ff)
+  delta <- (1- q1)/(1-q0)
+  gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
+  hemi_var_boundary <- (((log(lr)/total_copies) - log(delta))/log(gamma))*100
+  return(hemi_var_boundary)
+}
+
+calc_hemi_ref_boundary <- function(total_copies, ff, lr) {
+  q0 <- (1 - ff) / (2 - ff)
+  q1 <- 1 / (2 - ff)
+  delta <- (1- q1)/(1-q0)
+  gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
+  hemi_var_boundary <- (((log(lr)/total_copies) - log(delta))/log(gamma))*100
+  hemi_ref_boundary <- 50 -(hemi_var_boundary -50)
+  return(hemi_ref_boundary)
+}
+
 #########################
 # Grouped functions
 #########################
@@ -503,3 +522,99 @@ reverse_complement <- function(input_sequence){
   
 }
 
+#########################
+# Prediction functions
+#########################
+
+# This function converts fetal genotype predictions for multiple inheritance 
+# patterns into binary "positive" and "negative" classifiers, to help
+# with sensitivity calculations.
+
+binary_predictions <- function(df, prediction) {
+  
+  stopifnot(c("inheritance_chromosomal", "inheritance_pattern")
+            %in% colnames(df))
+  
+  new_df <- df %>%
+    mutate(binary_call = case_when(
+      # Autosomal dominant inheritance
+      inheritance_chromosomal == "autosomal" &
+        inheritance_pattern == "dominant" &
+        !!prediction == "heterozygous" ~"positive",
+      inheritance_chromosomal == "autosomal" &
+        inheritance_pattern == "dominant" &
+        !!prediction == "homozygous reference" ~"negative",
+      
+      # Autosomal recessive inheritance
+      inheritance_chromosomal == "autosomal" &
+        inheritance_pattern == "recessive" &
+        !!prediction %in% c("homozygous variant", 
+                            "homozygous reference")  ~"positive",
+      inheritance_chromosomal == "autosomal" &
+        inheritance_pattern == "recessive" &
+        !!prediction == "heterozygous" ~"negative",
+      
+      # X linked inheritance
+      inheritance_chromosomal == "x_linked" &
+        !!prediction == "hemizygous variant"  ~"positive",
+      inheritance_chromosomal == "x_linked" &
+        !!prediction == "hemizygous reference"  ~"negative",
+      TRUE ~"inconclusive"))
+  
+  return(new_df)
+}
+
+sensitivity_metrics <- function(df, prediction_binary, outcome, cohort_input,
+                          cohort_name) {
+  
+  # Example
+  # sensitivity_metrics(df = supplementary_table, 
+      # prediction_binary = quo(sprt_binary), 
+      # outcome = quo(outcome_sprt), 
+      # cohort_input = c("sickle cell disease", "bespoke design"),
+      # cohort_name = "all") 
+  
+  # Filter by cohort
+  df_cohort <- df %>%
+    filter(cohort %in% cohort_input)
+  
+  true_positives <- nrow(df_cohort %>%
+                           filter(!!prediction_binary == "positive" &
+                                    !!outcome == "correct"))
+  
+  true_negatives <- nrow(df_cohort %>%
+                           filter(!!prediction_binary == "negative" &
+                                    !!outcome == "correct"))
+  
+  false_positives <- nrow(df_cohort %>%
+                            filter(!!prediction_binary %in% "positive" &
+                                     !!outcome == "incorrect"))
+  
+  false_negatives <- nrow(df_cohort %>%
+                            filter(!!prediction_binary == "negative" &
+                                     !!outcome == "incorrect"))
+  
+  inconclusives <- nrow(df_cohort %>%
+                          filter(!!prediction_binary == "inconclusive"))
+  
+  output <- data.frame(
+    "group" = cohort_name,
+    true_positive = c(true_positives),
+    true_negative = c(true_negatives),
+    false_positive = c(false_positives),
+    false_negative = c(false_negatives),
+    inconclusive = c(inconclusives)) %>%
+    
+    # Calculate sensitivity and specificity
+    mutate(
+      `Sensitivity (%)` = round((true_positive / 
+                                   (true_positive + false_negative))*100, 1),
+      `Specificity (%)` = round((true_negative / 
+                                   (false_positive + true_negative))*100, 1)) %>%
+    pivot_longer(cols = c(-group),
+                 names_to = "category",
+                 values_to = "analysis_method")
+  
+  return(output)
+  
+}
