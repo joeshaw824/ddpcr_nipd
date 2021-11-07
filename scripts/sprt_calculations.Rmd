@@ -1,5 +1,5 @@
 ---
-title: '**SPRT Calculations**'
+title: '**SPRT and Poisson Calculations**'
 author: "Joe Shaw"
 date: "29/09/2021"
 output:
@@ -66,6 +66,72 @@ test_data <- data.frame(
 test_data
 ```
 
+## Reversing the Poisson correction
 
+The Poisson correction when applied to digital PCR allows the calculation of the number of molecules of a given target based on the number of positive partitions for that target (P) and the total number of partitions examined (N).
 
+When testing the appropriateness of the MCMC pipeline on genomic DNA data, I wanted to create an artificial data-set of fetal fractions.
+
+To convert from a desired number of molecules to an expected number of positive droplets, this would require rearranging the standard Poisson distribution calculation:
+
+```{r poisson_correct, include = TRUE}
+
+poisson_correct <- function(N, P) {
+  
+  num_molecules <- -log((N-P)/N)*N
+  return(num_molecules)
+  
+}
+```
+
+This requires three laws of natural logarithms
+
+1) ln(x/y) = ln(x) - ln(y)
+2) −ln(x) = ln(1/x)
+3) If y = ln(x), then e^y = x
+
+Rearranging using laws 1 and 2:
+-ln((N-P)/N) = ln(1/ ((N-P)/N)) = ln(N/(N-P))
+
+num_molecules  = ln(N/(N-P)) * N
+
+num_molecules / N = ln(N/(N-P))
+
+Rearranging using law 3 gives the number of predicted positive partitions:
+
+e ^ (num_molecules / N) = N/(N-P)
+N / (e ^ (num_molecules / N)) = N-P
+N - N/ (e ^ (num_molecules / N)) = P
+
+```{r reverse_poisson, include=TRUE}
+
+reverse_poisson <- function(num_molecules, N) {
+  
+  P <- N - (N / exp(num_molecules/N))
+  
+  return(P)
+}
+
+```
+
+## Testing the Rearrangement
+
+Testing the rearranged equation on a randomly generated data-set.
+
+```{r test_rearrangement, echo=TRUE}
+
+test_ddpcr_data <- data.frame(
+  test_sample = seq(from = 1, to = 20, by = 1),
+  # Total droplets
+  N = sample(seq(from = 15000, to = 22000, by= 100), 20),
+  # Positive droplets
+  P = sample(seq(from = 10, to = 5000, by= 10), 20)) %>%
+  
+  mutate(
+    num_molecules = poisson_correct(N, P),
+    P_reverse = reverse_poisson(num_molecules, N),
+    difference = abs(P - P_reverse))
+
+test_ddpcr_data
+```
 

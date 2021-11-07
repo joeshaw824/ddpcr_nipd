@@ -21,6 +21,17 @@ poisson_correct <- function(N, P) {
   num_molecules <- as.integer(-log((N-P)/N)*N)
   return(num_molecules)}
 
+# Function for reversing the Poisson correction to calculate
+# number of positive partitions from number of molecules.
+# See sprt_calculations.rmd for full explanation.
+
+reverse_poisson <- function(num_molecules, N) {
+  
+  P <- as.integer(N - (N / exp(num_molecules/N)))
+  
+  return(P)
+}
+
 # Calculate the fetal fraction from paternal allele copies.
 
 calc_ff <- function(maternal_copies, paternal_copies) {
@@ -151,6 +162,172 @@ calc_hemi_ref_boundary <- function(total_copies, ff, lr) {
   hemi_var_boundary <- (((log(lr)/total_copies) - log(delta))/log(gamma))*100
   hemi_ref_boundary <- 50 -(hemi_var_boundary -50)
   return(hemi_ref_boundary)
+}
+
+#########################
+# MCMC functions
+#########################
+
+# This function runs Tristan's MCMC pipeline for 3 inheritance patterns.
+
+# n_K	= number of droplets tested for variant assay
+# K_M	= number of droplets positive for variant (mutant) allele
+# K_N	= number of droplets positive for normal (reference) allele
+# n_Z	= number of droplets tested for fetal fraction assay
+# Z_X	= number of droplets positive for maternal homozygous allele
+# Z_Y	= number of droplets positive for paternal allele
+
+# Autosomal dominant:
+# p_G1: probability fetus is heterozygous
+# p_G2: probability fetus is homozygous reference
+
+# Autosomal recessive:
+# p_G1: probability fetus is homozygous reference
+# p_G2: probability fetus is heterozygous
+# p_G3: probability fetus is homozygous variant
+
+# X-linked:
+# p_G0: probability fetus is hemizygous reference
+# p_G1: probability fetus is hemizygous variant
+
+# Threshold should be 0.95
+
+run_mcmc <- function(data_input, threshold) {
+  
+  # Input data must have the required columns
+  stopifnot(c("inheritance_chromosomal", "inheritance_pattern",
+            "n_K", "K_M", "K_N", "n_Z", "Z_X", "Z_Y") %in% colnames(data_input))
+  
+  # Compile the models
+  dominant_model <- cmdstan_model("models/nipt_dominant.stan")
+
+  x_linked_model <- cmdstan_model("models/nipt_x_linked.stan")
+  
+  recessive_model <- cmdstan_model("models/nipt_recessive.stan")
+  
+  # Initialise the chains
+
+  initialise_chains_dominant <- function() list(rho = runif(1, 0.1, 0.5), 
+                                              M_K = runif(1, 0.1, 0.5), 
+                                              M_Z = runif(1, 0.1, 0.5))
+
+  initialise_chains_xlinked <- function() list(rho = rbeta(1, 4, 32),
+                                             M_K = abs(rnorm(1, sd = 0.05)),
+                                             M_Z = abs(rnorm(1, sd = 0.05)))
+
+  initialise_chains_recessive <- function() list(rho = runif(1, 0.1, 0.5),
+                                               M_K = runif(1, 0.1, 0.5),
+                                               M_Z = runif(1, 0.1, 0.5))
+  
+  # Set probability threshold for accepting fetal genotype predictions
+  mcmc_threshold <- threshold
+  
+  # Generate the probabilities for the fetal genotype based on 
+  # the inheritance pattern of the variant.
+  
+  data_with_fits <- data_input %>%
+    nest(data = n_K:Z_Y) %>%
+    mutate(
+      
+      data = map(data, as.list),
+      
+      fit = case_when(
+        inheritance_chromosomal == "autosomal" &
+        inheritance_pattern == "dominant" ~map(
+          data, ~ dominant_model$sample(data = .,
+                                        init = initialise_chains_dominant,
+                                        step_size = 0.2,
+                                        parallel_chains = parallel::detectCores())),
+      
+      inheritance_chromosomal == "autosomal" & 
+        inheritance_pattern == "recessive" ~ map(
+          data, ~ recessive_model$sample(data = .,
+                                         init = initialise_chains_recessive,
+                                         step_size = 0.2,
+                                         parallel_chains = parallel::detectCores())),
+      
+      inheritance_chromosomal == "x_linked" ~map(
+        data, ~ x_linked_model$sample(data = .,
+                                      init = initialise_chains_xlinked,
+                                      step_size = 0.2,
+                                      parallel_chains = parallel::detectCores()))),
+    
+    results = case_when(
+      inheritance_chromosomal == "autosomal" &
+        inheritance_pattern == "dominant" ~map(
+          fit,  ~ setNames(pivot_wider(.$summary(c("pG", "rho"), "mean"),
+                                       names_from = "variable",
+                                       values_from = "mean"),
+                           c("p_G1", "p_G2", "rho_est"))),
+      
+      inheritance_chromosomal == "autosomal" & 
+        inheritance_pattern == "recessive" ~map(
+          fit,  ~ setNames(pivot_wider(.$summary(c("pG", "rho"), "mean"),
+                                       names_from = "variable",
+                                       values_from = "mean"),
+                           c("p_G1", "p_G2", "p_G3", "rho_est"))),
+      
+      inheritance_chromosomal == "x_linked" ~map(
+        fit,  ~ setNames(pivot_wider(.$summary(c("pG", "rho"), "mean"),
+                                     names_from = "variable",
+                                     values_from = "mean"),
+                         c("p_G0", "p_G1", "rho_est"))))) %>%
+  
+  unnest_wider(results)
+  
+  # Add on fetal genotype predictions based on the previously set threshold.
+  
+  data_with_predictions <- data_with_fits %>%
+    select(-c(data, fit)) %>%
+    rename(fetal_fraction = rho_est) %>%
+    mutate(mcmc_prediction = case_when(
+      
+      # Dominant predictions
+      inheritance_chromosomal == "autosomal" & 
+        inheritance_pattern == "dominant" & 
+        p_G1 > mcmc_threshold ~"heterozygous",
+      
+      inheritance_chromosomal == "autosomal" &
+        inheritance_pattern == "dominant" & 
+        p_G2 > mcmc_threshold ~"homozygous reference",
+      
+      inheritance_chromosomal == "autosomal" &
+        inheritance_pattern == "dominant" & 
+        p_G1 < mcmc_threshold & 
+        p_G2 < mcmc_threshold ~"inconclusive",
+      
+      # Recessive predictions
+      inheritance_chromosomal == "autosomal" &
+        inheritance_pattern == "recessive" & 
+        p_G1 > mcmc_threshold ~"homozygous reference",
+      
+      inheritance_chromosomal == "autosomal" &
+        inheritance_pattern == "recessive" &
+        p_G2 > mcmc_threshold ~"heterozygous",
+      
+      inheritance_chromosomal == "autosomal" &
+        inheritance_pattern == "recessive" &
+        p_G3 > mcmc_threshold ~"homozygous variant",
+      
+      inheritance_chromosomal == "autosomal" &
+        inheritance_pattern == "recessive" & 
+        p_G1 < mcmc_threshold & 
+        p_G2 < mcmc_threshold &
+        p_G3 < mcmc_threshold~"inconclusive",
+      
+      # X-linked predictions
+      inheritance_chromosomal == "x_linked" &
+        p_G0 > mcmc_threshold ~"hemizygous reference",
+      
+      inheritance_chromosomal == "x_linked" &
+        p_G1 > mcmc_threshold ~"hemizygous variant",
+      
+      inheritance_chromosomal == "x_linked" &
+        p_G0 < mcmc_threshold &
+        p_G1 < mcmc_threshold ~"inconclusive"))
+
+  return(data_with_predictions)
+  
 }
 
 #########################
@@ -526,6 +703,66 @@ reverse_complement <- function(input_sequence){
 # Prediction functions
 #########################
 
+# Function to make fetal genotype predictions following SPRT analysis
+
+predict_sprt_genotypes <- function(df, lr_threshold) {
+  
+  stopifnot(c("inheritance_chromosomal", "inheritance_pattern",
+              "likelihood_ratio")
+            %in% colnames(df))
+  
+  predictions <- df %>%
+    mutate(
+      # Classify based on likelihood ratio threshold supplied
+      # Fetal genotype predictions are named consistently as 
+      # "inconclusive", "heterozygous", "homozygous/hemizygous reference/variant"
+      sprt_prediction = case_when(
+        inheritance_chromosomal == "autosomal" &
+          likelihood_ratio > lr_threshold &
+          major_allele == "reference allele" 
+        ~ "homozygous reference",
+        
+        inheritance_chromosomal == "autosomal" &
+          likelihood_ratio > lr_threshold &
+          major_allele == "variant allele" 
+        ~ "homozygous variant",
+        
+        inheritance_chromosomal == "autosomal" &
+          likelihood_ratio < (1/lr_threshold)
+        ~ "heterozygous",
+        
+        inheritance_chromosomal == "autosomal" &
+          likelihood_ratio < lr_threshold &
+          likelihood_ratio > (1/lr_threshold) 
+        ~ "inconclusive",
+        
+        inheritance_chromosomal == "x_linked" &
+          likelihood_ratio > lr_threshold &
+          major_allele == "reference allele" 
+        ~ "hemizygous reference",
+        
+        inheritance_chromosomal == "x_linked" &
+          likelihood_ratio > lr_threshold &
+          major_allele == "variant allele" 
+        ~ "hemizygous variant",
+        
+        inheritance_chromosomal == "x_linked" &
+          likelihood_ratio < lr_threshold 
+        ~ "inconclusive"),
+      
+      # Factorise for plotting
+      sprt_prediction = factor(sprt_prediction, levels = 
+                                 c("hemizygous variant",
+                                   "homozygous variant",
+                                   "heterozygous",
+                                   "homozygous reference",
+                                   "hemizygous reference",
+                                   "inconclusive")))
+  
+  return(predictions)
+  
+}
+
 # This function converts fetal genotype predictions for multiple inheritance 
 # patterns into binary "positive" and "negative" classifiers, to help
 # with sensitivity calculations.
@@ -618,3 +855,5 @@ sensitivity_metrics <- function(df, prediction_binary, outcome, cohort_input,
   return(output)
   
 }
+
+#########################
