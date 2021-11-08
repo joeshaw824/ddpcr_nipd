@@ -834,20 +834,43 @@ sensitivity_metrics <- function(df, prediction_binary, outcome, cohort_input,
   inconclusives <- nrow(df_cohort %>%
                           filter(!!prediction_binary == "inconclusive"))
   
+  # Generate an input table for the epiR::epi.tests function
+  # Order must go: TP, FP, FN, TN
+  data_table <- as.table(matrix(c(true_positives, false_positives, 
+                                  false_negatives, true_negatives), 
+                                nrow = 2, byrow = TRUE))
+  
+  # Use epiR to calculate sensitivity and specificity
+  data_results <- epiR::epi.tests(data_table, conf.level = 0.95)
+  
+  # Sensitivity
+  
+  sensitivity_paste <- paste0(round(data_results$detail$se$est, 3)*100, 
+         " (",
+         round(data_results$detail$se$lower, 3)*100,
+         "-",
+         round(data_results$detail$se$upper, 3)*100,
+         ")")
+  
+  # Specificity
+  
+  specificity_paste <- paste0(round(data_results$detail$sp$est, 3)*100, 
+         " (",
+         round(data_results$detail$sp$lower, 3)*100,
+         "-",
+         round(data_results$detail$sp$upper, 3)*100,
+         ")")
+  
   output <- data.frame(
     "group" = cohort_name,
-    true_positive = c(true_positives),
-    true_negative = c(true_negatives),
-    false_positive = c(false_positives),
-    false_negative = c(false_negatives),
-    inconclusive = c(inconclusives)) %>%
+    true_positive = c(as.character(true_positives)),
+    true_negative = c(as.character(true_negatives)),
+    false_positive = c(as.character(false_positives)),
+    false_negative = c(as.character(false_negatives)),
+    inconclusive = c(as.character(inconclusives)),
+    sensitivity = c(sensitivity_paste),
+    specificity = c(specificity_paste)) %>%
     
-    # Calculate sensitivity and specificity
-    mutate(
-      `Sensitivity (%)` = round((true_positive / 
-                                   (true_positive + false_negative))*100, 1),
-      `Specificity (%)` = round((true_negative / 
-                                   (false_positive + true_negative))*100, 1)) %>%
     pivot_longer(cols = c(-group),
                  names_to = "category",
                  values_to = "analysis_method")

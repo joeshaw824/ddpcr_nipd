@@ -210,6 +210,11 @@ gdna_data_mcmc <- het_gdna %>%
 # 62.2 minutes
 gdna_mcmc_analysed <- run_mcmc(gdna_data_mcmc, 0.95)
 
+# Export the file as a csv so you don't have to keep rerunning the analysis.
+
+write.csv(gdna_mcmc_analysed, "analysis_outputs/gdna_mcmc_analysed.csv",
+          row.names = FALSE)
+
 #########################
 # Z score analysis
 #########################
@@ -363,7 +368,7 @@ all_samples_unblinded <- all_samples_blinded %>%
                                           "inconclusive")))
 
 #########################
-# Summary of all results
+# Summary of all results: Supplementary Data Table
 #########################
 
 all_samples_arranged <- all_samples_unblinded %>%
@@ -413,6 +418,13 @@ supplementary_table <- families %>%
     variant_percent,
     maternal_molecules, paternal_molecules, fetal_percent,
     ff_assay_molecules, total_molecules, totalGE_ml_plasma,
+    # Poisson confidence limits
+    fetal_percent_min,
+    fetal_percent_max,
+    variant_percent_min,
+    variant_percent_max,
+    vf_assay_molecules_min,
+    vf_assay_molecules_max,
     # Analysis
     likelihood_ratio, sprt_prediction, sprt_binary, 
     p_G0, p_G1, p_G2, p_G3, mcmc_prediction, mcmc_binary, 
@@ -494,6 +506,114 @@ vf_assay_count_table <- rbind(xl_count_table,
 write.csv(vf_assay_count_table, 
           "analysis_outputs/vf_assay_count_table.csv",
           row.names = FALSE)
+
+#########################
+# HBB c.20A>T limit of detection study
+#########################
+
+lod_data <- read_csv("data/20-1557.csv", col_names = TRUE) %>%
+  janitor::clean_names() %>%
+  dplyr::rename(droplets = accepted_droplets)
+
+# There are 4 replicates per spike-in. Merging them together gives
+# outputs of 3000, 6000, 9000 and 12000 genome equivalents.
+
+# Wells for 3000 GE dataset
+wells_3000_GE <- c("A02", "A03", "E03", "A04", "E04", "A05", "E05", 
+                   "A06", "E06", "A07", "E07", "A08", "E08")
+
+wells_6000_GE <- c(wells_3000_GE, "B02", "B03", "F03", "B04", "F04", 
+                   "B05", "F05", "B06", "F06", "B07", "F07", "B08", "F08")
+
+wells_9000_GE <- c(wells_6000_GE, "C02", "C03", "G03", "C04", "G04", 
+                   "C05", "G05", "C06", "G06", "C07", "G07", "C08", "G08")
+
+wells_12000_GE <- c(wells_9000_GE, "D02", "D03", "H03", "D04", "H04", 
+                    "D05", "H05", "D06", "H06", "D07", "H07", "D08", "H08")
+
+# Merge values together with a function
+
+merge_lod_wells <- function(input_wells, GE_level){
+  
+  output <- lod_data %>% 
+    select(well, sample, target, positives, droplets) %>%
+    filter(well %in% input_wells) %>%
+    group_by(sample, target) %>% 
+    summarise(positives = sum(positives),
+              droplets = sum(droplets),
+              .groups="drop") %>%
+    pivot_wider(id_cols = c(sample),
+                names_from = target,
+                values_from = c(droplets, positives),
+                names_glue = "{target}_{.value}") %>%
+    select(-c(HbA_droplets)) %>%
+    dplyr::rename(vf_assay_droplets = HbS_droplets,
+                  variant_positives = HbS_positives,
+                  reference_positives = HbA_positives) %>%
+    mutate(GE_level = GE_level)
+  
+  return(output)
+}
+
+# Bind the datasets together, then apply var_ref_calculations
+
+lod_data_merged <- var_ref_calculations(rbind(
+  merge_lod_wells(wells_3000_GE, 3000), 
+  merge_lod_wells(wells_6000_GE, 6000),
+  merge_lod_wells(wells_9000_GE, 9000),
+  merge_lod_wells(wells_12000_GE, 12000))) %>%
+  # Allows easier colour labelling
+  mutate(sample = factor(sample, levels = 
+                           c("SS 12%", "SS 10%", "SS 8%", "SS 6%", "SS 4%", "SS 2%",
+                             "0%",
+                             "AA 2%", "AA 4%", "AA 6%", "AA 8%", "AA 10%", "AA 12%")))
+
+lod_plot <- ggplot(lod_data_merged, 
+                   aes(x = vf_assay_molecules, y = variant_percent)) +
+  theme_bw() +
+ theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), 
+    legend.position = "right", 
+    plot.title = element_text(size = 11),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 9)) +
+  geom_errorbar(aes(ymin = variant_percent_min, ymax = variant_percent_max),
+                alpha = 0.2) +
+  geom_errorbarh(aes(xmin = vf_assay_molecules_min, 
+                     xmax = vf_assay_molecules_max),
+                 alpha = 0.2) +
+  # In order of shade
+  # "#FFFFFF" = white
+  # "#CCCCCC" = grey 1
+  # "#9999CC" = grey 2
+  # "#999999" = grey 3
+  # "#666666" = grey 4
+  # "#333333" = grey 5
+  # "#000000" = black; 
+  scale_fill_manual(values = c(
+    # SS 12% to 2%
+    "#000000", "#333333", "#666666", "#999999", "#9999CC", "#CCCCCC",
+    # 0%
+    "#FFFFFF",
+    # 2% to 12%
+    "#CCCCCC", "#9999CC", "#999999", "#666666", "#333333","#000000")) +
+  scale_shape_manual(values = c(24, 24, 24, 24, 24, 24, 21, 
+                                25,25, 25, 25, 25, 25)) +
+  geom_point(size = 2, aes(fill = sample, shape = sample)) +
+  ylim(39, 61) +
+  xlim(0, 15000) +
+  geom_hline(yintercept = 50, linetype = "dashed") +
+  labs(x = "Genome Equivalents (GE)",
+       y = "Variant fraction (%)",
+       title = "")
+
+ggsave(plot = lod_plot, 
+       filename = "lod_plot.tiff",
+       path = "plots/", device='tiff', dpi=300,
+       units = "in",
+       width = 8,
+       height = 6)
 
 ###################
 # Sensitivity and specificity table
@@ -588,8 +708,8 @@ analysis_metrics <- sprt_metrics %>%
             category == "true_negative" ~ "True negative",
             category == "false_positive" ~ "False positive",
             category == "false_negative" ~ "False negative",
-            category == "Sensitivity (%)" ~ "Sensitivity (%)",
-            category == "Specificity (%)" ~ "Specificity (%)",
+            category == "sensitivity" ~ "Sensitivity (%)",
+            category == "specificity" ~ "Specificity (%)",
             category == "inconclusive" ~ "Inconclusive"),
          `Cohort` = case_when(
            group == "sickle cell disease" ~ "Sickle cell disease",
@@ -599,128 +719,6 @@ analysis_metrics <- sprt_metrics %>%
 
 write.csv(analysis_metrics, "analysis_outputs/analysis_metrics.csv",
           row.names = FALSE)
-
-###################
-# Text for paper
-###################
-
-paste0("Overall, we analysed ", nrow(all_samples_unblinded), " samples from ", 
-       nrow(families),
-       " families, for ", length(unique(all_samples_unblinded$vf_assay)), 
-       " pathogenic variants.")
-
-paste0("Samples were collected from between ", 
-       min(all_samples_unblinded$gestation_weeks),
-       " and ", max(all_samples_unblinded$gestation_weeks),
-       " weeks gestation (median: ", 
-       round(median(all_samples_unblinded$gestation_total_weeks), 1),
-       ") with fetal fractions ranging from ",
-       round(min(all_samples_unblinded$fetal_percent), 1), "-", 
-       round(max(all_samples_unblinded$fetal_percent), 1),
-       "% (median: ", round(median(all_samples_unblinded$fetal_percent), 1),
-       "%).")
-
-paste0("When compared to the results of invasive testing, SPRT and MCMC analysis generated ",
-       nrow(all_samples_unblinded %>%
-              filter(vf_assay == "HBB c.20A>T" &
-                       outcome_sprt == "correct")),
-       " and ",
-       nrow(all_samples_unblinded %>%
-              filter(vf_assay == "HBB c.20A>T" &
-                       outcome_mcmc == "correct")),
-       " correct fetal genotype predictions, respectively, including ",
-       nrow(all_samples_unblinded %>%
-              filter(vf_assay == "HBB c.20A>T" &
-                       fetal_genotype == "homozygous variant fetus",
-                       outcome_sprt == "correct")),
-       " and ",
-       nrow(all_samples_unblinded %>%
-              filter(vf_assay == "HBB c.20A>T" &
-                       fetal_genotype == "homozygous variant fetus",
-                     outcome_mcmc == "correct")),
-       " fetuses affected with sickle cell disease. However, each method also generated ",
-       nrow(all_samples_unblinded %>%
-              filter(vf_assay == "HBB c.20A>T" &
-                       outcome_sprt == "incorrect")),
-       " and ",
-       nrow(all_samples_unblinded %>%
-              filter(vf_assay == "HBB c.20A>T" &
-                       outcome_mcmc == "incorrect")),
-       " incorrect fetal gentoype predictions.")
-# "For the bespoke cohort, the two methods again performed similarly well,"
-paste0("with the SPRT analysis correctly predicting ",
-       nrow(all_samples_unblinded %>%
-              filter(vf_assay != "HBB c.20A>T" &
-                       outcome_sprt == "correct")),
-      " fetal genotypes and the MCMC analysis correctly predicting ",
-      nrow(all_samples_unblinded %>%
-             filter(vf_assay != "HBB c.20A>T" &
-                      outcome_mcmc == "correct")),
-      ".") 
-
-# Correct fetal genotypes were predicted by both the SPRT and MCMC methods
-paste0("for 5 pregnancies with a risk of Aicardi-Goutières syndrome (",
-       supplementary_table[supplementary_table$vf_assay == "RNASEH2C c.205C>T",
-                           "sample_id"],
-       " and ",
-       supplementary_table[supplementary_table$vf_assay == "ADAR c.2997G>T",
-                           "sample_id"],
-       "), vitamin B12-responsive methylmalonic aciduria (",
-       supplementary_table[supplementary_table$vf_assay == "MMAA c.733+1G>A",
-                           "sample_id"],
-       "), congenital disorder of glycosylation type 1a (CDG1a) (",
-       supplementary_table[supplementary_table$vf_assay == "PMM2 c.691G>A" &
-                             supplementary_table$outcome_sprt == "correct",
-                           "sample_id"],
-       ") and severe combined immunodeficiency (",
-       supplementary_table[supplementary_table$vf_assay == "ADA c.556G>A",
-                           "sample_id"],
-       ").")
-
-paste0("A sample for a later pregnancy of the CDG1a couple (",
-       supplementary_table[supplementary_table$vf_assay == "PMM2 c.691G>A" &
-                             supplementary_table$outcome_sprt == "inconclusive",
-                           "sample_id"],
-       ") was deemed inconclusive by both methods,")
-
-# "which was likely a combination of"
-
-paste0("a low fetal fraction (",
-       round(supplementary_table[supplementary_table$vf_assay == "PMM2 c.691G>A" &
-                             supplementary_table$outcome_sprt == "inconclusive",
-                           "fetal_percent"], 1),
-       " %) and low cfDNA concentration (",
-       round(supplementary_table[supplementary_table$vf_assay == "PMM2 c.691G>A" &
-                                   supplementary_table$outcome_sprt == "inconclusive",
-                                 "totalGE_ml_plasma"], 0),
-       " GE/ml).")
-
-
-#The variant fraction of the heterozygous gDNA controls 
-paste0("showed substantial variation (",
-        round(min(het_gdna$variant_percent), 1),
-        "-",
-        round(max(het_gdna$variant_percent), 1),
-        "%) when fewer than 2000 haploid genome equivalents (GE) were measured.")  
-
-# The additional classification rules generated a higher number of 
-# inconclusive results for the z score approach, 
-paste0("although ",
-       nrow(all_samples_unblinded %>%
-              filter(vf_assay == "HBB c.20A>T" &
-                       outcome_zscore == "correct")),
-       " correct fetal genotype predictions were made for the sickle cell disease assay, and ",
-       nrow(all_samples_unblinded %>%
-              filter(vf_assay != "HBB c.20A>T" &
-                       outcome_zscore == "correct")),
-       " for the bespoke design cohort.")
-
-# Figure 2 legend
-paste0("The ddPCR variant fraction results for ",
-       length(unique(het_gdna$worksheet_well_sample)),
-       " replicates of ",
-       length(unique(het_gdna$r_number)),
-       " heterozygous parental gDNA samples at varying DNA inputs.")
 
 #########################
 # Plot cfDNA results
@@ -1015,28 +1013,49 @@ ggplot(analysis_summary, aes(x = outcome, y = n))+
 # We need a binary classifier for the fetal genotype.
 
 roc_binary_calls <- all_samples_unblinded %>%
-  # Convert invasive results to binary outcomes
-  mutate(unbalanced = case_when(
-    fetal_genotype %in% c("homozygous reference fetus", 
-                          "hemizygous variant fetus",
-                          "homozygous variant fetus",
-                          "hemizygous reference fetus") ~"TRUE",
-    fetal_genotype == "heterozygous fetus" ~"FALSE"),
-    
-    # Convert "unbalanced" column to Boolean vector
-    unbalanced = as.logical(unbalanced),
-    # SPRT likelihood score is already as a binary outcome
-    # Convert the MCMC calls to a binary outcome
-    # Annoyingly, pG2 has different meanings for recessive and dominant
-    # cases.
-    mcmc_unbalanced_call = case_when(
+  # Convert invasive results to binary outcomes based on whether the 
+  # fetus is affected or not
+  mutate(fetus_affected = case_when(
+      # Autosomal dominant inheritance
       inheritance_chromosomal == "autosomal" &
-        inheritance_pattern == "recessive" ~pmax(p_G1, p_G3),
+        inheritance_pattern == "dominant" &
+        fetal_genotype == "heterozygous" ~"TRUE",
       inheritance_chromosomal == "autosomal" &
-        inheritance_pattern == "dominant" ~p_G2,
-      inheritance_chromosomal == "x_linked" ~pmax(p_G0, p_G1)),
-    # Remove minus signs from z score
-    zscore_unbalanced_call = abs(z_score))
+        inheritance_pattern == "dominant" &
+        fetal_genotype == "homozygous reference" ~"FALSE",
+      
+      # Autosomal recessive inheritance
+      # As there are 3 possible genotypes, both homozygous variant and 
+      # homozygous reference fetuses are coded as "affected", as they both
+      # involve an imbalance in cfDNA.
+      inheritance_chromosomal == "autosomal" &
+        inheritance_pattern == "recessive" &
+        fetal_genotype %in% c("homozygous variant", 
+                            "homozygous reference")  ~"TRUE",
+      inheritance_chromosomal == "autosomal" &
+        inheritance_pattern == "recessive" &
+        fetal_genotype == "heterozygous" ~"FALSE",
+      
+      # X linked inheritance
+      inheritance_chromosomal == "x_linked" &
+        fetal_genotype == "hemizygous variant"  ~"TRUE",
+      inheritance_chromosomal == "x_linked" &
+        fetal_genotype == "hemizygous reference"  ~"FALSE"),
+      
+      # Convert "fetus_affected" column to Boolean vector
+      fetus_affected = as.logical(fetus_affected),
+      # SPRT likelihood score is already as a binary outcome
+      # Convert the MCMC calls to a binary outcome
+      # Annoyingly, pG2 has different meanings for recessive and dominant
+      # cases.
+      mcmc_unbalanced_call = case_when(
+        inheritance_chromosomal == "autosomal" &
+          inheritance_pattern == "recessive" ~pmax(p_G1, p_G3),
+        inheritance_chromosomal == "autosomal" &
+          inheritance_pattern == "dominant" ~p_G2,
+        inheritance_chromosomal == "x_linked" ~pmax(p_G0, p_G1)),
+      # Remove minus signs from z score
+      zscore_unbalanced_call = abs(z_score))
 
 # 12585 has an "infinite" likelihood ratio, which messes up the ROC
 # calculations, so need to replace with a finite number.
@@ -1049,19 +1068,19 @@ roc_binary_calls[roc_binary_calls$r_number == "12585", "likelihood_ratio"] <-
 # Create ROC objects for each analysis method
 sprt_roc_object <- roc(
   # Response
-  roc_binary_calls$unbalanced, 
+  roc_binary_calls$fetus_affected, 
   # Predictor
   roc_binary_calls$likelihood_ratio)
 
 mcmc_roc_object <- roc(
   # Response
-  roc_binary_calls$unbalanced, 
+  roc_binary_calls$fetus_affected, 
   # Predictor
   roc_binary_calls$mcmc_unbalanced_call)
 
 zscore_roc_object <- roc(
   # Response
-  roc_binary_calls$unbalanced, 
+  roc_binary_calls$fetus_affected, 
   # Predictor
   roc_binary_calls$zscore_unbalanced_call)
 
@@ -1076,7 +1095,7 @@ sprt_roc <- ggroc(sprt_roc_object, size = 2) +
               intercept = 1)+
   annotate(geom = "text", x = 0.25, y = 0.25, 
            label = paste0("AUC = ", 
-                          round(auc(roc_binary_calls$unbalanced, 
+                          round(auc(roc_binary_calls$fetus_affected, 
                                     roc_binary_calls$likelihood_ratio),3)))
 # MCMC plot
 mcmc_roc <- ggroc(mcmc_roc_object, size = 2) +
@@ -1089,7 +1108,7 @@ mcmc_roc <- ggroc(mcmc_roc_object, size = 2) +
               intercept = 1)+
   annotate(geom = "text", x = 0.25, y = 0.25, 
            label = paste0("AUC = ", 
-                          round(auc(roc_binary_calls$unbalanced, 
+                          round(auc(roc_binary_calls$fetus_affected, 
                                     roc_binary_calls$mcmc_unbalanced_call),3)))
 
 # Z score plot
@@ -1103,7 +1122,7 @@ zscore_roc <- ggroc(zscore_roc_object, size = 2) +
               intercept = 1)+
   annotate(geom = "text", x = 0.25, y = 0.25, 
            label = paste0("AUC = ", 
-                          round(auc(roc_binary_calls$unbalanced, 
+                          round(auc(roc_binary_calls$fetus_affected, 
                                     roc_binary_calls$zscore_unbalanced_call),3)))
 
 # All ROC plots together
@@ -1129,42 +1148,48 @@ het_upper_line <- geom_function(fun = "calc_AS_upper_boundary",
                     calc_AS_upper_boundary(vf_assay_molecules, ff_for_graph, 
                                            lr_for_graph)),
               colour = "black",
-              args = c(ff_for_graph, lr_for_graph))
+              args = c(ff_for_graph, lr_for_graph),
+              alpha = 0.5)
   
 het_lower_line <- geom_function(fun = "calc_AS_lower_boundary",
                 aes(x = vf_assay_molecules, y =
                       calc_AS_lower_boundary(vf_assay_molecules, ff_for_graph, 
                                              lr_for_graph)),
                 colour = "black",
-                args = c(ff_for_graph, lr_for_graph))
+                args = c(ff_for_graph, lr_for_graph),
+                alpha = 0.5)
   
 hom_var_line <- geom_function(fun = "calc_SS_boundary",
                 aes(x = vf_assay_molecules, y =
                       calc_SS_boundary(vf_assay_molecules, ff_for_graph, 
                                        lr_for_graph)),
                 colour = "black",
-                args = c(ff_for_graph, lr_for_graph))
+                args = c(ff_for_graph, lr_for_graph),
+                alpha = 0.5)
   
 hom_ref_line <- geom_function(fun = "calc_AA_boundary",
                 aes(x = vf_assay_molecules, y =
                       calc_AA_boundary(vf_assay_molecules, ff_for_graph, 
                                        lr_for_graph)),
                 colour = "black",
-                args = c(ff_for_graph, lr_for_graph))
+                args = c(ff_for_graph, lr_for_graph),
+                alpha = 0.5)
 
 hemi_var_line <- geom_function(fun = "calc_hemi_var_boundary",
               aes(x = vf_assay_molecules, y =
                     calc_hemi_var_boundary(vf_assay_molecules, ff_for_graph, 
                                            lr_for_graph)),
               colour = "black",
-              args = c(ff_for_graph, lr_for_graph))
+              args = c(ff_for_graph, lr_for_graph),
+              alpha = 0.5)
   
 hemi_ref_line <- geom_function(fun = "calc_hemi_ref_boundary",
                 aes(x = vf_assay_molecules, y =
                       calc_hemi_ref_boundary(vf_assay_molecules, ff_for_graph, 
                                              lr_for_graph)),
                 colour = "black",
-                args = c(ff_for_graph, lr_for_graph))
+                args = c(ff_for_graph, lr_for_graph),
+                alpha = 0.5)
   
 het_region_label <- annotate(geom = "text", x = 28000, y = 50, 
                              label = "heterozygous")
@@ -1181,7 +1206,7 @@ hemi_ref_region_label <- annotate(geom = "text", x = 28000, y = 47,
 hemi_var_region_label <- annotate(geom = "text", x = 28000, y = 53, 
                            label = "hemizygous variant")
 
-v <- xlim(0, 30000)
+gdna_plots_x <- xlim(0, 30000)
   
 gdna_plots_y <- ylim(43, 57)
 
@@ -1189,9 +1214,8 @@ gdna_plots_y <- ylim(43, 57)
 # Plot E: SPRT on gDNA for HBB c.20A>T
 ###########
 
-gdna_plot_title <- expression(paste("Heterozygous gDNA for ", italic("HBB"), 
-                                    "c.20A>T: SPRT results"))
-
+gdna_plot_title <- expression(paste(italic("HBB"), 
+                                    "c.20A>T gDNA: SPRT results"))
 plot_e <- ggplot(het_gdna_sprt %>%
          filter(vf_assay == "HBB c.20A>T"), 
        aes(x = vf_assay_molecules, y = variant_percent)) +
@@ -1208,9 +1232,9 @@ plot_e <- ggplot(het_gdna_sprt %>%
   het_lower_line +
   hom_var_line +
   hom_ref_line +
-  het_region_label +
-  hom_var_region_label +
-  hom_ref_region_label +
+  #het_region_label +
+  #hom_var_region_label +
+  #hom_ref_region_label +
   gdna_plots_x +
   gdna_plots_y +
   labs(x = "",
@@ -1239,14 +1263,14 @@ plot_f <- ggplot(het_gdna_sprt %>%
   het_lower_line +
   hom_var_line +
   hom_ref_line +
-  het_region_label +
-  hom_var_region_label +
-  hom_ref_region_label +
+  #het_region_label +
+  #hom_var_region_label +
+  #hom_ref_region_label +
   gdna_plots_x +
   gdna_plots_y +
   labs(x = "",
        y = "Variant fraction (%)",
-       title = "Heterozygous gDNA for autosomal variant assays: SPRT results")
+       title = "Autosomal variant gDNA: SPRT results")
 
 ###########
 # Plot G: SPRT on gDNA for X-linked assays
@@ -1266,13 +1290,13 @@ plot_g <- ggplot(het_gdna_sprt %>%
   multiplot_theme +
   hemi_var_line +
   hemi_ref_line +
-  hemi_var_region_label +
-  hemi_ref_region_label +
+  #hemi_var_region_label +
+  #hemi_ref_region_label +
   gdna_plots_x +
   gdna_plots_y +
   labs(x = "Genome equivalents (GE)",
        y = "Variant fraction (%)",
-       title = "Heterozygous gDNA for X-linked variant assays: SPRT results")
+       title = "X-linked variant gDNA: SPRT results")
  
 ###########
 # Plot H: MCMC on gDNA for HBB c.20A>T
@@ -1292,8 +1316,8 @@ mcmc_gdna_for_plot <- gdna_mcmc_analysed %>%
                                "hemizygous reference",
                                "inconclusive")))
 
-gdna_plot_title <- expression(paste("Heterozygous gDNA for ", italic("HBB"), 
-                                   "c.20A>T: MCMC results"))
+gdna_plot_title <- expression(paste(italic("HBB"), 
+                                   "c.20A>T gDNA: MCMC results"))
 
 plot_h <- ggplot(mcmc_gdna_for_plot %>%
                    filter(vf_assay == "HBB c.20A>T"), 
@@ -1334,7 +1358,7 @@ plot_i <- ggplot(mcmc_gdna_for_plot %>%
   gdna_plots_y +
   labs(x = "",
        y = "",
-       title = "Heterozygous gDNA for autosomal variant assays: MCMC results")
+       title = "Autosomal variant gDNA: MCMC results")
 
 ###########
 # Plot J: MCMC on gDNA for X-linked assays
@@ -1356,7 +1380,7 @@ plot_j <- ggplot(mcmc_gdna_for_plot %>%
   gdna_plots_y +
   labs(x = "Genome equivalents (GE)",
        y = "",
-       title = "Heterozygous gDNA for X-linked variant assays: MCMC results")
+       title = "X-linked variant gDNA: MCMC results")
 
 ###################
 # Arrange plots together
@@ -1372,7 +1396,7 @@ ggsave(plot = gdna_results_plot,
        filename = "gdna_results_plot.tiff",
        path = "plots/", device='tiff', dpi=600,
        units = "in",
-       width = 18,
-       height = 12)
+       width = 8,
+       height = 10)
 
 ###################
