@@ -177,7 +177,8 @@ assays_to_exclude <- c("F8 c.6544C>T", "ATP7A c.2916+1G>A",
                        "F8 c.6686T>C")
 
 gdna_data_mcmc <- het_gdna %>%
-  filter(!vf_assay %in% assays_to_exclude) %>%
+  # Remove replicates outside the DNA input range of cfDNA
+  filter(vf_assay_molecules < 30000) %>%
   mutate(
     var_ref_positives = variant_positives + reference_positives,
     var_ref_molecules = poisson_correct(vf_assay_droplets, var_ref_positives),
@@ -1143,33 +1144,33 @@ ff_for_graph <- 0.04
 lr_for_graph <- 8
 
 # SPRT function lines
-het_upper_line <- geom_function(fun = "calc_AS_upper_boundary",
+het_upper_line <- geom_function(fun = "calc_het_upper_boundary",
               aes(x = vf_assay_molecules, y =
-                    calc_AS_upper_boundary(vf_assay_molecules, ff_for_graph, 
+                    calc_het_upper_boundary(vf_assay_molecules, ff_for_graph, 
                                            lr_for_graph)),
               colour = "black",
               args = c(ff_for_graph, lr_for_graph),
               alpha = 0.5)
   
-het_lower_line <- geom_function(fun = "calc_AS_lower_boundary",
+het_lower_line <- geom_function(fun = "calc_het_lower_boundary",
                 aes(x = vf_assay_molecules, y =
-                      calc_AS_lower_boundary(vf_assay_molecules, ff_for_graph, 
+                      calc_het_lower_boundary(vf_assay_molecules, ff_for_graph, 
                                              lr_for_graph)),
                 colour = "black",
                 args = c(ff_for_graph, lr_for_graph),
                 alpha = 0.5)
   
-hom_var_line <- geom_function(fun = "calc_SS_boundary",
+hom_var_line <- geom_function(fun = "calc_hom_var_boundary",
                 aes(x = vf_assay_molecules, y =
-                      calc_SS_boundary(vf_assay_molecules, ff_for_graph, 
+                      calc_hom_var_boundary(vf_assay_molecules, ff_for_graph, 
                                        lr_for_graph)),
                 colour = "black",
                 args = c(ff_for_graph, lr_for_graph),
                 alpha = 0.5)
   
-hom_ref_line <- geom_function(fun = "calc_AA_boundary",
+hom_ref_line <- geom_function(fun = "calc_hom_ref_boundary",
                 aes(x = vf_assay_molecules, y =
-                      calc_AA_boundary(vf_assay_molecules, ff_for_graph, 
+                      calc_hom_ref_boundary(vf_assay_molecules, ff_for_graph, 
                                        lr_for_graph)),
                 colour = "black",
                 args = c(ff_for_graph, lr_for_graph),

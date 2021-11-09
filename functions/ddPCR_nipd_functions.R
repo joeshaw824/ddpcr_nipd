@@ -74,14 +74,47 @@ poisson_fraction_min <- function(copies_allele_min, copies_allele_other) {
 # SPRT functions
 #########################
 
+# These functions all should use inputs in decimal format.
+# I.e. fetal fraction formatted as "0.04" rather than "4%"
+
+# Smaller functions to prevent repetition of code:
+
+calc_q0_x_linked <- function(ff) {
+  q0 <-   (1 - ff) / (2 - ff)
+  return(q0)
+}
+
+calc_q1_autosomal <- function(ff) {
+  # I modified the q1 expression to make it easier to use. 
+  # Fetal fraction should be in the right format
+  # I.e. 0.05 not 5
+  q1 <-  0.5+(ff/2)
+  return(q1)
+}
+
+calc_q1_x_linked <- function(ff) {
+  q1 <-   1 / (2 - ff)
+  return(q1)
+}
+
+calc_delta <- function(q0, q1) {
+  delta <- (1- q1)/(1-q0)
+  return(delta)
+}
+
+calc_gamma <- function(q0, q1) {
+  gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
+  return(gamma)
+}
+
 # Calculates the likelihood ratio (lr) for a ddPCR test with 
 # X-linked inheritance.
 
-calc_lr_x_linked <- function(fetal_fraction, overrep_fraction, total_copies) {
-  q0 <- (1 - fetal_fraction) / (2 - fetal_fraction)
-  q1 <- 1 / (2 - fetal_fraction)
-  delta <- (1- q1)/(1-q0)
-  gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
+calc_lr_x_linked <- function(ff, overrep_fraction, total_copies) {
+  q0 <- calc_q0_x_linked(ff)
+  q1 <- calc_q1_x_linked(ff)
+  delta <- calc_delta(q0, q1)
+  gamma <- calc_gamma(q0, q1)
   lr <- exp((((overrep_fraction*log(gamma)) + log(delta))*total_copies))
   return(lr)
 }
@@ -89,77 +122,61 @@ calc_lr_x_linked <- function(fetal_fraction, overrep_fraction, total_copies) {
 # Calculates the likelihood ratio for a ddPCR test when the variant is 
 # on an autosome (recessive or dominant).
 
-calc_lr_autosomal <- function(fetal_fraction, overrep_fraction, total_copies) {
+calc_lr_autosomal <- function(ff, overrep_fraction, total_copies) {
   q0 = 0.5
-  # I modified the q1 expression to make it easier to use. 
-  # Fetal fraction should be in the right format
-  # I.e. 0.05 not 5
-  q1 <- 0.5+(fetal_fraction/2)
-  delta <- (1- q1)/(1-q0)
-  gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
+  q1 <- calc_q1_autosomal(ff)
+  delta <- calc_delta(q0, q1)
+  gamma <- calc_gamma(q0, q1)
   lr <- exp((((overrep_fraction*log(gamma)) + log(delta))*total_copies))
   return(lr)
 }
 
 # These functions calculate the SPRT thresholds with likelihood ratio 
 # supplied and fetal fraction supplied as a decimal.
-calc_SS_boundary <- function(total_copies, ff, lr) {
+calc_hom_var_boundary <- function(total_copies, ff, lr) {
   q0 <- 0.5
-  q1 <- 0.5+(ff/2)
-  delta <- (1- q1)/(1-q0)
-  gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
-  SS_boundary <- ((log(lr)/total_copies) - log(delta))/log(gamma)
+  q1 <- calc_q1_autosomal(ff)
+  delta <- calc_delta(q0, q1)
+  gamma <- calc_gamma(q0, q1)
+  hom_var_boundary <- ((log(lr)/total_copies) - log(delta))/log(gamma)*100
   # Convert to a percentage for output
-  return(SS_boundary*100)
+  return(hom_var_boundary)
 }
 
-calc_AS_upper_boundary <- function(total_copies, ff, lr) {
+calc_het_upper_boundary <- function(total_copies, ff, lr) {
   q0 <- 0.5
-  q1 <- 0.5+(ff/2)
-  delta <- (1- q1)/(1-q0)
-  gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
-  AS_upper_boundary <- ((log(1/lr)/total_copies) - log(delta))/log(gamma)
+  q1 <- calc_q1_autosomal(ff)
+  delta <- calc_delta(q0, q1)
+  gamma <- calc_gamma(q0, q1)
+  het_upper_boundary <- ((log(1/lr)/total_copies) - log(delta))/log(gamma)*100
   # Convert to a percentage for output
-  return(AS_upper_boundary*100)
+  return(het_upper_boundary)
 }
 
-calc_AS_lower_boundary <- function(total_copies, ff, lr) {
-  q0 <- 0.5
-  q1 <- 0.5+(ff/2)
-  delta <- (1- q1)/(1-q0)
-  gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
-  AS_upper_boundary <- ((log(1/lr)/total_copies) - log(delta))/log(gamma)
-  AS_lower_boundary <- 0.5-(AS_upper_boundary-0.5)
-  # Convert to a percentage for output
-  return(AS_lower_boundary*100)
+calc_het_lower_boundary <- function(total_copies, ff, lr) {
+  het_upper_boundary <- calc_het_upper_boundary(total_copies, ff, lr)
+  het_lower_boundary <- 50-(het_upper_boundary-50)
+  return(het_lower_boundary)
 }
 
-calc_AA_boundary <- function(total_copies, ff, lr) {
-  q0 <- 0.5
-  q1 <- 0.5+(ff/2)
-  delta <- (1- q1)/(1-q0)
-  gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
-  SS_boundary <- ((log(lr)/total_copies) - log(delta))/log(gamma)
-  AA_boundary <- 0.5-(SS_boundary-0.5)
+calc_hom_ref_boundary <- function(total_copies, ff, lr) {
+  hom_var_boundary <- calc_hom_var_boundary(total_copies, ff, lr)
+  hom_ref_boundary <- 50-(hom_var_boundary-50)
   # Convert to a percentage for output
-  return(AA_boundary*100)
+  return(hom_ref_boundary)
 }
 
 calc_hemi_var_boundary <- function(total_copies, ff, lr) {
-  q0 <- (1 - ff) / (2 - ff)
-  q1 <- 1 / (2 - ff)
-  delta <- (1- q1)/(1-q0)
-  gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
+  q0 <- calc_q0_x_linked(ff)
+  q1 <- calc_q1_x_linked(ff)
+  delta <- calc_delta(q0, q1)
+  gamma <- calc_gamma(q0, q1)
   hemi_var_boundary <- (((log(lr)/total_copies) - log(delta))/log(gamma))*100
   return(hemi_var_boundary)
 }
 
 calc_hemi_ref_boundary <- function(total_copies, ff, lr) {
-  q0 <- (1 - ff) / (2 - ff)
-  q1 <- 1 / (2 - ff)
-  delta <- (1- q1)/(1-q0)
-  gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
-  hemi_var_boundary <- (((log(lr)/total_copies) - log(delta))/log(gamma))*100
+  hemi_var_boundary <- calc_hemi_var_boundary(total_copies, ff, lr)
   hemi_ref_boundary <- 50 -(hemi_var_boundary -50)
   return(hemi_ref_boundary)
 }
