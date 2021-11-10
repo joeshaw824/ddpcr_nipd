@@ -1,0 +1,310 @@
+---
+title: "Limit of Detection Experiment for HbAS ddPCR"
+author: "Joe Shaw"
+date: "30/09/2021"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r, include=FALSE}
+library(tidyverse)
+knitr::opts_knit$set(root.dir = "W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/ddPCR_R_Analysis/ddpcr_nipd")
+```
+
+## Preparing the worksheet 
+
+The aim of this experiment is to simulate cfDNA samples using sonicated gDNA,
+and use these samples to determine the limit of detection for the HbAS (HBB c.20
+A>T) ddPCR assay for non-invasive prenatal diagnosis.
+
+The structure of this experimental setup is to have three tube levels:
+1) The stock tube of sonicated genomic DNA
+2) An "intermediate" tube of diluted genomic DNA at a concentration to make pipetting easiest.
+3) The ddPCR mastermix.
+
+There will be 4 levels of total DNA: 2000, 4000, 8000 and 12000 molecules.
+There will be 3 spike-in levels of homozygous DNA: 2, 4 and 8%.
+Each ddPCR mastermix will be tested with 3 technical replicates.
+
+```{r, echo = FALSE}
+lod_input <- data.frame(
+  ge_level = rep(c(2000, 4000, 8000, 12000), each = 7),
+  hom_dna_genotype = rep(rep(c("0", "AA", "SS"), c(1, 3, 3)), 4),
+  hom_dna_percent = rep(c(0, 2, 4, 8, 2, 4, 8), 4),
+  het_dna_percent = rep(c(100, 98, 96, 92, 98, 96, 92), 4))
+```
+
+The gDNA samples were sonicated to approximately 150bp fragments on a Covaris
+ultrasonicator, and quantified with the HbAS ddPCR (21-3019):
+19RG-220G0190 HbAS 300 copies/ul
+19RG-220G0193 HbAA 294 copies/ul
+19RG-220G0191 HbSS 290 copies/ul
+
+Using the concentrations of amplifiable DNA above, I can determine the volumes of DNA and water required for the intermediate tubes ("level 2" above) and
+for the mastermix tubes ("level 3" above).
+
+```{r, echo = FALSE}
+int_dilutions <- data.frame(
+  episode = rep(c("219RG-220G0190", "19RG-220G0193", 
+                  "19RG-220G0191"), each = 4),
+  genotype = rep(c("AS", "AA", "SS"), each = 4),
+  c1 = rep(c((300*22), (294*22), (290*22)), each = 4),
+  v2 = rep(c(75, 300, 300), each = 4),
+  c2= c(640, 1280, 2560, 3840, 56, 112, 224, 336, 56, 112, 224, 336)) %>%
+  mutate(dna = round((v2*c2) / c1, 1),
+         water_to_add = v2 - dna,
+         tube_name = paste(genotype, c2, sep = "_"))
+
+replicates <- 3
+
+# Calculate the number of molecules needed for each mastermix
+lod_calculations <- lod_input %>%
+  mutate(
+    # The number of molecules to go into a single ddPCR well
+    het_dna_single_well = ge_level,
+    hom_dna_single_well = (ge_level/het_dna_percent)*hom_dna_percent,
+    
+    # The number of molecules to go into each mastermix (for 3 ddPCR 
+    # replicates)
+    het_dna_mastermix = het_dna_single_well * (replicates+0.2),
+    hom_dna_mastermix = hom_dna_single_well * (replicates+0.2),
+    
+    # The concentration of DNA from a stock tube to be pipetted.
+    # I chose these concentrations to keep the pipetting with manageable
+    # volumes and minimise pipetting error (2.3ul to 9.9ul).
+    het_dil_tube_cpm = case_when(
+      ge_level == 2000 ~640,
+      ge_level == 4000 ~1280,
+      ge_level == 8000 ~2560,
+      ge_level == 12000 ~3840),
+    hom_dil_tube_cpm = case_when(
+      ge_level == 2000 ~56,
+      ge_level == 4000 ~112,
+      ge_level == 8000 ~224,
+      ge_level == 12000 ~336),
+    
+    # The volume of each DNA to pipette into the mastermix
+    het_dna_ul = het_dna_mastermix/het_dil_tube_cpm,
+    hom_dna_ul = round(hom_dna_mastermix/hom_dil_tube_cpm, 1),
+    
+    # The name of the mastermix
+    mastermix = paste(ge_level, hom_dna_percent, hom_dna_genotype, sep = "_"),
+    
+    # The volumes of other reagents
+    supermix = 11*(replicates+0.2),
+    taqman_assay = (replicates+0.2),
+    water = (22*(replicates+0.2))-(supermix + taqman_assay +
+                                     het_dna_ul +
+                                     hom_dna_ul),
+    total = supermix + taqman_assay + water + het_dna_ul +
+      hom_dna_ul,
+    
+    # Specify which intermediate tube to use
+    hom_dna = paste(hom_dna_genotype, hom_dil_tube_cpm, sep = "_"),
+    het_dna = paste("AS", het_dil_tube_cpm, sep = "_"),
+    
+    # Volume of homozygous DNA to add.
+    hom_dna_mastermix = round(hom_dna_mastermix)) %>%
+  
+  # Arrange in a logical way for use in the lab
+  select(ge_level, het_dna_percent, hom_dna_percent, 
+         hom_dna_genotype, het_dna_single_well, hom_dna_single_well,
+         het_dna_mastermix, hom_dna_mastermix, het_dil_tube_cpm,
+         hom_dil_tube_cpm, 
+         mastermix, het_dna, het_dna_ul, hom_dna, hom_dna_ul,
+         supermix, taqman_assay, water, total)
+```
+
+## Analysing the results
+```{r, echo = FALSE, include =FALSE}
+
+lod_data <- read_csv("data/21-3233.csv", col_names = TRUE) %>%
+  janitor::clean_names() %>%
+  dplyr::rename(droplets = accepted_droplets) %>%
+  filter(substr(well, 1, 1) != "M" & !(sample == "NTC")) %>%
+  mutate(sample = factor(sample, levels = 
+                           c("SS 8%", "SS 4%", "SS 2%",
+                             "0%",
+                             "AA 2%", "AA 4%", "AA 8%")))
+
+lod_data_concentration <- lod_data %>%
+  pivot_wider(id_cols = c(well, sample),
+              names_from = target,
+              values_from = concentration,
+              names_glue = "{target}_{.value}") %>%
+  # Volume of a single ddPCR well is 22ul
+  mutate(HbS_total = HbS_concentration *22,
+         HbA_total = HbA_concentration *22,
+         vf_assay_molecules = HbS_total + HbA_total,
+         variant_percent = (HbS_total/vf_assay_molecules) *100)
+```
+
+Looking solely at the 0% spike-in samples shows that there is an underestimation of the number of molecules I had hoped for. Instead the counts are at approximately 1700, 3700, 6600 and 10000.
+
+```{r, echo = FALSE}
+
+lod_data_concentration %>%
+  filter(sample == "0%") %>%
+  ggplot(aes(x = vf_assay_molecules, 
+           y = variant_percent)) +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), 
+        legend.position = "none", 
+        plot.title = element_text(size = 11)) +
+  ylim(42, 58)+  scale_x_continuous(breaks = c(0, 2000, 4000, 8000, 12000)) +
+  geom_point(size = 2, pch = 21) +
+  labs(x = "",
+       y = "Variant fraction (%)",
+       title = "Molecular counts for HbAS gDNA background") +
+  geom_vline(xintercept = 2000, linetype = "dashed") +
+  geom_vline(xintercept = 4000, linetype = "dashed") +
+  geom_vline(xintercept = 8000, linetype = "dashed") +
+  geom_vline(xintercept = 12000, linetype = "dashed")
+
+lod_data_concentration %>%
+  filter(sample == "0%") %>%
+  select(vf_assay_molecules)
+
+```
+
+Plotting all the results on one graph shows that there is variation between replicates which makes things quite messy.
+
+```{r, echo = FALSE}
+
+# In order of shade
+  # "#FFFFFF" = white
+  # "#CCCCCC" = grey 1
+  # "#9999CC" = grey 2
+  # "#999999" = grey 3
+  # "#666666" = grey 4
+  # "#333333" = grey 5
+  # "#000000" = black; 
+  
+ggplot(lod_data_concentration, 
+       aes(x = vf_assay_molecules, 
+           y = variant_percent)) +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), 
+        legend.position = "right", 
+        plot.title = element_text(size = 11),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 9)) +
+  ylim(42, 58)+
+  scale_x_continuous(limits = c(0, 12000),
+                     breaks = c(0, 1700, 3700, 6600, 10000)) +
+  scale_shape_manual(values = c(24, 24, 24, 21, 25,25, 25)) +
+  scale_fill_manual(values = c(
+    # SS 8% to 2%
+    "#000000", "#666666", "#999999",
+    # 0%
+    "#FFFFFF",
+    # AA 2% to 8%
+    "#999999", "#666666", "#000000")) +
+  geom_point(size = 2, aes(shape = sample, fill = sample)) +
+  
+  labs(x = "",
+       y = "Variant fraction (%)",
+       title = "ddPCR for gDNA mixtures")
+
+```
+
+An alternative is to plot each spike in separately, and include the limits used in the paper write-up for classifying samples as unbalanced.
+```{r, echo = FALSE}
+
+
+lod_data_concentration %>%
+  # Factorise for plots
+  mutate(sample = factor(sample, levels = c("SS 2%", "SS 4%", "SS 8%",
+                                            "AA 2%", "AA 4%", "AA 8%",
+                                            "0%"))) %>%
+  ggplot(aes(x = vf_assay_molecules, 
+           y = variant_percent)) +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), 
+        legend.position = "none", 
+        plot.title = element_text(size = 11),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 9)) +
+  ylim(42, 58)+
+  scale_x_continuous(limits = c(0, 12000),
+                     breaks = c(0, 1700, 3700, 6600, 10000)) +
+  scale_shape_manual(values = c(24, 24, 24, 25, 25, 25, 21)) +
+  scale_fill_manual(values = c(
+    # SS 2% to 8%
+    "#999999", "#666666", "#000000",
+    # AA 2% to 8%
+    "#999999", "#666666", "#000000",
+    # 0%
+    "#FFFFFF")) +
+  geom_point(size = 2, aes(shape = sample, fill = sample)) +
+  
+  labs(x = "",
+       y = "Variant fraction (%)",
+       title = "ddPCR for gDNA mixtures") +
+  facet_wrap(~sample) +
+  geom_hline(yintercept = 51.6, linetype = "dashed") +
+  geom_hline(yintercept = 48.1, linetype = "dashed")
+
+```
+This shows that at ~3700 molecules and higher, an 8% spike-in can be distinguished from the background variation of HbAS controls. The limit of detection is therefore 8% fetal fraction with ~3800 molecules measured.
+
+```{r, echo = TRUE}
+lod_limit <- lod_data_concentration %>%
+  filter(sample %in% c("AA 8%", "SS 8%") &
+           vf_assay_molecules > 2000 &
+           vf_assay_molecules < 6000) 
+
+mean(lod_limit$vf_assay_molecules)
+
+```
+cfDNA from the sample should be equally split between variant fraction and fetal fraction ddPCR assays. However, in practice I have aimed for a 3:1 split in favour of the variant fraction assay. Assuming a sample plasma volume of 6ml, this would require a circulating cfDNA concentration of ~840 genome equivalents per ml.
+```{r, echo = TRUE}
+((3800/3)*4)/6
+```
+I can apply this to the 88 cfDNA samples that I have tested using the HbAS ddPCR assay.
+
+``` {r, echo = FALSE}
+cfdna_data <- read.csv("analysis_outputs/Supplementary_data 20210913_162058.csv")
+
+cfdna_data_mod <- cfdna_data %>%
+   filter(!r_number %in% c("20915", "17004")) %>%
+  mutate(invasive_genotype = paste0(invasive_genotype, " fetus"),
+                  invasive_genotype = factor(invasive_genotype,
+                                 levels = c("HbSS fetus","HbAS fetus",
+                                            "HbAA fetus")),
+                  outcome_zscore = factor(outcome_zscore, levels = c(
+                    "correct", "incorrect", "insufficient data",
+                    "inconclusive"))) %>%
+           # Apply limits of detection
+           filter(HBB_GE >= 3800 & fetal_fraction >=8)
+           
+ggplot(cfdna_data_mod, aes(x = HBB_GE, 
+             y = variant_fraction)) +
+    theme_bw() +
+    theme(
+     panel.grid.major = element_blank(),
+     panel.grid.minor = element_blank(), 
+     legend.position = "right", 
+     plot.title = element_text(size = 11),
+     legend.title = element_blank(),
+     legend.text = element_text(size = 9)) +
+    scale_fill_manual(values=c("#FFFFFF", "#000000", "#999999",
+                     "#999999"), guide = "none") +
+    scale_alpha_manual(values = c(1, 1, 0.2, 0.2), guide = "none") +
+    scale_shape_manual(values = c(24, 21, 25)) +
+    geom_point(size = 2, aes(fill = outcome_zscore,
+                   alpha = outcome_zscore,
+                   shape = invasive_genotype),
+     colour = "black") +
+  
+  ylim(39, 61) +
+  scale_x_continuous(limits = c(0,30500),
+                     breaks = c(0, 10000, 20000 ,30000))
+
+```
+
+What proportion of pregnant women between 10-14 weeks gestation have fetal fractions greater than 8% and cfDNA concentrations above 840 GE/ml?

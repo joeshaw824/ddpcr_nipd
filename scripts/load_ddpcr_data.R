@@ -17,8 +17,11 @@ setwd("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/ddP
 # Load functions (includes tidyverse)
 source("functions/ddPCR_nipd_functions.R")
 
+# Load janitor for cleaning header names
 library(janitor)
-library(stringi)
+
+# stringr for counting string patterns
+library(stringr)
 
 #########################
 # Load resources
@@ -72,6 +75,10 @@ for (dataFile in ddpcr_files){
   rm(tmp_dat)
 }
 
+ddpcr_data <- ddpcr_data %>%
+  # Remove limit of detection data
+  filter(worksheet != "20-1557.csv")
+
 #########################
 # Wrangle cfDNA data into shape
 #########################
@@ -84,7 +91,7 @@ ddpcr_data_merged_samples <- ddpcr_data %>%
   filter(substr(well, 1, 1) == "M" & !(sample %in% controls$sample)) %>%
   # Count the number of wells which have been merged together,
   # which is the number of commas in "merged_wells" string plus one
-  mutate(num_wells = str_count(merged_wells, ",")+1)
+  mutate(num_wells = stringr::str_count(merged_wells, ",")+1)
 
 # Reshape the data frame to sum all values by Target.
 # Often cfDNA from the same sample was tested across
@@ -104,7 +111,10 @@ ddpcr_with_target <- ddpcr_data_reshape %>%
               select(target, target_category), 
             by = "target")
 
-# Use pivot_wider to get one row per sample
+# Use pivot_wider to get one row per sample.
+# There should be data for 151 cfDNA samples in total, 24 do not have both 
+# variant fraction and fetal fraction assays run, which leaves the 
+# 127 included in the paper.
 pivotted_ddpcr <- ddpcr_with_target %>% 
   pivot_wider(id_cols = sample,
               names_from = target_category,
@@ -149,7 +159,7 @@ cfdna_ddpcr_data <- pivotted_ddpcr %>%
             .groups="drop") %>%
   
   # Remove any samples which haven't had both assays performed.
-  # This removes several samples which didn't have both assays performed
+  # This removes 24 samples which didn't have both assays performed
   # for various reasons.
   filter(!is.na(variant_positives) & !is.na(ff_allele1_positives)) %>%
   
@@ -165,7 +175,10 @@ cfdna_ddpcr_data <- pivotted_ddpcr %>%
                 vf_assay_num_wells = variant_num_wells) %>%
   
   # Determine the maternal and paternally-inherited alleles for the 
-  # fetal fraction calculation
+  # fetal fraction assay for the fetal fraction calculation.
+  # This step assumes that the paternally-inherited allele will be 
+  # lower (fetal cfDNA only) than the maternally-inherited allele (fetal and
+  # maternal cfDNA)
   mutate(maternal_positives = pmax(ff_allele1_positives, ff_allele2_positives),
          paternal_positives = pmin(ff_allele1_positives, ff_allele2_positives))
 
@@ -234,32 +247,37 @@ parent_gDNA_var_ref <- var_ref_calculations(
 # a fetal fraction assay, and then calculate
 # molecular counts using ff_calculations
 
-parent_gDNA_ff <- ff_calculations(ddpcr_controls_with_target %>%
-                                    filter(target_category %in% c("ff_allele2", "ff_allele1") &
-                                             identity %in% c("maternal gDNA", "paternal gDNA")) %>%
-                                    select(worksheet_well_sample, sample, identity, assay,
-                                           target_category, droplets, positives) %>%
-                                    pivot_wider(id_cols = c(worksheet_well_sample, sample, identity, assay),
-                                                names_from = target_category,
-                                                values_from = c(droplets, positives),
-                                                names_glue = "{target_category}_{.value}") %>%
-                                    dplyr::rename(ff_assay_droplets = ff_allele1_droplets,
-                                                  ff_assay = assay) %>%
-                                    
-                                    # Need to create the maternal_positives and paternal_positives columns.
-                                    mutate(
-                                      maternal_positives = case_when(
-                                        identity == "paternal gDNA" ~pmin(ff_allele1_positives, 
-                                                                          ff_allele2_positives),
-                                        identity == "maternal gDNA" ~ pmax(ff_allele1_positives, 
-                                                                           ff_allele2_positives)),
-                                      
-                                      paternal_positives = case_when(
-                                        identity == "paternal gDNA" ~pmax(ff_allele1_positives, 
-                                                                          ff_allele2_positives),
-                                        identity == "maternal gDNA" ~ pmin(ff_allele1_positives, 
-                                                                           ff_allele2_positives))) %>%
-                                    select(-c(ff_allele2_droplets, ff_allele2_positives, 
-                                              ff_allele1_positives)))
+parent_gDNA_ff <- ff_calculations(
+  
+  ddpcr_controls_with_target %>%
+    filter(target_category %in% c("ff_allele2", "ff_allele1") &
+             identity %in% c("maternal gDNA", "paternal gDNA")) %>%
+    select(worksheet_well_sample, sample, identity, assay,
+           target_category, droplets, positives) %>%
+    pivot_wider(id_cols = c(worksheet_well_sample, sample, identity, assay),
+                names_from = target_category,
+                values_from = c(droplets, positives),
+                names_glue = "{target_category}_{.value}") %>%
+    dplyr::rename(ff_assay_droplets = ff_allele1_droplets,
+                  ff_assay = assay) %>%
+    
+    # Need to create the maternal_positives and paternal_positives columns.
+    # "Maternal positives" refers to the positive droplets for the homozygous
+    # maternal allele.
+    mutate(
+      maternal_positives = case_when(
+        identity == "paternal gDNA" ~pmin(ff_allele1_positives, 
+                                          ff_allele2_positives),
+        identity == "maternal gDNA" ~ pmax(ff_allele1_positives, 
+                                           ff_allele2_positives)),
+      # "Paternal positives" refers to the positive droplets for the 
+      # homozygous paternal allele.
+      paternal_positives = case_when(
+        identity == "paternal gDNA" ~pmax(ff_allele1_positives, 
+                                          ff_allele2_positives),
+        identity == "maternal gDNA" ~ pmin(ff_allele1_positives, 
+                                           ff_allele2_positives))) %>%
+    select(-c(ff_allele2_droplets, ff_allele2_positives, 
+              ff_allele1_positives)))
 
 #########################

@@ -1,111 +1,112 @@
-sample,assay,identity
-NTC,ZFXY,generic
-18G10522,F8 c.6544C>T,maternal gDNA
-C72,F8 c.6544C>T,generic
-18G10772,FOXP3 c.1010G>A,maternal gDNA
-C78,FOXP3 c.1010G>A,generic
-18G10690,ATP7A c.2916+1G>A,maternal gDNA
-C83,ATP7A c.2916+1G>A,generic
-18G10769,IDS c.879+1G>T,maternal gDNA
-C74,IDS c.879+1G>T,generic
-18G10771,ATP7A c.1949G>A,maternal gDNA
-C81,ATP7A c.1949G>A,generic
-18G05794,F8 c.6046C>T,maternal gDNA
-18G05796,F8 c.1409C>T,maternal gDNA
-18G05795,F8 c.6686T>C,maternal gDNA
-C64,ZFXY,generic
-C69,ZFXY,generic
-18G07200,ZFXY,maternal gDNA
-19G09784,ZFXY,maternal gDNA
-C231,ZFXY,generic
-20RG-307G0060,FGFR3 c.1138G>A,maternal gDNA
-20RG-307G0062,FGFR3 c.1138G>A,paternal gDNA
-18G10693,F8 c.1595G>A,maternal gDNA
-18G10515,FLNA c.5169T>G,maternal gDNA
-18G05797,F8 c.5999G>T,maternal gDNA
-C201,ZFXY,generic
-Male,ZFXY,generic
-18G10691,L1CAM c.23T>A,maternal gDNA
-18G10694,NDP c.163T>C ,maternal gDNA
-18G10519,XIAP c.356_359del,maternal gDNA
-18G10521,COL4A5 c.1295G>A,maternal gDNA
-18G10773,ABCD1 c.3G>A,maternal gDNA
-C111 female,ZFXY,generic
-C12 male,ZFXY,generic
-C231 male,ZFXY,generic
-19RG-220G0190,HBB c.20A>T,maternal gDNA
-19RG-220G0191,HBB c.20A>T,maternal gDNA
-19RG-220G0193,HBB c.20A>T,maternal gDNA
-19RG-347G0040,HBB c.20A>T,maternal gDNA
-20RG-310G0147,HBB c.20A>T,maternal gDNA
-20RG-310G0152,HBB c.20A>T,maternal gDNA
-30139,HBB c.20A>T,paternal cfDNA
-30130,HBB c.20A>T,paternal cfDNA
-C227,ZFXY,generic
-20RG-148G0075,VHL c.583C>T,maternal gDNA
-20RG-148G0080,FGFR2 c.1024T>A,maternal gDNA
-20RG-148G0079,NF1 c.6792 C>A ,maternal gDNA
-20RG-148G0081,NF1 c.6792 C>A ,maternal gDNA
-20RG-148G0076 ,TCOF1 c.3611 C>A ,maternal gDNA
-20RG-336G0066,ADAR c.2997G>T,maternal gDNA
-20RG-336G0056,RNASEH2C c.205C>T,maternal gDNA
-20RG-307G0064,ALPL c.331G>A,maternal gDNA
-20RG-307G0070,ALPL c.331G>A,paternal gDNA
-21RG-027G0070,IDS c.182_189del,maternal gDNA
-21RG-027G0075,IDS c.182_189del,paternal gDNA
-21RG-027G0010,MAGED2 c.1426C>T,maternal gDNA
-21RG-027G0014,MAGED2 c.1426C>T,paternal gDNA
-21RG-027G0004,OTC c.905A>G,maternal gDNA
-21RG-027G0006,OTC c.905A>G,paternal gDNA
-21RG-027G0017,CHM c.1342C>T,maternal gDNA
-21RG-062G0114,HBB c.20A>T,maternal gDNA
-21RG-062G0120,HBB c.20A>T,paternal gDNA
-21RG-047G0089 ,ADA c.556G>A,maternal gDNA
-21RG-047G0093,ADA c.556G>A,paternal gDNA
-21RG-047G0111,PMM2 c.691G>A ,maternal gDNA
-21RG-047G0112,PMM2 c.691G>A ,paternal gDNA
-21RG-083G0126,HBB c.20A>T,maternal gDNA
-21RG-083G0132,HBB c.20A>T,paternal gDNA
-21RG-062G0108,HBB c.20A>T,maternal gDNA
-21RG-062G0111,HBB c.20A>T,paternal gDNA
-21RG-083G0112,HBB c.20A>T,maternal gDNA
-21RG-083G0120,HBB c.20A>T,paternal gDNA
-21RG-103G0115,HBB c.20A>T,maternal gDNA
-21RG-103G0117,HBB c.20A>T,paternal gDNA
-21RG-103G0061,HBB c.20A>T,maternal gDNA
-21RG-103G0062,HBB c.20A>T,paternal gDNA
-21RG-103G0118,HBB c.20A>T,maternal gDNA
-21RG-103G0119,HBB c.20A>T,paternal gDNA
-21RG-103G0120,HBB c.20A>T,maternal gDNA
-21RG-103G0122,HBB c.20A>T,paternal gDNA
-21RG-120G0092,HBB c.20A>T,maternal gDNA
-21RG-120G0097,HBB c.20A>T,paternal gDNA
-21RG-120G0099,HBB c.20A>T,maternal gDNA
-21RG-120G0103,HBB c.20A>T,paternal gDNA
-21RG-126G0134,HBB c.20A>T,maternal gDNA
-21RG-126G0140,HBB c.20A>T,maternal gDNA
-21RG-126G0124,HBB c.20A>T,maternal gDNA
-21RG-126G0126,HBB c.20A>T,maternal gDNA
-21RG-120G0077,HBB c.20A>T,maternal gDNA
-21RG-126G0131,HBB c.20A>T,maternal gDNA
-21RG-138G0159,HBB c.20A>T,maternal gDNA
-21RG-138G0155,HBB c.20A>T,maternal gDNA
-21RG-120G0072,HBB c.20A>T,maternal gDNA
-21RG-120G0081,HBB c.20A>T,maternal gDNA
-21RG-126G0137,HBB c.20A>T,maternal gDNA
-21RG-138G0163,HBB c.20A>T,maternal gDNA
-21RG-168G0037,HBB c.20A>T,maternal gDNA
-21RG-168G0041,HBB c.20A>T,paternal gDNA
-21RG-168G0044,HBB c.20A>T,maternal gDNA
-21RG-168G0046,HBB c.20A>T,paternal gDNA
-21RG-168G0026,HBB c.20A>T,maternal gDNA
-21RG-168G0028,HBB c.20A>T,paternal gDNA
-21RG-168G0030,HBB c.20A>T,maternal gDNA
-21RG-168G0033,HBB c.20A>T,paternal gDNA
-21RG-215G0121,CFTR c.1521_1523del,maternal gDNA
-21RG-215G0126,CFTR c.1521_1523del,paternal gDNA
-21RG-027G0021,HBB c.93-21G>A,maternal gDNA
-21RG-033G0099,HBB c.93-21G>A,paternal gDNA
-21RG-047G0098,MMAA c.733+1G>A,maternal gDNA
-21RG-047G0103,MMAA c.733+1G>A,paternal gDNA
-21RG-027G0008,HBB c.126_129del,maternal gDNA
+sample,assay,identity,zygosity
+NTC,ZFXY,generic,generic
+18G10522,F8 c.6544C>T,maternal gDNA,heterozygous
+C72,F8 c.6544C>T,generic,generic
+18G10772,FOXP3 c.1010G>A,maternal gDNA,heterozygous
+C78,FOXP3 c.1010G>A,generic,generic
+18G10690,ATP7A c.2916+1G>A,maternal gDNA,heterozygous
+C83,ATP7A c.2916+1G>A,generic,generic
+18G10769,IDS c.879+1G>T,maternal gDNA,heterozygous
+C74,IDS c.879+1G>T,generic,generic
+18G10771,ATP7A c.1949G>A,maternal gDNA,heterozygous
+C81,ATP7A c.1949G>A,generic,generic
+18G05794,F8 c.6046C>T,maternal gDNA,heterozygous
+18G05796,F8 c.1409C>T,maternal gDNA,heterozygous
+18G05795,F8 c.6686T>C,maternal gDNA,heterozygous
+C64,ZFXY,generic,generic
+C69,ZFXY,generic,generic
+18G07200,ZFXY,maternal gDNA,heterozygous
+19G09784,ZFXY,maternal gDNA,heterozygous
+C231,ZFXY,generic,generic
+Normal,ZFXY,generic,generic
+20RG-307G0060,FGFR3 c.1138G>A,maternal gDNA,heterozygous
+20RG-307G0062,FGFR3 c.1138G>A,paternal gDNA,heterozygous
+18G10693,F8 c.1595G>A,maternal gDNA,heterozygous
+18G10515,FLNA c.5169T>G,maternal gDNA,heterozygous
+18G05797,F8 c.5999G>T,maternal gDNA,heterozygous
+C201,ZFXY,generic,generic
+Male,ZFXY,generic,generic
+18G10691,L1CAM c.23T>A,maternal gDNA,heterozygous
+18G10694,NDP c.163T>C ,maternal gDNA,heterozygous
+18G10519,XIAP c.356_359del,maternal gDNA,heterozygous
+18G10521,COL4A5 c.1295G>A,maternal gDNA,heterozygous
+18G10773,ABCD1 c.3G>A,maternal gDNA,heterozygous
+C111 female,ZFXY,generic,generic
+C12 male,ZFXY,generic,generic
+C231 male,ZFXY,generic,generic
+19RG-220G0190,HBB c.20A>T,maternal gDNA,heterozygous
+19RG-220G0191,HBB c.20A>T,maternal gDNA,homozygous
+19RG-220G0193,HBB c.20A>T,maternal gDNA,homozygous
+19RG-347G0040,HBB c.20A>T,maternal gDNA,heterozygous
+20RG-310G0147,HBB c.20A>T,maternal gDNA,heterozygous
+20RG-310G0152,HBB c.20A>T,maternal gDNA,heterozygous
+30139,HBB c.20A>T,paternal cfDNA,heterozygous
+30130,HBB c.20A>T,paternal cfDNA,heterozygous
+C227,ZFXY,generic,generic
+20RG-148G0075,VHL c.583C>T,maternal gDNA,heterozygous
+20RG-148G0080,FGFR2 c.1024T>A,maternal gDNA,heterozygous
+20RG-148G0079,NF1 c.6792 C>A ,maternal gDNA,heterozygous
+20RG-148G0081,NF1 c.6792 C>A ,maternal gDNA,heterozygous
+20RG-148G0076 ,TCOF1 c.3611 C>A ,maternal gDNA,heterozygous
+20RG-336G0066,ADAR c.2997G>T,maternal gDNA,heterozygous
+20RG-336G0056,RNASEH2C c.205C>T,maternal gDNA,heterozygous
+20RG-307G0064,ALPL c.331G>A,maternal gDNA,heterozygous
+20RG-307G0070,ALPL c.331G>A,paternal gDNA,homozygous
+21RG-027G0070,IDS c.182_189del,maternal gDNA,heterozygous
+21RG-027G0075,IDS c.182_189del,paternal gDNA,homozygous
+21RG-027G0010,MAGED2 c.1426C>T,maternal gDNA,heterozygous
+21RG-027G0014,MAGED2 c.1426C>T,paternal gDNA,homozygous
+21RG-027G0004,OTC c.905A>G,maternal gDNA,heterozygous
+21RG-027G0006,OTC c.905A>G,paternal gDNA,homozygous
+21RG-027G0017,CHM c.1342C>T,maternal gDNA,heterozygous
+21RG-062G0114,HBB c.20A>T,maternal gDNA,heterozygous
+21RG-062G0120,HBB c.20A>T,paternal gDNA,heterozygous
+21RG-047G0089 ,ADA c.556G>A,maternal gDNA,heterozygous
+21RG-047G0093,ADA c.556G>A,paternal gDNA,heterozygous
+21RG-047G0111,PMM2 c.691G>A ,maternal gDNA,heterozygous
+21RG-047G0112,PMM2 c.691G>A ,paternal gDNA,heterozygous
+21RG-083G0126,HBB c.20A>T,maternal gDNA,heterozygous
+21RG-083G0132,HBB c.20A>T,paternal gDNA,heterozygous
+21RG-062G0108,HBB c.20A>T,maternal gDNA,heterozygous
+21RG-062G0111,HBB c.20A>T,paternal gDNA,heterozygous
+21RG-083G0112,HBB c.20A>T,maternal gDNA,heterozygous
+21RG-083G0120,HBB c.20A>T,paternal gDNA,heterozygous
+21RG-103G0115,HBB c.20A>T,maternal gDNA,heterozygous
+21RG-103G0117,HBB c.20A>T,paternal gDNA,heterozygous
+21RG-103G0061,HBB c.20A>T,maternal gDNA,heterozygous
+21RG-103G0062,HBB c.20A>T,paternal gDNA,heterozygous
+21RG-103G0118,HBB c.20A>T,maternal gDNA,heterozygous
+21RG-103G0119,HBB c.20A>T,paternal gDNA,heterozygous
+21RG-103G0120,HBB c.20A>T,maternal gDNA,heterozygous
+21RG-103G0122,HBB c.20A>T,paternal gDNA,heterozygous
+21RG-120G0092,HBB c.20A>T,maternal gDNA,heterozygous
+21RG-120G0097,HBB c.20A>T,paternal gDNA,heterozygous
+21RG-120G0099,HBB c.20A>T,maternal gDNA,heterozygous
+21RG-120G0103,HBB c.20A>T,paternal gDNA,heterozygous
+21RG-126G0134,HBB c.20A>T,maternal gDNA,heterozygous
+21RG-126G0140,HBB c.20A>T,maternal gDNA,heterozygous
+21RG-126G0124,HBB c.20A>T,maternal gDNA,heterozygous
+21RG-126G0126,HBB c.20A>T,maternal gDNA,heterozygous
+21RG-120G0077,HBB c.20A>T,maternal gDNA,heterozygous
+21RG-126G0131,HBB c.20A>T,maternal gDNA,heterozygous
+21RG-138G0159,HBB c.20A>T,maternal gDNA,heterozygous
+21RG-138G0155,HBB c.20A>T,maternal gDNA,heterozygous
+21RG-120G0072,HBB c.20A>T,maternal gDNA,homozygous
+21RG-120G0081,HBB c.20A>T,maternal gDNA,heterozygous
+21RG-126G0137,HBB c.20A>T,maternal gDNA,heterozygous
+21RG-138G0163,HBB c.20A>T,maternal gDNA,heterozygous
+21RG-168G0037,HBB c.20A>T,maternal gDNA,heterozygous
+21RG-168G0041,HBB c.20A>T,paternal gDNA,heterozygous
+21RG-168G0044,HBB c.20A>T,maternal gDNA,heterozygous
+21RG-168G0046,HBB c.20A>T,paternal gDNA,heterozygous
+21RG-168G0026,HBB c.20A>T,maternal gDNA,heterozygous
+21RG-168G0028,HBB c.20A>T,paternal gDNA,heterozygous
+21RG-168G0030,HBB c.20A>T,maternal gDNA,heterozygous
+21RG-168G0033,HBB c.20A>T,paternal gDNA,heterozygous
+21RG-215G0121,CFTR c.1521_1523del,maternal gDNA,heterozygous
+21RG-215G0126,CFTR c.1521_1523del,paternal gDNA,heterozygous
+21RG-027G0021,HBB c.93-21G>A,maternal gDNA,heterozygous
+21RG-033G0099,HBB c.93-21G>A,paternal gDNA,heterozygous
+21RG-047G0098,MMAA c.733+1G>A,maternal gDNA,heterozygous
+21RG-047G0103,MMAA c.733+1G>A,paternal gDNA,heterozygous
+21RG-027G0008,HBB c.126_129del,maternal gDNA,heterozygous

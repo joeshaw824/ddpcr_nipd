@@ -9,11 +9,8 @@
 # Load resources
 #########################
 
-# Load packages
-library(tidyverse)
-
-# Source functions
-source("functions/ddPCR_nipd_functions.R")
+# No resources required as this script is loaded from the main script
+# (all_samples_nipt.R)
 
 #########################
 # Load sequences
@@ -126,7 +123,9 @@ ddpcr_assay_sequences <- amplicons_primers_probes %>%
   arrange(manufacturer)
 
 write.csv(ddpcr_assay_sequences, 
-          "analysis_outputs/ddpcr_assay_sequences.csv",
+          paste0("analysis_outputs/ddpcr_assay_sequences_", 
+                 format(Sys.time(), "%Y%m%d_%H%M%S"),
+                 ".csv"),
           row.names = FALSE)
 
 #########################

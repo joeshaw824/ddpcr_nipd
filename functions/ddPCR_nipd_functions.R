@@ -10,25 +10,35 @@
 
 library(tidyverse)
 
+# stringi for reverse complement function
+library(stringi)
+
 #########################
 # ddPCR functions
 #########################
 
-# Function for Poisson correction. See Barrett et al 2012 
-# supplementary information (PMID: 22451622)
+# Function for Poisson correction. I have used the version from
+# Barrett et al 2012 (PMID: 22451622 - supp info).
+# This is a rearrangement of the standard version, see Huggett et al 2020
+# (PMID: 32746458).
+# Huggett et al: lamda = -ln(1 - P/N)
+# Barrett et al: lamda = -ln((N-P)/N)
+# (N-P)/N = N/N - P/N = 1 - P/N
+# Example
+# -log(1 - 5000/20000) = 0.2876821
+# -log((20000-5000)/20000) = 0.2876821
 
 poisson_correct <- function(N, P) {
-  num_molecules <- as.integer(-log((N-P)/N)*N)
-  return(num_molecules)}
+  num_molecules <- round(-log((N-P)/N)*N, 0)
+  return(num_molecules)
+}
 
 # Function for reversing the Poisson correction to calculate
 # number of positive partitions from number of molecules.
 # See sprt_calculations.rmd for full explanation.
 
 reverse_poisson <- function(num_molecules, N) {
-  
-  P <- as.integer(N - (N / exp(num_molecules/N)))
-  
+  P <- round(N - (N / exp(num_molecules/N)), 0)
   return(P)
 }
 
@@ -74,6 +84,13 @@ poisson_fraction_min <- function(copies_allele_min, copies_allele_other) {
 # SPRT functions
 #########################
 
+# Equation sources:
+# q0 and q1 (X-linked inheritance): Tsui et al 2011 (PMID: 21263151)
+# q0 and q1 (autosomal inheritance): 
+    # Barrett et al 2012 (PMID: 22451622 - supp info)
+# Delta, gamma values and decision boundaries: 
+    # Lo et al 2007 (PMID: 17664418 - supp info)
+
 # These functions all should use inputs in decimal format.
 # I.e. fetal fraction formatted as "0.04" rather than "4%"
 
@@ -84,13 +101,25 @@ calc_q0_x_linked <- function(ff) {
   return(q0)
 }
 
+# I modified the q1 autosomal expression to make it easier to use. 
+# Fetal fraction should be in the right format (i.e. 0.05 not 5)
+# q1 formula from Barrett et al (2012): (100+fetal DNA %)/200
+# calc_q1_autosomal(0.04) = 0.52
+# (100+4)/200 = 0.52
+
 calc_q1_autosomal <- function(ff) {
-  # I modified the q1 expression to make it easier to use. 
-  # Fetal fraction should be in the right format
-  # I.e. 0.05 not 5
   q1 <-  0.5+(ff/2)
   return(q1)
 }
+
+# X-linked inheritance assumes a male fetus (one X chromosome)
+# Example: 45 counts from maternal reference allele, 45 counts from maternal 
+# variant allele. Fetus has inherited variant allele.
+# Fetal fraction is 10%, so fraction from a single X chromosome is
+# 5% (5 counts).
+# var counts / (var counts + ref counts)
+# (45+5) / (45+5+45) = 0.526
+# calc_q1_x_linked(0.1) = 0.526
 
 calc_q1_x_linked <- function(ff) {
   q1 <-   1 / (2 - ff)
@@ -107,6 +136,11 @@ calc_gamma <- function(q0, q1) {
   return(gamma)
 }
 
+calc_lr <- function(overrep_fraction, gamma, delta, total_copies) {
+  lr <- exp((((overrep_fraction*log(gamma)) + log(delta))*total_copies))
+  return(lr)
+}
+
 # Calculates the likelihood ratio (lr) for a ddPCR test with 
 # X-linked inheritance.
 
@@ -115,7 +149,7 @@ calc_lr_x_linked <- function(ff, overrep_fraction, total_copies) {
   q1 <- calc_q1_x_linked(ff)
   delta <- calc_delta(q0, q1)
   gamma <- calc_gamma(q0, q1)
-  lr <- exp((((overrep_fraction*log(gamma)) + log(delta))*total_copies))
+  lr <- calc_lr(overrep_fraction, gamma, delta, total_copies)
   return(lr)
 }
 
@@ -127,7 +161,7 @@ calc_lr_autosomal <- function(ff, overrep_fraction, total_copies) {
   q1 <- calc_q1_autosomal(ff)
   delta <- calc_delta(q0, q1)
   gamma <- calc_gamma(q0, q1)
-  lr <- exp((((overrep_fraction*log(gamma)) + log(delta))*total_copies))
+  lr <- calc_lr(overrep_fraction, gamma, delta, total_copies)
   return(lr)
 }
 
@@ -139,7 +173,6 @@ calc_hom_var_boundary <- function(total_copies, ff, lr) {
   delta <- calc_delta(q0, q1)
   gamma <- calc_gamma(q0, q1)
   hom_var_boundary <- ((log(lr)/total_copies) - log(delta))/log(gamma)*100
-  # Convert to a percentage for output
   return(hom_var_boundary)
 }
 
@@ -149,7 +182,6 @@ calc_het_upper_boundary <- function(total_copies, ff, lr) {
   delta <- calc_delta(q0, q1)
   gamma <- calc_gamma(q0, q1)
   het_upper_boundary <- ((log(1/lr)/total_copies) - log(delta))/log(gamma)*100
-  # Convert to a percentage for output
   return(het_upper_boundary)
 }
 
@@ -162,7 +194,6 @@ calc_het_lower_boundary <- function(total_copies, ff, lr) {
 calc_hom_ref_boundary <- function(total_copies, ff, lr) {
   hom_var_boundary <- calc_hom_var_boundary(total_copies, ff, lr)
   hom_ref_boundary <- 50-(hom_var_boundary-50)
-  # Convert to a percentage for output
   return(hom_ref_boundary)
 }
 
@@ -177,7 +208,7 @@ calc_hemi_var_boundary <- function(total_copies, ff, lr) {
 
 calc_hemi_ref_boundary <- function(total_copies, ff, lr) {
   hemi_var_boundary <- calc_hemi_var_boundary(total_copies, ff, lr)
-  hemi_ref_boundary <- 50 -(hemi_var_boundary -50)
+  hemi_ref_boundary <- 50-(hemi_var_boundary-50)
   return(hemi_ref_boundary)
 }
 
@@ -330,7 +361,7 @@ run_mcmc <- function(data_input, threshold) {
         inheritance_pattern == "recessive" & 
         p_G1 < mcmc_threshold & 
         p_G2 < mcmc_threshold &
-        p_G3 < mcmc_threshold~"inconclusive",
+        p_G3 < mcmc_threshold ~"inconclusive",
       
       # X-linked predictions
       inheritance_chromosomal == "x_linked" &
@@ -475,7 +506,7 @@ var_ref_calculations <- function(data_input) {
         major_allele == "reference allele" ~reference_percent_min),
       
       # Calculate the 95% confidence intervals of the numbers of molecules 
-      # detected by each assay
+      # detected by the variant fraction assay
       vf_assay_molecules_max = poisson_max((
         vf_assay_molecules/vf_assay_droplets), 
         vf_assay_droplets),
@@ -497,9 +528,6 @@ ff_calculations <- function(data_input) {
   
   data_output <- data_input %>%
     mutate(
-      
-      # Calculate the same variables for the fetal fraction assay
-      
       maternal_molecules = poisson_correct(
         ff_assay_droplets,maternal_positives),
       
@@ -710,7 +738,7 @@ draw_rmd_plot <- function(cfdna_sample, parent_vf_wells, parent_ff_wells) {
 
 reverse_complement <- function(input_sequence){
   
-  rev_comp <- stri_reverse(chartr("ATGC","TACG",input_sequence))
+  rev_comp <- stringi::stri_reverse(chartr("ATGC","TACG",input_sequence))
   
   return(rev_comp)
   
@@ -799,7 +827,9 @@ binary_predictions <- function(df, prediction) {
         inheritance_pattern == "dominant" &
         !!prediction == "homozygous reference" ~"negative",
       
-      # Autosomal recessive inheritance
+      # Autosomal recessive inheritance: to condense 3 genotype classifications
+      # into a binary classification, both unbalanced results 
+      # (homozygous variant and homozygous reference) are coded as "positive"
       inheritance_chromosomal == "autosomal" &
         inheritance_pattern == "recessive" &
         !!prediction %in% c("homozygous variant", 
