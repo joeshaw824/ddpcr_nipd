@@ -107,27 +107,6 @@ all_samples_sprt <- binary_predictions(df = all_samples_sprt,
   dplyr::rename(sprt_binary = binary_call)
 
 #########################
-# SPRT analysis - gDNA
-#########################
-
-het_gdna_sprt <- het_gdna %>%
-  # Remove replicates outside the DNA input range of cfDNA
-  filter(vf_assay_molecules < 30000) %>%
-  # Assign an artificial fetal fraction of 4% for SPRT calculations
-  mutate(fetal_fraction = 0.04,
-         # Calculate the likelihood ratio
-         likelihood_ratio = case_when(
-           inheritance_chromosomal == "x_linked" ~ 
-             calc_lr_x_linked(fetal_fraction, (major_allele_percent/100), 
-                              vf_assay_molecules),
-           inheritance_chromosomal == "autosomal" ~ 
-             calc_lr_autosomal(fetal_fraction, (major_allele_percent/100), 
-                               vf_assay_molecules)))
-
-# Predict genotypes
-het_gdna_sprt <- predict_sprt_genotypes(het_gdna_sprt, 8)
-
-#########################
 # MCMC analysis - cfDNA
 #########################
 
@@ -152,52 +131,6 @@ all_samples_mcmc <- binary_predictions(
   df = all_samples_mcmc,
   prediction = quo(mcmc_prediction)) %>%
   dplyr::rename(mcmc_binary = binary_call)
-
-#########################
-# MCMC analysis - gDNA
-#########################
-
-# Set an artificial fetal fraction of 4%
-mcmc_fetal_fraction <- 0.04
-
-gdna_data_mcmc <- het_gdna %>%
-  # Remove replicates outside the DNA input range of cfDNA
-  filter(vf_assay_molecules < 30000) %>%
-  mutate(
-    var_ref_positives = variant_positives + reference_positives,
-    var_ref_molecules = poisson_correct(vf_assay_droplets, var_ref_positives),
-    
-    # Create an artificial dataset for the fetal fraction.
-    # Use the same number of total droplets as the variant fraction assay.
-    ff_assay_droplets = vf_assay_droplets,
-    
-    #Calculate the number of fetal-specific and maternal molecules
-    paternal_molecules = var_ref_molecules * mcmc_fetal_fraction,
-    maternal_molecules = var_ref_molecules * (1-mcmc_fetal_fraction),
-    
-    # Calculate the expected number of positive partitions
-    paternal_positives = reverse_poisson(paternal_molecules, 
-                                         ff_assay_droplets),
-    maternal_positives = reverse_poisson(maternal_molecules, 
-                                         ff_assay_droplets)) %>%
-  # Rename for pipeline
-  dplyr::rename(n_K = vf_assay_droplets,
-                K_M = variant_positives,
-                K_N = reference_positives,
-                Z_X = maternal_positives,
-                Z_Y = paternal_positives,
-                n_Z = ff_assay_droplets) %>%
-  select(worksheet_well_sample, inheritance_chromosomal, inheritance_pattern,
-         vf_assay, n_K, n_Z, K_N, K_M, n_Z, Z_X, Z_Y)
-
-# 527 replicates of gDNA takes ~1 hour 4 mins to run
-gdna_mcmc_analysed <- run_mcmc(gdna_data_mcmc, 0.95)
-
-# Export the file as a csv so you don't have to keep rerunning the analysis.
-
-write.csv(gdna_mcmc_analysed, paste0("analysis_outputs/gdna_mcmc_analysed ",
-                 format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv"),
-          row.names = FALSE)
 
 #########################
 # Heterozygous gDNA variation
@@ -268,12 +201,6 @@ all_samples_zscore <- binary_predictions(
 # Collate analyses 
 #########################
 
-# Samples to exclude
-# 13262 - this sample had contamination
-# 17004 - father was HbAC
-# 20915 - twin pregnancy
-samples_to_exclude <- c("13262", "20915", "17004")
-
 all_samples_blinded <- left_join(
   all_samples_sprt,
   all_samples_mcmc %>%
@@ -282,14 +209,20 @@ all_samples_blinded <- left_join(
   left_join(
     all_samples_zscore %>%
       select(r_number, zscore, zscore_prediction, zscore_binary),
-    by = "r_number") %>%
-  filter(!r_number %in% samples_to_exclude)
+    by = "r_number")
 
 #########################
 # Compare predictions against Biobank
 #########################
 
+# Samples to exclude
+# 13262 MAN387 - this sample had contamination
+# 17004 UCLH1160302 - father was HbAC
+# 20915 UCLH1787363 - twin pregnancy
+samples_to_exclude <- c("13262", "20915", "17004")
+
 all_samples_unblinded <- all_samples_blinded %>%
+  filter(!r_number %in% samples_to_exclude) %>%
   left_join(RAPID_biobank %>%
             # Change r_number to a character
             mutate(r_number = as.character(r_number)) %>%
@@ -344,6 +277,14 @@ all_samples_unblinded <- all_samples_blinded %>%
                                levels = c("correct", "incorrect", 
                                           "inconclusive")))
 
+# Export results
+write.csv(all_samples_unblinded, 
+          paste0("analysis_outputs/all_samples_unblinded ",
+                                     format(Sys.time(), "%Y%m%d_%H%M%S"), 
+                 ".csv"),
+          row.names = FALSE)
+
+
 #########################
 # Summary of all results: Supplementary Data
 #########################
@@ -380,8 +321,8 @@ supplementary_table <- families %>%
   
   # Reorder columns
   select(
-    # Sample identifiers (r_number and study_id removed)
-    sample_id, family_number, 
+    # Sample identifiers
+    sample_id, r_number, family_number, study_id ,
     # Sampling information
     hours_to_first_spin, days_to_storage,
     vacutainer, gestation_character,
@@ -414,7 +355,9 @@ supplementary_table <- families %>%
     fetal_genotype, sprt_outcome, mcmc_outcome, zscore_outcome)
 
 # Export the results
-write.csv(supplementary_table, 
+write.csv(supplementary_table %>%
+            # Remove study ID and R number for publication
+            select(-c(r_number, study_id)), 
           file = (paste0("analysis_outputs/Supplementary_data_",
                format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv")),
           row.names = FALSE)
@@ -423,16 +366,16 @@ write.csv(supplementary_table,
 # Gene information table: Table 1
 ###################
 
-xl_count_table <- all_samples_arranged %>%
+xl_count_table <- all_samples_blinded %>%
   filter(inheritance_chromosomal == "x_linked") %>%
   count(vf_assay)
 
-ad_count_table <- all_samples_arranged %>%
+ad_count_table <- all_samples_blinded %>%
   filter(inheritance_chromosomal == "autosomal" &
            inheritance_pattern == "dominant") %>%
   count(vf_assay)
 
-ar_count_table <- all_samples_arranged %>%
+ar_count_table <- all_samples_blinded %>%
   filter(inheritance_chromosomal == "autosomal" &
            inheritance_pattern == "recessive") %>%
   count(vf_assay)
@@ -755,6 +698,10 @@ cfdna_shape <- scale_shape_manual(values = c(24, 24, 21, 25, 25))
 # Plot 2A: SPRT analysis
 ###################
 
+cfdna_sprt_plot_title <- paste0("ddPCR for ",
+                                nrow(all_samples_unblinded),
+                                " cfDNA samples with SPRT classification")
+
 plot_2a <- ggplot(all_samples_unblinded, aes(x = vf_assay_molecules, 
                                             y = variant_percent)) +
   theme_bw() +
@@ -770,11 +717,15 @@ plot_2a <- ggplot(all_samples_unblinded, aes(x = vf_assay_molecules,
              colour = "black") +
   
   labs(y = "Variant fraction (%)", x = "", 
-       title = "ddPCR for 124 cfDNA samples with SPRT classification")
+       title = cfdna_sprt_plot_title)
 
 ###################
 # Plot 2B: MCMC analysis
 ###################
+
+cfdna_mcmc_plot_title <- paste0("ddPCR for ",
+                                nrow(all_samples_unblinded),
+                               " cfDNA samples with MCMC classification")
 
 plot_2b <- ggplot(all_samples_unblinded, aes(x = vf_assay_molecules, 
                                             y = variant_percent)) +
@@ -791,11 +742,15 @@ plot_2b <- ggplot(all_samples_unblinded, aes(x = vf_assay_molecules,
              colour = "black") +
   
   labs(y = "", x = "", 
-       title = "ddPCR for 124 cfDNA samples with MCMC classification")
+       title = cfdna_mcmc_plot_title)
 
 ###################
 # Plot 2C: heterozygous gDNA controls
 ###################
+
+het_gdna_plot_title <- paste0("ddPCR for ",
+       length(unique(het_gdna$r_number)),
+       " heterozygous gDNA controls")
 
 plot_2c <- ggplot(het_gdna %>%
          mutate(sample_type = "het gDNA"), 
@@ -815,11 +770,15 @@ plot_2c <- ggplot(het_gdna %>%
   theme_bw() +
   multiplot_theme +
   labs(y = "Variant fraction (%)", x = "Genome equivalents (GE)",
-       title = "ddPCR for 82 heterozygous gDNA controls")
+       title = het_gdna_plot_title)
 
 ###################
 # Plot 2D: z score analysis
 ###################
+
+cfdna_zscore_plot_title <- paste0("ddPCR for ",
+                                nrow(all_samples_unblinded),
+                                " cfDNA samples with Z score classification")
 
 plot_2d <- ggplot(all_samples_unblinded, aes(x = vf_assay_molecules, 
              y = variant_percent)) +
@@ -842,7 +801,7 @@ plot_2d <- ggplot(all_samples_unblinded, aes(x = vf_assay_molecules,
              colour = "black") +
   
   labs(y = "", x = "Genome equivalents (GE)", 
-       title = "ddPCR for 124 cfDNA samples with z score classification")
+       title = cfdna_zscore_plot_title)
 
 ###################
 # All plots together
@@ -967,19 +926,26 @@ sprt_roc_object <- roc(
   # Response
   roc_binary_calls$fetus_affected, 
   # Predictor
-  roc_binary_calls$likelihood_ratio)
+  roc_binary_calls$likelihood_ratio,
+  direction="<",
+  # Levels indicate "controls", then "cases"
+  levels = c("FALSE", "TRUE"))
 
 mcmc_roc_object <- roc(
   # Response
   roc_binary_calls$fetus_affected, 
   # Predictor
-  roc_binary_calls$mcmc_unbalanced_call)
+  roc_binary_calls$mcmc_unbalanced_call,
+  direction="<",
+  levels = c("FALSE", "TRUE"))
 
 zscore_roc_object <- roc(
   # Response
   roc_binary_calls$fetus_affected, 
   # Predictor
-  roc_binary_calls$zscore_unbalanced_call)
+  roc_binary_calls$zscore_unbalanced_call,
+  direction="<",
+  levels = c("FALSE", "TRUE"))
 
 # SPRT plot
 sprt_roc <- ggroc(sprt_roc_object, size = 2) +
@@ -1034,12 +1000,78 @@ ggsave(plot = roc_plot,
        path = "plots/", device='tiff',
        units = "in",
        width = 10,
-       height = 7)
+       height = 4)
+
+#########################
+# SPRT analysis - gDNA
+#########################
+
+het_gdna_sprt <- het_gdna %>%
+  # Remove replicates outside the DNA input range of cfDNA
+  filter(vf_assay_molecules < 30000) %>%
+  # Assign an artificial fetal fraction of 4% for SPRT calculations
+  mutate(fetal_fraction = 0.04,
+         # Calculate the likelihood ratio
+         likelihood_ratio = case_when(
+           inheritance_chromosomal == "x_linked" ~ 
+             calc_lr_x_linked(fetal_fraction, (major_allele_percent/100), 
+                              vf_assay_molecules),
+           inheritance_chromosomal == "autosomal" ~ 
+             calc_lr_autosomal(fetal_fraction, (major_allele_percent/100), 
+                               vf_assay_molecules)))
+
+# Predict genotypes
+het_gdna_sprt <- predict_sprt_genotypes(het_gdna_sprt, 8)
+
+#########################
+# MCMC analysis - gDNA
+#########################
+
+# Set an artificial fetal fraction of 4%
+mcmc_fetal_fraction <- 0.04
+
+gdna_data_mcmc <- het_gdna %>%
+  # Remove replicates outside the DNA input range of cfDNA
+  filter(vf_assay_molecules < 30000) %>%
+  mutate(
+    var_ref_positives = variant_positives + reference_positives,
+    var_ref_molecules = poisson_correct(vf_assay_droplets, var_ref_positives),
+    
+    # Create an artificial dataset for the fetal fraction.
+    # Use the same number of total droplets as the variant fraction assay.
+    ff_assay_droplets = vf_assay_droplets,
+    
+    #Calculate the number of fetal-specific and maternal molecules
+    paternal_molecules = var_ref_molecules * mcmc_fetal_fraction,
+    maternal_molecules = var_ref_molecules * (1-mcmc_fetal_fraction),
+    
+    # Calculate the expected number of positive partitions
+    paternal_positives = reverse_poisson(paternal_molecules, 
+                                         ff_assay_droplets),
+    maternal_positives = reverse_poisson(maternal_molecules, 
+                                         ff_assay_droplets)) %>%
+  # Rename for pipeline
+  dplyr::rename(n_K = vf_assay_droplets,
+                K_M = variant_positives,
+                K_N = reference_positives,
+                Z_X = maternal_positives,
+                Z_Y = paternal_positives,
+                n_Z = ff_assay_droplets) %>%
+  select(worksheet_well_sample, inheritance_chromosomal, inheritance_pattern,
+         vf_assay, n_K, n_Z, K_N, K_M, n_Z, Z_X, Z_Y)
+
+# Analysing the gDNA replicates takes ~1 hour 4 mins
+gdna_mcmc_analysed <- run_mcmc(gdna_data_mcmc, 0.95)
+
+# Export the file as a csv so you don't have to keep rerunning the analysis.
+
+write.csv(gdna_mcmc_analysed, paste0("analysis_outputs/gdna_mcmc_analysed ",
+                                     format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv"),
+          row.names = FALSE)
 
 ###################
 # SPRT and MCMC gDNA plots - Supplemental Figure 5
 ###################
-
 # Set fetal fraction and likelihood ratio thresholds
 ff_for_graph <- 0.04
 lr_for_graph <- 8
