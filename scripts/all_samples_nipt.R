@@ -258,15 +258,13 @@ all_samples_unblinded <- all_samples_blinded %>%
       TRUE ~"incorrect")) %>%
   select(-mutation_genetic_info_fetus) %>%
   
-  mutate(fetal_genotype = paste0(fetal_genotype, " fetus"),
-         
-         # Factorise for plotting
+  mutate(# Factorise for plotting
          fetal_genotype = factor(fetal_genotype,
-                                     levels = c("hemizygous variant fetus",
-                                                "homozygous variant fetus",
-                                                "heterozygous fetus",
-                                                "homozygous reference fetus",
-                                                "hemizygous reference fetus")),
+                                     levels = c("hemizygous variant",
+                                                "homozygous variant",
+                                                "heterozygous",
+                                                "homozygous reference",
+                                                "hemizygous reference")),
          zscore_outcome = factor(zscore_outcome,
                                  levels = c("correct", "incorrect", 
                                             "inconclusive")),
@@ -277,14 +275,6 @@ all_samples_unblinded <- all_samples_blinded %>%
                                levels = c("correct", "incorrect", 
                                           "inconclusive")))
 
-# Export results
-write.csv(all_samples_unblinded, 
-          paste0("analysis_outputs/all_samples_unblinded ",
-                                     format(Sys.time(), "%Y%m%d_%H%M%S"), 
-                 ".csv"),
-          row.names = FALSE)
-
-
 #########################
 # Summary of all results: Supplementary Data
 #########################
@@ -292,9 +282,27 @@ write.csv(all_samples_unblinded,
 all_samples_arranged <- all_samples_unblinded %>%
   mutate(cohort = ifelse(vf_assay == "HBB c.20A>T", "sickle cell disease",
                        "bespoke design"),
-         cohort = factor(cohort, levels = c("sickle cell disease",
-                                          "bespoke design"))) %>%
-  arrange(cohort, inheritance_chromosomal, inheritance_pattern, study_id)
+         cohort = factor(cohort, levels = c("bespoke design",
+                                            "sickle cell disease"))) %>%
+  # Bind to gene information
+  left_join(gene_info,
+          by = "vf_assay") %>%
+  # Add on abbreviation of inheritance patterns
+  mutate(inheritance_abbreviation = case_when(
+    inheritance_chromosomal == "autosomal" &
+      inheritance_pattern == "recessive" ~"AR",
+    inheritance_chromosomal == "autosomal" &
+      inheritance_pattern == "dominant" ~"AD",
+    inheritance_chromosomal == "x_linked" &
+      inheritance_pattern == "dominant" ~"XLD",
+    inheritance_chromosomal == "x_linked" &
+      inheritance_pattern == "recessive" ~"XLR"),
+    
+    # Factorise for ordering
+    inheritance_abbreviation = factor(inheritance_abbreviation,
+                                      levels = c("AR", "AD", 
+                                                 "XLR", "XLD"))) %>%
+  arrange(cohort, inheritance_abbreviation, vf_assay, study_id)
   
 families <- data.frame(
   study_id = unique(all_samples_arranged$study_id))
@@ -305,10 +313,6 @@ families <- families %>%
 supplementary_table <- families %>%
   full_join(all_samples_arranged,
             by = "study_id") %>%
-  # Add on condition name
-  left_join(gene_info %>%
-              select(vf_assay, condition),
-            by = "vf_assay") %>%
   mutate(sample_id = 
          paste0("cfDNA-", as.character(row.names(all_samples_arranged))),
          
@@ -317,49 +321,112 @@ supplementary_table <- families %>%
            inheritance_chromosomal == "x_linked" ~"ZFXY",
            inheritance_chromosomal == "autosomal" & ff_assay %in%
              ddpcr_snp_panel$dbSNP ~ "ddPCR SNP panel - workflow 2",
-           TRUE ~"NGS SNP panel - workflow 1")) %>%
-  
-  # Reorder columns
-  select(
-    # Sample identifiers
-    sample_id, r_number, family_number, study_id ,
-    # Sampling information
-    hours_to_first_spin, days_to_storage,
-    vacutainer, gestation_character,
-    diagnostic_sampling, 
-    # Extraction information
-    plasma_volume_ml, extraction_replicates, 
-    # Variant information
-    cohort, inheritance_chromosomal, inheritance_pattern, condition,
-    vf_assay, ff_determination, ff_assay, vf_assay_num_wells, 
-    vf_assay_droplets, reference_positives,
-    variant_positives, ff_assay_num_wells, ff_assay_droplets, 
-    maternal_positives, paternal_positives,
-    # Molecules
-    variant_molecules, reference_molecules, vf_assay_molecules,
-    variant_percent,
-    maternal_molecules, paternal_molecules, fetal_percent,
-    ff_assay_molecules, total_molecules, totalGE_ml_plasma,
-    # Poisson confidence limits
-    fetal_percent_min,
-    fetal_percent_max,
-    variant_percent_min,
-    variant_percent_max,
-    vf_assay_molecules_min,
-    vf_assay_molecules_max,
-    # Analysis
-    likelihood_ratio, sprt_prediction, sprt_binary, 
-    p_G0, p_G1, p_G2, p_G3, mcmc_prediction, mcmc_binary, 
-    zscore, zscore_prediction, zscore_binary,
-    # Outcome
-    fetal_genotype, sprt_outcome, mcmc_outcome, zscore_outcome)
+           TRUE ~"NGS SNP panel - workflow 1"))
 
-# Export the results
-write.csv(supplementary_table %>%
-            # Remove study ID and R number for publication
-            select(-c(r_number, study_id)), 
-          file = (paste0("analysis_outputs/Supplementary_data_",
-               format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv")),
+###################
+# Bespoke cohort individual results table
+################### 
+
+bespoke_results_table <- supplementary_table %>%
+  filter(vf_assay != "HBB c.20A>T") %>%
+  select(inheritance_abbreviation, sample_id, condition,
+         gene, variant_dna, fetal_genotype, sprt_prediction, 
+         mcmc_prediction, zscore_prediction) %>%
+  dplyr::rename(
+    Inheritance = inheritance_abbreviation,
+    `Sample number` = sample_id,
+    Condition = condition,
+    Gene = gene,
+    DNA = variant_dna,
+    `Fetal genotype` = fetal_genotype,
+    SPRT = sprt_prediction,
+    MCMC = mcmc_prediction,
+    `Z score` = zscore_prediction)
+
+write.csv(bespoke_results_table,
+          "analysis_outputs/bespoke_results_table.csv",
+          row.names = FALSE)
+          
+
+###################
+# Incorrect results table
+################### 
+
+incorrect_results_table <- supplementary_table %>%
+  filter(sprt_outcome == "incorrect" |
+           mcmc_outcome == "incorrect" |
+           zscore_outcome == "incorrect") %>%
+  mutate(
+    fetal_percent = round(fetal_percent, 1),
+    variant_percent = round(variant_percent, 1)) %>%
+  select(sample_id, vf_assay, fetal_percent, variant_percent,
+         vf_assay_molecules, fetal_genotype, sprt_prediction, 
+         mcmc_prediction, zscore_prediction) %>%
+  dplyr::rename(
+    `Sample number` = sample_id,
+    Variant = vf_assay,
+    `Fetal fraction (%)` = fetal_percent,
+    `Variant fraction (%)` = variant_percent,
+    `Molecules detected` = vf_assay_molecules,
+    `Fetal genotype` = fetal_genotype,
+    SPRT = sprt_prediction,
+    MCMC = mcmc_prediction,
+    `Z score` = zscore_prediction)
+
+write.csv(incorrect_results_table,
+          "analysis_outputs/incorrect_results_table.csv",
+          row.names = FALSE)
+
+###################
+# Sickle cell disease results table
+################### 
+
+scd_results <- supplementary_table %>%
+  filter(vf_assay == "HBB c.20A>T")
+
+genotype_count <- count(scd_results, fetal_genotype)
+
+get_scd_counts <- function(analysis_method, analysis_outcome, df) {
+  
+  stopifnot("fetal_genotype" %in% colnames(df))
+  
+  output <- count(df, fetal_genotype,
+                  !!analysis_outcome) %>%
+    mutate(analysis = analysis_method) %>%
+    pivot_wider(
+      id_cols = fetal_genotype,
+      names_from = c(analysis, !!analysis_outcome),
+      values_from = n)
+  return(output)
+}
+
+sprt_scd_count <- get_scd_counts(analysis_method = "sprt", 
+               analysis_outcome = quo(sprt_outcome),
+               df = scd_results)
+
+mcmc_scd_count <- get_scd_counts(analysis_method = "mcmc", 
+                                 analysis_outcome = quo(mcmc_outcome),
+                                 df = scd_results)
+
+zscore_scd_count <- get_scd_counts(analysis_method = "zscore", 
+                                 analysis_outcome = quo(zscore_outcome),
+                                 df = scd_results)
+
+scd_analysis_results <- cbind(
+  genotype_count,
+  sprt_scd_count %>%
+    select(-fetal_genotype),
+  mcmc_scd_count%>%
+    select(-fetal_genotype),
+  zscore_scd_count%>%
+    select(-fetal_genotype)) %>%
+  dplyr::rename(Samples = n)
+
+# Replace NAs with 0s
+scd_analysis_results[is.na(scd_analysis_results)] = 0
+
+write.csv(scd_analysis_results,
+          "analysis_outputs/scd_analysis_results_table.csv",
           row.names = FALSE)
 
 ###################
@@ -875,10 +942,10 @@ roc_binary_calls <- all_samples_unblinded %>%
       # Autosomal dominant inheritance
       inheritance_chromosomal == "autosomal" &
         inheritance_pattern == "dominant" &
-        fetal_genotype == "heterozygous fetus" ~"TRUE",
+        fetal_genotype == "heterozygous" ~"TRUE",
       inheritance_chromosomal == "autosomal" &
         inheritance_pattern == "dominant" &
-        fetal_genotype == "homozygous reference fetus" ~"FALSE",
+        fetal_genotype == "homozygous reference" ~"FALSE",
       
       # Autosomal recessive inheritance
       # As there are 3 possible genotypes, both homozygous variant and 
@@ -886,17 +953,17 @@ roc_binary_calls <- all_samples_unblinded %>%
       # involve an imbalance in cfDNA.
       inheritance_chromosomal == "autosomal" &
         inheritance_pattern == "recessive" &
-        fetal_genotype %in% c("homozygous variant fetus", 
-                            "homozygous reference fetus")  ~"TRUE",
+        fetal_genotype %in% c("homozygous variant", 
+                            "homozygous reference")  ~"TRUE",
       inheritance_chromosomal == "autosomal" &
         inheritance_pattern == "recessive" &
-        fetal_genotype == "heterozygous fetus" ~"FALSE",
+        fetal_genotype == "heterozygous" ~"FALSE",
       
       # X linked inheritance
       inheritance_chromosomal == "x_linked" &
-        fetal_genotype == "hemizygous variant fetus"  ~"TRUE",
+        fetal_genotype == "hemizygous variant"  ~"TRUE",
       inheritance_chromosomal == "x_linked" &
-        fetal_genotype == "hemizygous reference fetus"  ~"FALSE"),
+        fetal_genotype == "hemizygous reference"  ~"FALSE"),
       
       # Convert "fetus_affected" column to Boolean vector
       fetus_affected = as.logical(fetus_affected),
@@ -927,6 +994,10 @@ sprt_roc_object <- roc(
   roc_binary_calls$fetus_affected, 
   # Predictor
   roc_binary_calls$likelihood_ratio,
+  auc = TRUE,
+  ci = TRUE,
+  ci.se = TRUE,
+  ci.sp = TRUE,
   direction="<",
   # Levels indicate "controls", then "cases"
   levels = c("FALSE", "TRUE"))
@@ -958,8 +1029,20 @@ sprt_roc <- ggroc(sprt_roc_object, size = 2) +
               intercept = 1)+
   annotate(geom = "text", x = 0.25, y = 0.25, 
            label = paste0("AUC = ", 
-                          round(auc(roc_binary_calls$fetus_affected, 
-                                    roc_binary_calls$likelihood_ratio),3)))
+                    round(auc(roc_binary_calls$fetus_affected, 
+                              roc_binary_calls$likelihood_ratio),3)))
+
+plot.roc(# Response
+          roc_binary_calls$fetus_affected, 
+          # Predictor
+          roc_binary_calls$likelihood_ratio,
+          percent=TRUE,
+          ci=TRUE, 
+          of="thresholds", # compute AUC (of threshold)
+          thresholds="best", # select the (best) threshold
+          
+         print.thres="best") # also highlight this threshold on the plot
+
 # MCMC plot
 mcmc_roc <- ggroc(mcmc_roc_object, size = 2) +
   labs(x = "Specificity", 
