@@ -136,12 +136,12 @@ paste0("When compared to the results of invasive testing, SPRT and MCMC analysis
        " correct fetal genotype predictions, respectively, including ",
        nrow(supplementary_table %>%
               filter(vf_assay == "HBB c.20A>T" &
-                       fetal_genotype == "homozygous variant fetus",
+                       fetal_genotype == "homozygous variant",
                      sprt_outcome == "correct")),
        " and ",
        nrow(supplementary_table %>%
               filter(vf_assay == "HBB c.20A>T" &
-                       fetal_genotype == "homozygous variant fetus",
+                       fetal_genotype == "homozygous variant",
                      mcmc_outcome == "correct")),
        " fetuses affected with SCD. However, each method also generated ",
        nrow(supplementary_table %>%
@@ -154,6 +154,20 @@ paste0("When compared to the results of invasive testing, SPRT and MCMC analysis
        " incorrect fetal gentoype predictions.")
 
 # Example of illogical predictions: samples 30065 and 20763
+paste0("For example, sample ",
+       supplementary_table[supplementary_table$r_number == "30065",
+                           "sample_id"],
+       " which had a variant fraction of ",
+       round(supplementary_table[supplementary_table$r_number == "30065",
+                           "variant_percent"],1),
+       "%, was incorrectly predicted")
+paste0("By contrast, sample ",
+       supplementary_table[supplementary_table$r_number == "20763",
+                           "sample_id"],
+       " which had a lower variant fraction of ",
+       round(supplementary_table[supplementary_table$r_number == "20763",
+                           "variant_percent"], 1),
+       "%, was correctly called")
 
 ##############
 # Bespoke cohort
@@ -205,7 +219,7 @@ paste0("a low fetal fraction (",
        round(supplementary_table[supplementary_table$vf_assay == "PMM2 c.691G>A" &
                                    supplementary_table$sprt_outcome == "inconclusive",
                                  "fetal_percent"], 1),
-       " %) and low cfDNA concentration (",
+       "%) and low cfDNA concentration (",
        round(supplementary_table[supplementary_table$vf_assay == "PMM2 c.691G>A" &
                                    supplementary_table$sprt_outcome == "inconclusive",
                                  "totalGE_ml_plasma"], 0),

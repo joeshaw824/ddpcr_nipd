@@ -828,11 +828,11 @@ binary_predictions <- function(df, prediction) {
         !!prediction == "homozygous reference" ~"negative",
       
       # Autosomal recessive inheritance: to condense 3 genotype classifications
-      # into a binary classification, both unbalanced results 
-      # (homozygous variant and homozygous reference) are coded as "positive"
+      # into a binary classification, both results for unbalanced fetuses 
+      # (homozygous reference and homozygous variant) are coded as "positive"
       inheritance_chromosomal == "autosomal" &
         inheritance_pattern == "recessive" &
-        !!prediction %in% c("homozygous variant", 
+        !!prediction %in% c("homozygous variant",
                             "homozygous reference")  ~"positive",
       inheritance_chromosomal == "autosomal" &
         inheritance_pattern == "recessive" &
@@ -893,7 +893,7 @@ sensitivity_metrics <- function(df, prediction_binary, outcome, cohort_input,
   # Sensitivity
   
   sensitivity_paste <- paste0(round(data_results$detail$se$est, 3)*100, 
-         " (",
+         "% (",
          round(data_results$detail$se$lower, 3)*100,
          "-",
          round(data_results$detail$se$upper, 3)*100,
@@ -902,7 +902,7 @@ sensitivity_metrics <- function(df, prediction_binary, outcome, cohort_input,
   # Specificity
   
   specificity_paste <- paste0(round(data_results$detail$sp$est, 3)*100, 
-         " (",
+         "% (",
          round(data_results$detail$sp$lower, 3)*100,
          "-",
          round(data_results$detail$sp$upper, 3)*100,

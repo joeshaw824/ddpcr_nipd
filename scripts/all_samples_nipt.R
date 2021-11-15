@@ -212,7 +212,7 @@ all_samples_blinded <- left_join(
     by = "r_number")
 
 #########################
-# Compare predictions against Biobank
+# Compare predictions against invasive outcomes
 #########################
 
 # Samples to exclude
@@ -275,6 +275,11 @@ all_samples_unblinded <- all_samples_blinded %>%
                                levels = c("correct", "incorrect", 
                                           "inconclusive")))
 
+write.csv(all_samples_unblinded, 
+          file = (paste0("analysis_outputs/all_samples_unblinded",
+                         format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv")),
+          row.names = FALSE)
+
 #########################
 # Summary of all results: Supplementary Data
 #########################
@@ -323,6 +328,57 @@ supplementary_table <- families %>%
              ddpcr_snp_panel$dbSNP ~ "ddPCR SNP panel - workflow 2",
            TRUE ~"NGS SNP panel - workflow 1"))
 
+write.csv(supplementary_table %>%
+          # Reorder and remove r_number and study_id
+          select(
+            # Case details
+            sample_id, family_number, cohort , inheritance_abbreviation,
+            condition,
+            # Sample details
+            gestation_character, vacutainer, 
+            hours_to_first_spin, days_to_storage,
+            partner_sample_available, diagnostic_sampling, 
+            # Assay details
+            vf_assay, ff_determination, ff_assay, 
+            # Extraction info
+            plasma_volume_ml, extraction_replicates, 
+            # Number of wells
+            vf_assay_num_wells, ff_assay_num_wells,
+            # Droplet info
+            variant_positives, reference_positives, 
+            vf_assay_droplets, maternal_positives, 
+            paternal_positives,
+            # Molecules info
+            variant_molecules, reference_molecules, 
+            maternal_molecules, paternal_molecules,
+            vf_assay_molecules, ff_assay_molecules,
+            # Fractional abundance
+            variant_percent, fetal_percent,
+            # Poisson confidence intervals
+            variant_percent_max, variant_percent_min,
+            vf_assay_molecules_max, vf_assay_molecules_min,
+            fetal_percent_max, fetal_percent_min, 
+            ff_assay_molecules_max, ff_assay_molecules_min, 
+            totalGE_ml_plasma,
+            # SPRT analysis
+            likelihood_ratio, sprt_prediction, 
+            # MCMC analysis
+            p_G0, p_G1, p_G2, p_G3,
+            mcmc_prediction, 
+            # Z score analysis
+            zscore, zscore_prediction,
+            # Outcomes
+            fetal_genotype, sprt_outcome, mcmc_outcome,
+            zscore_outcome) %>%
+            
+            dplyr::rename(
+              inheritance = inheritance_abbreviation,
+              gestation = gestation_character,
+              partner_sample = partner_sample_available), 
+          file = (paste0("analysis_outputs/supplementary_table",
+                         format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv")),
+          row.names = FALSE)
+
 ###################
 # Bespoke cohort individual results table
 ################### 
@@ -332,6 +388,14 @@ bespoke_results_table <- supplementary_table %>%
   select(inheritance_abbreviation, sample_id, condition,
          gene, variant_dna, fetal_genotype, sprt_prediction, 
          mcmc_prediction, zscore_prediction) %>%
+  
+  # Remove factor levels for renaming
+  mutate(
+    fetal_genotype = as.character(fetal_genotype),
+    sprt_prediction = as.character(sprt_prediction),
+    mcmc_prediction = as.character(mcmc_prediction),
+    zscore_prediction = as.character(zscore_prediction)) %>%
+  
   dplyr::rename(
     Inheritance = inheritance_abbreviation,
     `Sample number` = sample_id,
@@ -343,10 +407,19 @@ bespoke_results_table <- supplementary_table %>%
     MCMC = mcmc_prediction,
     `Z score` = zscore_prediction)
 
+# Rename with shortened names to allow easier presentation in the paper
+bespoke_results_table[bespoke_results_table == "homozygous reference"] <- "hom ref"
+bespoke_results_table[bespoke_results_table == "homozygous variant"] <- "hom var"
+bespoke_results_table[bespoke_results_table == "heterozygous"] <- "het"
+bespoke_results_table[bespoke_results_table == "hemizygous reference"] <- "hemi ref"
+bespoke_results_table[bespoke_results_table == "hemizygous variant"] <- "hemi var"
+bespoke_results_table[bespoke_results_table == "inconclusive"] <- "no call"
+
 write.csv(bespoke_results_table,
-          "analysis_outputs/bespoke_results_table.csv",
+          file = paste0("analysis_outputs/bespoke_results_table",
+          format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv"),
           row.names = FALSE)
-          
+
 
 ###################
 # Incorrect results table
@@ -362,6 +435,13 @@ incorrect_results_table <- supplementary_table %>%
   select(sample_id, vf_assay, fetal_percent, variant_percent,
          vf_assay_molecules, fetal_genotype, sprt_prediction, 
          mcmc_prediction, zscore_prediction) %>%
+  
+  mutate(
+    fetal_genotype = as.character(fetal_genotype),
+    sprt_prediction = as.character(sprt_prediction),
+    mcmc_prediction = as.character(mcmc_prediction),
+    zscore_prediction = as.character(zscore_prediction)) %>%
+  
   dplyr::rename(
     `Sample number` = sample_id,
     Variant = vf_assay,
@@ -373,8 +453,16 @@ incorrect_results_table <- supplementary_table %>%
     MCMC = mcmc_prediction,
     `Z score` = zscore_prediction)
 
+incorrect_results_table[incorrect_results_table == "homozygous reference"] <- "hom ref"
+incorrect_results_table[incorrect_results_table == "homozygous variant"] <- "hom var"
+incorrect_results_table[incorrect_results_table == "heterozygous"] <- "het"
+incorrect_results_table[incorrect_results_table == "hemizygous reference"] <- "hemi ref"
+incorrect_results_table[incorrect_results_table == "hemizygous variant"] <- "hemi var"
+incorrect_results_table[incorrect_results_table == "inconclusive"] <- "no call"
+
 write.csv(incorrect_results_table,
-          "analysis_outputs/incorrect_results_table.csv",
+          file = paste0("analysis_outputs/incorrect_results_table",
+                        format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv"),
           row.names = FALSE)
 
 ###################
@@ -420,17 +508,22 @@ scd_analysis_results <- cbind(
     select(-fetal_genotype),
   zscore_scd_count%>%
     select(-fetal_genotype)) %>%
-  dplyr::rename(Samples = n)
+  dplyr::rename(Samples = n) %>%
+  mutate(fetal_genotype = as.character(fetal_genotype))
 
 # Replace NAs with 0s
 scd_analysis_results[is.na(scd_analysis_results)] = 0
+scd_analysis_results[scd_analysis_results == "homozygous variant"] <- "HbSS"
+scd_analysis_results[scd_analysis_results == "heterozygous"] <- "HbAS"
+scd_analysis_results[scd_analysis_results == "homozygous reference"] <- "HbAA"
 
 write.csv(scd_analysis_results,
-          "analysis_outputs/scd_analysis_results_table.csv",
+          file = paste0("analysis_outputs/scd_analysis_results",
+                        format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv"),
           row.names = FALSE)
 
 ###################
-# Gene information table: Table 1
+# Gene information table
 ###################
 
 xl_count_table <- all_samples_blinded %>%
@@ -713,10 +806,15 @@ analysis_metrics <- sprt_metrics %>%
            group == "all" ~"All samples")) %>%
   select(`Cohort`, `Result`, `SPRT`, `MCMC`, `Z score`)
 
-write.csv(x = analysis_metrics, 
-          file = paste0("analysis_outputs/Table_2_",
-                  format(Sys.time(), "%Y%m%d_%H%M%S"),
-                  ".csv"),
+
+spe_sen_table <- analysis_metrics %>%
+  filter(Cohort == "All samples" &
+           Result %in% c("Sensitivity (%)", "Specificity (%)")) %>%
+  select(`Result`, `SPRT`, `MCMC`, `Z score`)
+
+write.csv(spe_sen_table,
+          file = paste0("analysis_outputs/spe_sen_table",
+                        format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv"),
           row.names = FALSE)
 
 #########################
@@ -927,7 +1025,7 @@ analysis_summary_plot <- ggplot(analysis_summary, aes(x = outcome, y = n))+
         panel.grid.minor = element_blank())
 
 ###################
-# ROC curve analysis - Supplemental Figure 6
+# ROC curve analysis for sickle cell disease
 ###################
 
 # Plotting ROC curves can be achieved manually usually tidyverse functions,
@@ -935,76 +1033,42 @@ analysis_summary_plot <- ggplot(analysis_summary, aes(x = outcome, y = n))+
 
 # We need a binary classifier for the fetal genotype.
 
+# It is best to restrict this analysis to sickle cell disease: this is the 
+# largest cohort (88 samples) and trying to combine three different forms
+# of inheritance with different dosage relationships into a binary 
+# classification system doesn't work.
+
 roc_binary_calls <- all_samples_unblinded %>%
-  # Convert invasive results to binary outcomes based on whether the 
-  # fetus is affected or not
-  mutate(fetus_affected = case_when(
-      # Autosomal dominant inheritance
-      inheritance_chromosomal == "autosomal" &
-        inheritance_pattern == "dominant" &
-        fetal_genotype == "heterozygous" ~"TRUE",
-      inheritance_chromosomal == "autosomal" &
-        inheritance_pattern == "dominant" &
-        fetal_genotype == "homozygous reference" ~"FALSE",
-      
-      # Autosomal recessive inheritance
+  filter(vf_assay == "HBB c.20A>T") %>%
+  # Convert invasive results to binary outcomes
+  mutate(fetus_unbalanced = case_when(
       # As there are 3 possible genotypes, both homozygous variant and 
-      # homozygous reference fetuses are coded as "affected", as they both
-      # involve an imbalance in cfDNA.
-      inheritance_chromosomal == "autosomal" &
-        inheritance_pattern == "recessive" &
-        fetal_genotype %in% c("homozygous variant", 
+      # homozygous reference fetuses are coded as "affected" (TRUE), 
+    # as they both involve an imbalance in cfDNA.
+      fetal_genotype %in% c("homozygous variant", 
                             "homozygous reference")  ~"TRUE",
-      inheritance_chromosomal == "autosomal" &
-        inheritance_pattern == "recessive" &
-        fetal_genotype == "heterozygous" ~"FALSE",
-      
-      # X linked inheritance
-      inheritance_chromosomal == "x_linked" &
-        fetal_genotype == "hemizygous variant"  ~"TRUE",
-      inheritance_chromosomal == "x_linked" &
-        fetal_genotype == "hemizygous reference"  ~"FALSE"),
-      
+        fetal_genotype == "heterozygous" ~"FALSE"),
       # Convert "fetus_affected" column to Boolean vector
-      fetus_affected = as.logical(fetus_affected),
+      fetus_unbalanced = as.logical(fetus_unbalanced),
       # SPRT likelihood score and z scores are already single predictors
       # We need to convert the MCMC calls to a single value
-      # Annoyingly, pG2 has different meanings for recessive and dominant
-      # cases.
-      mcmc_unbalanced_call = case_when(
-        inheritance_chromosomal == "autosomal" &
-          inheritance_pattern == "recessive" ~pmax(p_G1, p_G3),
-        inheritance_chromosomal == "autosomal" &
-          inheritance_pattern == "dominant" ~p_G1,
-        inheritance_chromosomal == "x_linked" ~p_G1),
+      mcmc_unbalanced_call = pmax(p_G1, p_G3),
       # Remove minus signs from z score
       zscore_unbalanced_call = abs(zscore))
-
-# 12585 has an "infinite" likelihood ratio, which messes up the ROC
-# calculations, so need to replace with a finite number.
-
-roc_binary_calls[roc_binary_calls$r_number == "12585", "likelihood_ratio"] <- 
-  # Make it one larger than the largest finite likelihood ratio in the 
-  # dataset
-  (1.064861e+60 + 1)
 
 # Create ROC objects for each analysis method
 sprt_roc_object <- roc(
   # Response
-  roc_binary_calls$fetus_affected, 
+  roc_binary_calls$fetus_unbalanced, 
   # Predictor
   roc_binary_calls$likelihood_ratio,
-  auc = TRUE,
-  ci = TRUE,
-  ci.se = TRUE,
-  ci.sp = TRUE,
   direction="<",
   # Levels indicate "controls", then "cases"
   levels = c("FALSE", "TRUE"))
 
 mcmc_roc_object <- roc(
   # Response
-  roc_binary_calls$fetus_affected, 
+  roc_binary_calls$fetus_unbalanced, 
   # Predictor
   roc_binary_calls$mcmc_unbalanced_call,
   direction="<",
@@ -1012,55 +1076,44 @@ mcmc_roc_object <- roc(
 
 zscore_roc_object <- roc(
   # Response
-  roc_binary_calls$fetus_affected, 
+  roc_binary_calls$fetus_unbalanced, 
   # Predictor
   roc_binary_calls$zscore_unbalanced_call,
   direction="<",
   levels = c("FALSE", "TRUE"))
 
 # SPRT plot
-sprt_roc <- ggroc(sprt_roc_object, size = 2) +
-  labs(x = "", 
-       y = "Sensitivity", 
+sprt_roc <- ggroc(sprt_roc_object, size = 1) +
+  labs(y = "Sensitivity",
+       x = "",
        title = "SPRT analysis") +
   theme_bw() +
   multiplot_theme +
   geom_abline(linetype = "dashed",
-              intercept = 1)+
-  annotate(geom = "text", x = 0.25, y = 0.25, 
+              intercept = 1) +
+  annotate(geom = "text", x = 0.25, y = 0.3, 
            label = paste0("AUC = ", 
-                    round(auc(roc_binary_calls$fetus_affected, 
+                    round(auc(roc_binary_calls$fetus_unbalanced, 
                               roc_binary_calls$likelihood_ratio),3)))
 
-plot.roc(# Response
-          roc_binary_calls$fetus_affected, 
-          # Predictor
-          roc_binary_calls$likelihood_ratio,
-          percent=TRUE,
-          ci=TRUE, 
-          of="thresholds", # compute AUC (of threshold)
-          thresholds="best", # select the (best) threshold
-          
-         print.thres="best") # also highlight this threshold on the plot
-
 # MCMC plot
-mcmc_roc <- ggroc(mcmc_roc_object, size = 2) +
-  labs(x = "Specificity", 
-       y = "", 
-       title = "MCMC analysis") +
+mcmc_roc <- ggroc(mcmc_roc_object, size = 1) +
+  labs(y = "",
+       x = "Specificity",
+    title = "MCMC analysis") +
   theme_bw() +
   multiplot_theme +
   geom_abline(linetype = "dashed",
               intercept = 1)+
-  annotate(geom = "text", x = 0.25, y = 0.25, 
+  annotate(geom = "text", x = 0.25, y = 0.3, 
            label = paste0("AUC = ", 
-                          round(auc(roc_binary_calls$fetus_affected, 
+                          round(auc(roc_binary_calls$fetus_unbalanced, 
                                     roc_binary_calls$mcmc_unbalanced_call),3)))
 
 # Z score plot
-zscore_roc <- ggroc(zscore_roc_object, size = 2) +
-  labs(x = "", 
-       y = "", 
+zscore_roc <- ggroc(zscore_roc_object, size = 1) +
+  labs(x = "",
+       y = "",
        title = "Z score analysis") +
   theme_bw() +
   multiplot_theme +
@@ -1068,7 +1121,7 @@ zscore_roc <- ggroc(zscore_roc_object, size = 2) +
               intercept = 1)+
   annotate(geom = "text", x = 0.25, y = 0.25, 
            label = paste0("AUC = ", 
-                          round(auc(roc_binary_calls$fetus_affected, 
+                          round(auc(roc_binary_calls$fetus_unbalanced, 
                                     roc_binary_calls$zscore_unbalanced_call),3)))
 
 # All ROC plots together
