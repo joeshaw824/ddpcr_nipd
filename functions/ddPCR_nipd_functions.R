@@ -595,13 +595,13 @@ ff_calculations <- function(data_input) {
 draw_rmd_plot <- function(cfdna_sample, parent_vf_wells, parent_ff_wells) {
   
   # Get cfDNA data
-  cfDNA_rmd <- ddpcr_sprt_unblinded %>%
+  cfDNA_rmd <- all_samples_unblinded %>%
     filter(r_number %in% cfdna_sample) %>%
     dplyr::rename(sample = r_number) %>%
     mutate(identity = "cfDNA") %>%
     select(sample, identity, sprt_prediction, fetal_percent,
            variant_percent, 
-           vf_assay, ff_assay, mutation_genetic_info_fetus,
+           vf_assay, ff_assay, fetal_genotype,
            variant_molecules, reference_molecules,
            variant_molecules_max, variant_molecules_min, 
            reference_molecules_max, reference_molecules_min, 
@@ -924,6 +924,20 @@ sensitivity_metrics <- function(df, prediction_binary, outcome, cohort_input,
   
   return(output)
   
+}
+
+#########################
+# Export function
+#########################
+
+# Function for exporting tables as csv files with a time-stamp
+export_timestamp <- function(input) {
+  
+  write.csv(input, 
+            file = paste0("analysis_outputs/", 
+                          deparse(substitute(input)),
+                          format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv"),
+            row.names = FALSE)
 }
 
 #########################

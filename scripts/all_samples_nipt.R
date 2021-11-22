@@ -44,6 +44,9 @@ gene_info <- read.csv("resources/vf_assay_gene_information.csv")
 # Run the script to collate ddPCR assay primer and probe sequence information
 source("scripts/ddpcr_vf_assays.R")
 
+# Load sample wells
+sample_wells <- read.csv("resources/sample_wells.csv")
+
 #########################
 # Heterozygous gDNA cohort
 #########################
@@ -1444,9 +1447,9 @@ plot_s5f <- ggplot(mcmc_gdna_for_plot %>%
        y = "",
        title = "X-linked variant gDNA: MCMC results")
 
-###################
+###########
 # Arrange plots together
-###################
+###########
 
 gdna_results_plot <- ggpubr::ggarrange(plot_s5a, plot_s5d,
                                        plot_s5b, plot_s5e, 
@@ -1463,4 +1466,25 @@ ggsave(plot = gdna_results_plot,
        width = 8,
        height = 10)
 
-###################
+#########################
+# RMD plots for each case
+#########################
+
+rmd_plots <-list()
+
+# Plot an rmd plot for each case
+for (i in sample_wells$cfdna_sample) {
+  
+  case <- sample_wells %>%
+    filter(cfdna_sample == i)
+  
+  new_plot <- draw_rmd_plot(i, 
+                            c(case[, 2], case[, 3]),
+                            c(case[, 4], case[, 5]))
+  rmd_plots <- list(rmd_plots, new_plot)
+  rm(new_plot)
+}
+
+# Export bespoke cohort plots a single pdf
+ggexport(plotlist = rmd_plots, filename = "plots/rmd_plots_all_samples.pdf",
+         width=15, height=8, res=300)
