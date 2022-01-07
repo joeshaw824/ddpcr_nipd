@@ -44,7 +44,7 @@ gene_info <- read.csv("resources/vf_assay_gene_information.csv")
 # Run the script to collate ddPCR assay primer and probe sequence information
 source("scripts/ddpcr_vf_assays.R")
 
-# Load sample wells
+# Load sample wells for drawing RMD plots
 sample_wells <- read.csv("resources/sample_wells.csv")
 
 #########################
@@ -1485,6 +1485,6 @@ for (i in sample_wells$cfdna_sample) {
   rm(new_plot)
 }
 
-# Export bespoke cohort plots a single pdf
+# Export RMD plots for every sample as a single pdf
 ggexport(plotlist = rmd_plots, filename = "plots/rmd_plots_all_samples.pdf",
          width=15, height=8, res=300)

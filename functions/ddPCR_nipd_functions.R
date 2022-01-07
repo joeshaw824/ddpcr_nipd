@@ -598,7 +598,10 @@ draw_rmd_plot <- function(cfdna_sample, parent_vf_wells, parent_ff_wells) {
   cfDNA_rmd <- all_samples_unblinded %>%
     filter(r_number %in% cfdna_sample) %>%
     dplyr::rename(sample = r_number) %>%
-    mutate(identity = "cfDNA") %>%
+    mutate(identity = "cfDNA",
+           # Convert to characters for "paste0" in plot step
+           sprt_prediction = as.character(sprt_prediction),
+           fetal_genotype = as.character(fetal_genotype)) %>%
     select(sample, identity, sprt_prediction, fetal_percent,
            variant_percent, 
            vf_assay, ff_assay, fetal_genotype,
@@ -725,7 +728,7 @@ draw_rmd_plot <- function(cfdna_sample, parent_vf_wells, parent_ff_wells) {
                           "Variant fraction: ",
                           round(cfDNA_rmd[1,5], 1),"%  ",
                           "Invasive result: ",
-                          cfDNA_rmd[1,8]))+
+                         cfDNA_rmd[1,8]))+
     geom_text(aes(x = identity, y = molecules_max, label = molecules), 
               position = position_dodge(width = 0.9), vjust = -1)
   
