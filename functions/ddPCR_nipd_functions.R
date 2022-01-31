@@ -1,46 +1,46 @@
 ################################################################################
 ## Functions for ddPCR NIPD
-## March 2021
+## October 2021
 ## Joseph.Shaw@gosh.nhs.uk
 ################################################################################
 
 #########################
-# Load packages and resources
+# Load packages
 #########################
 
-## Load packages
 library(tidyverse)
-library(janitor)
+
+# stringi for reverse complement function
 library(stringi)
-
-# Control gDNA information
-controls <- readr::read_csv("resources/controls.csv")
-
-# Target panel
-ddpcr_target_panel <- readr::read_csv("resources/ddpcr_target_panel.csv") 
-
-# Number and type of plasma extractions
-plasma_extractions <- read.csv("resources/extraction_volumes.csv") %>%
-  group_by(r_number) %>%
-  summarise(plasma_volume_ml = (sum(tubes_removed))*2) 
-
-plasma_replicates <- read.csv("resources/extraction_volumes.csv") %>%
-  group_by(r_number) %>%
-  summarise(extraction_replicates = n())
-
-# Type of invasive sampling
-invasive_sampling <- read.csv("resources/confirmation_testing.csv")
 
 #########################
 # ddPCR functions
 #########################
 
-# Function for Poisson correction. See Barrett et al 2012 
-# supplementary information (PMID: 22451622)
+# Function for Poisson correction. I have used the version from
+# Barrett et al 2012 (PMID: 22451622 - supp info).
+# This is a rearrangement of the standard version, see Huggett et al 2020
+# (PMID: 32746458).
+# Huggett et al: lamda = -ln(1 - P/N)
+# Barrett et al: lamda = -ln((N-P)/N)
+# (N-P)/N = N/N - P/N = 1 - P/N
+# Example
+# -log(1 - 5000/20000) = 0.2876821
+# -log((20000-5000)/20000) = 0.2876821
 
 poisson_correct <- function(N, P) {
-  num_molecules <- as.integer(-log((N-P)/N)*N)
-  return(num_molecules)}
+  num_molecules <- round(-log((N-P)/N)*N, 0)
+  return(num_molecules)
+}
+
+# Function for reversing the Poisson correction to calculate
+# number of positive partitions from number of molecules.
+# See sprt_calculations.rmd for full explanation.
+
+reverse_poisson <- function(num_molecules, N) {
+  P <- round(N - (N / exp(num_molecules/N)), 0)
+  return(P)
+}
 
 # Calculate the fetal fraction from paternal allele copies.
 
@@ -84,89 +84,303 @@ poisson_fraction_min <- function(copies_allele_min, copies_allele_other) {
 # SPRT functions
 #########################
 
+# Equation sources:
+# q0 and q1 (X-linked inheritance): Tsui et al 2011 (PMID: 21263151)
+# q0 and q1 (autosomal inheritance): 
+    # Barrett et al 2012 (PMID: 22451622 - supp info)
+# Delta, gamma values and decision boundaries: 
+    # Lo et al 2007 (PMID: 17664418 - supp info)
+
+# These functions all should use inputs in decimal format.
+# I.e. fetal fraction formatted as "0.04" rather than "4%"
+
+# Smaller functions to prevent repetition of code:
+
+calc_q0_x_linked <- function(ff) {
+  q0 <-   (1 - ff) / (2 - ff)
+  return(q0)
+}
+
+# I modified the q1 autosomal expression to make it easier to use. 
+# Fetal fraction should be in the right format (i.e. 0.05 not 5)
+# q1 formula from Barrett et al (2012): (100+fetal DNA %)/200
+# calc_q1_autosomal(0.04) = 0.52
+# (100+4)/200 = 0.52
+
+calc_q1_autosomal <- function(ff) {
+  q1 <-  0.5+(ff/2)
+  return(q1)
+}
+
+# X-linked inheritance assumes a male fetus (one X chromosome)
+# Example: 45 counts from maternal reference allele, 45 counts from maternal 
+# variant allele. Fetus has inherited variant allele.
+# Fetal fraction is 10%, so fraction from a single X chromosome is
+# 5% (5 counts).
+# var counts / (var counts + ref counts)
+# (45+5) / (45+5+45) = 0.526
+# calc_q1_x_linked(0.1) = 0.526
+
+calc_q1_x_linked <- function(ff) {
+  q1 <-   1 / (2 - ff)
+  return(q1)
+}
+
+calc_delta <- function(q0, q1) {
+  delta <- (1- q1)/(1-q0)
+  return(delta)
+}
+
+calc_gamma <- function(q0, q1) {
+  gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
+  return(gamma)
+}
+
+calc_lr <- function(overrep_fraction, gamma, delta, total_copies) {
+  lr <- exp((((overrep_fraction*log(gamma)) + log(delta))*total_copies))
+  return(lr)
+}
+
 # Calculates the likelihood ratio (lr) for a ddPCR test with 
 # X-linked inheritance.
 
-calc_lr_x_linked <- function(fetal_fraction, overrep_fraction, total_copies) {
-  q0 <- (1 - fetal_fraction) / (2 - fetal_fraction)
-  q1 <- 1 / (2 - fetal_fraction)
-  delta <- (1- q1)/(1-q0)
-  gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
-  lr <- exp((((overrep_fraction*log(gamma)) + log(delta))*total_copies))
+calc_lr_x_linked <- function(ff, overrep_fraction, total_copies) {
+  q0 <- calc_q0_x_linked(ff)
+  q1 <- calc_q1_x_linked(ff)
+  delta <- calc_delta(q0, q1)
+  gamma <- calc_gamma(q0, q1)
+  lr <- calc_lr(overrep_fraction, gamma, delta, total_copies)
   return(lr)
 }
 
 # Calculates the likelihood ratio for a ddPCR test when the variant is 
 # on an autosome (recessive or dominant).
 
-calc_lr_autosomal <- function(fetal_fraction, overrep_fraction, total_copies) {
+calc_lr_autosomal <- function(ff, overrep_fraction, total_copies) {
   q0 = 0.5
-  # I modified the q1 expression to make it easier to use. 
-  # Fetal fraction should be in the right format
-  # I.e. 0.05 not 5
-  q1 <- 0.5+(fetal_fraction/2)
-  delta <- (1- q1)/(1-q0)
-  gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
-  lr <- exp((((overrep_fraction*log(gamma)) + log(delta))*total_copies))
+  q1 <- calc_q1_autosomal(ff)
+  delta <- calc_delta(q0, q1)
+  gamma <- calc_gamma(q0, q1)
+  lr <- calc_lr(overrep_fraction, gamma, delta, total_copies)
   return(lr)
 }
 
 # These functions calculate the SPRT thresholds with likelihood ratio 
 # supplied and fetal fraction supplied as a decimal.
-calc_SS_boundary <- function(total_copies, ff, lr) {
+calc_hom_var_boundary <- function(total_copies, ff, lr) {
   q0 <- 0.5
-  q1 <- 0.5+(ff/2)
-  delta <- (1- q1)/(1-q0)
-  gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
-  SS_boundary <- ((log(lr)/total_copies) - log(delta))/log(gamma)
-  # Convert to a percentage for output
-  return(SS_boundary*100)
+  q1 <- calc_q1_autosomal(ff)
+  delta <- calc_delta(q0, q1)
+  gamma <- calc_gamma(q0, q1)
+  hom_var_boundary <- ((log(lr)/total_copies) - log(delta))/log(gamma)*100
+  return(hom_var_boundary)
 }
 
-calc_AS_upper_boundary <- function(total_copies, ff, lr) {
+calc_het_upper_boundary <- function(total_copies, ff, lr) {
   q0 <- 0.5
-  q1 <- 0.5+(ff/2)
-  delta <- (1- q1)/(1-q0)
-  gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
-  AS_upper_boundary <- ((log(1/lr)/total_copies) - log(delta))/log(gamma)
-  # Convert to a percentage for output
-  return(AS_upper_boundary*100)
+  q1 <- calc_q1_autosomal(ff)
+  delta <- calc_delta(q0, q1)
+  gamma <- calc_gamma(q0, q1)
+  het_upper_boundary <- ((log(1/lr)/total_copies) - log(delta))/log(gamma)*100
+  return(het_upper_boundary)
 }
 
-calc_AS_lower_boundary <- function(total_copies, ff, lr) {
-  q0 <- 0.5
-  q1 <- 0.5+(ff/2)
-  delta <- (1- q1)/(1-q0)
-  gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
-  AS_upper_boundary <- ((log(1/lr)/total_copies) - log(delta))/log(gamma)
-  AS_lower_boundary <- 0.5-(AS_upper_boundary-0.5)
-  # Convert to a percentage for output
-  return(AS_lower_boundary*100)
+calc_het_lower_boundary <- function(total_copies, ff, lr) {
+  het_upper_boundary <- calc_het_upper_boundary(total_copies, ff, lr)
+  het_lower_boundary <- 50-(het_upper_boundary-50)
+  return(het_lower_boundary)
 }
 
-calc_AA_boundary <- function(total_copies, ff, lr) {
-  q0 <- 0.5
-  q1 <- 0.5+(ff/2)
-  delta <- (1- q1)/(1-q0)
-  gamma <- ((q1 * (1-q0))/ (q0*(1-q1)))
-  SS_boundary <- ((log(lr)/total_copies) - log(delta))/log(gamma)
-  AA_boundary <- 0.5-(SS_boundary-0.5)
-  # Convert to a percentage for output
-  return(AA_boundary*100)
+calc_hom_ref_boundary <- function(total_copies, ff, lr) {
+  hom_var_boundary <- calc_hom_var_boundary(total_copies, ff, lr)
+  hom_ref_boundary <- 50-(hom_var_boundary-50)
+  return(hom_ref_boundary)
+}
+
+calc_hemi_var_boundary <- function(total_copies, ff, lr) {
+  q0 <- calc_q0_x_linked(ff)
+  q1 <- calc_q1_x_linked(ff)
+  delta <- calc_delta(q0, q1)
+  gamma <- calc_gamma(q0, q1)
+  hemi_var_boundary <- (((log(lr)/total_copies) - log(delta))/log(gamma))*100
+  return(hemi_var_boundary)
+}
+
+calc_hemi_ref_boundary <- function(total_copies, ff, lr) {
+  hemi_var_boundary <- calc_hemi_var_boundary(total_copies, ff, lr)
+  hemi_ref_boundary <- 50-(hemi_var_boundary-50)
+  return(hemi_ref_boundary)
+}
+
+#########################
+# MCMC functions
+#########################
+
+# This function runs Tristan's MCMC pipeline for 3 inheritance patterns.
+
+# n_K	= number of droplets tested for variant assay
+# K_M	= number of droplets positive for variant (mutant) allele
+# K_N	= number of droplets positive for normal (reference) allele
+# n_Z	= number of droplets tested for fetal fraction assay
+# Z_X	= number of droplets positive for maternal homozygous allele
+# Z_Y	= number of droplets positive for paternal allele
+
+# Autosomal dominant:
+# p_G1: probability fetus is heterozygous
+# p_G2: probability fetus is homozygous reference
+
+# Autosomal recessive:
+# p_G1: probability fetus is homozygous reference
+# p_G2: probability fetus is heterozygous
+# p_G3: probability fetus is homozygous variant
+
+# X-linked:
+# p_G0: probability fetus is hemizygous reference
+# p_G1: probability fetus is hemizygous variant
+
+# Threshold should be 0.95
+
+run_mcmc <- function(data_input, threshold) {
+  
+  # Input data must have the required columns
+  stopifnot(c("inheritance_chromosomal", "inheritance_pattern",
+            "n_K", "K_M", "K_N", "n_Z", "Z_X", "Z_Y") %in% colnames(data_input))
+  
+  # Compile the models
+  dominant_model <- cmdstan_model("models/nipt_dominant.stan")
+
+  x_linked_model <- cmdstan_model("models/nipt_x_linked.stan")
+  
+  recessive_model <- cmdstan_model("models/nipt_recessive.stan")
+  
+  # Initialise the chains
+
+  initialise_chains_dominant <- function() list(rho = runif(1, 0.1, 0.5), 
+                                              M_K = runif(1, 0.1, 0.5), 
+                                              M_Z = runif(1, 0.1, 0.5))
+
+  initialise_chains_xlinked <- function() list(rho = rbeta(1, 4, 32),
+                                             M_K = abs(rnorm(1, sd = 0.05)),
+                                             M_Z = abs(rnorm(1, sd = 0.05)))
+
+  initialise_chains_recessive <- function() list(rho = runif(1, 0.1, 0.5),
+                                               M_K = runif(1, 0.1, 0.5),
+                                               M_Z = runif(1, 0.1, 0.5))
+  
+  # Set probability threshold for accepting fetal genotype predictions
+  mcmc_threshold <- threshold
+  
+  # Generate the probabilities for the fetal genotype based on 
+  # the inheritance pattern of the variant.
+  
+  data_with_fits <- data_input %>%
+    nest(data = n_K:Z_Y) %>%
+    mutate(
+      
+      data = map(data, as.list),
+      
+      fit = case_when(
+        inheritance_chromosomal == "autosomal" &
+        inheritance_pattern == "dominant" ~map(
+          data, ~ dominant_model$sample(data = .,
+                                        init = initialise_chains_dominant,
+                                        step_size = 0.2,
+                                        parallel_chains = parallel::detectCores())),
+      
+      inheritance_chromosomal == "autosomal" & 
+        inheritance_pattern == "recessive" ~ map(
+          data, ~ recessive_model$sample(data = .,
+                                         init = initialise_chains_recessive,
+                                         step_size = 0.2,
+                                         parallel_chains = parallel::detectCores())),
+      
+      inheritance_chromosomal == "x_linked" ~map(
+        data, ~ x_linked_model$sample(data = .,
+                                      init = initialise_chains_xlinked,
+                                      step_size = 0.2,
+                                      parallel_chains = parallel::detectCores()))),
+    
+    results = case_when(
+      inheritance_chromosomal == "autosomal" &
+        inheritance_pattern == "dominant" ~map(
+          fit,  ~ setNames(pivot_wider(.$summary(c("pG", "rho"), "mean"),
+                                       names_from = "variable",
+                                       values_from = "mean"),
+                           c("p_G1", "p_G2", "rho_est"))),
+      
+      inheritance_chromosomal == "autosomal" & 
+        inheritance_pattern == "recessive" ~map(
+          fit,  ~ setNames(pivot_wider(.$summary(c("pG", "rho"), "mean"),
+                                       names_from = "variable",
+                                       values_from = "mean"),
+                           c("p_G1", "p_G2", "p_G3", "rho_est"))),
+      
+      inheritance_chromosomal == "x_linked" ~map(
+        fit,  ~ setNames(pivot_wider(.$summary(c("pG", "rho"), "mean"),
+                                     names_from = "variable",
+                                     values_from = "mean"),
+                         c("p_G0", "p_G1", "rho_est"))))) %>%
+  
+  unnest_wider(results)
+  
+  # Add on fetal genotype predictions based on the previously set threshold.
+  
+  data_with_predictions <- data_with_fits %>%
+    select(-c(data, fit)) %>%
+    rename(fetal_fraction = rho_est) %>%
+    mutate(mcmc_prediction = case_when(
+      
+      # Dominant predictions
+      inheritance_chromosomal == "autosomal" & 
+        inheritance_pattern == "dominant" & 
+        p_G1 > mcmc_threshold ~"heterozygous",
+      
+      inheritance_chromosomal == "autosomal" &
+        inheritance_pattern == "dominant" & 
+        p_G2 > mcmc_threshold ~"homozygous reference",
+      
+      inheritance_chromosomal == "autosomal" &
+        inheritance_pattern == "dominant" & 
+        p_G1 < mcmc_threshold & 
+        p_G2 < mcmc_threshold ~"inconclusive",
+      
+      # Recessive predictions
+      inheritance_chromosomal == "autosomal" &
+        inheritance_pattern == "recessive" & 
+        p_G1 > mcmc_threshold ~"homozygous reference",
+      
+      inheritance_chromosomal == "autosomal" &
+        inheritance_pattern == "recessive" &
+        p_G2 > mcmc_threshold ~"heterozygous",
+      
+      inheritance_chromosomal == "autosomal" &
+        inheritance_pattern == "recessive" &
+        p_G3 > mcmc_threshold ~"homozygous variant",
+      
+      inheritance_chromosomal == "autosomal" &
+        inheritance_pattern == "recessive" & 
+        p_G1 < mcmc_threshold & 
+        p_G2 < mcmc_threshold &
+        p_G3 < mcmc_threshold ~"inconclusive",
+      
+      # X-linked predictions
+      inheritance_chromosomal == "x_linked" &
+        p_G0 > mcmc_threshold ~"hemizygous reference",
+      
+      inheritance_chromosomal == "x_linked" &
+        p_G1 > mcmc_threshold ~"hemizygous variant",
+      
+      inheritance_chromosomal == "x_linked" &
+        p_G0 < mcmc_threshold &
+        p_G1 < mcmc_threshold ~"inconclusive"))
+
+  return(data_with_predictions)
+  
 }
 
 #########################
 # Grouped functions
 #########################
-
-## Naming convention
-# For consistency, variables are named as: target_category_qualifier
-# Target examples: variant, reference, paternal, maternal, fetal, difference, 
-#                   major_allele, minor_allele, ff_assay, vf_assay, total
-# Category examples: molecules, fraction, percent, positives
-# Qualifier examples: max, min
-
-# Example: fetal_percent_max
 
 # These functions calculate the number of molecules and fractional
 # abundance for each target, including 95% Poisson confidence intervals.
@@ -292,7 +506,7 @@ var_ref_calculations <- function(data_input) {
         major_allele == "reference allele" ~reference_percent_min),
       
       # Calculate the 95% confidence intervals of the numbers of molecules 
-      # detected by each assay
+      # detected by the variant fraction assay
       vf_assay_molecules_max = poisson_max((
         vf_assay_molecules/vf_assay_droplets), 
         vf_assay_droplets),
@@ -314,9 +528,6 @@ ff_calculations <- function(data_input) {
   
   data_output <- data_input %>%
     mutate(
-      
-      # Calculate the same variables for the fetal fraction assay
-      
       maternal_molecules = poisson_correct(
         ff_assay_droplets,maternal_positives),
       
@@ -366,205 +577,6 @@ ff_calculations <- function(data_input) {
 }
 
 #########################
-# Read in ddPCR data 
-#########################
-
-# Load in all the csv files exported from QuantaSoft.
-
-dataPath <- "data/ddpcr_data/"
-
-ddpcr_files <- list.files(dataPath)
-
-#Empty data frame
-ddpcr_data <- data.frame()
-
-# Read and collate each worksheet csv
-for (dataFile in ddpcr_files){
-  tmp_dat <- readr::read_csv(paste0(dataPath,dataFile), col_names = TRUE)
-  # Add a worksheet identifier and a unique identifier for each
-  # well on each worksheet, and for each sample
-  tmp_dat_ws <- tmp_dat %>%
-    janitor::clean_names() %>%
-    mutate(worksheet = dataFile,
-           worksheet_well = paste(worksheet, well, sep = "_"),
-           worksheet_well_sample = 
-             paste(worksheet, well, sample, sep = "_")) %>%
-    dplyr::rename(droplets = accepted_droplets)
-  ddpcr_data <-rbind(ddpcr_data, tmp_dat_ws)
-  rm(tmp_dat_ws)
-  rm(tmp_dat)
-}
-
-#########################
-# Wrangle cfDNA data into shape
-#########################
-
-# The data wrangling in this section is due to collating 
-# data acquired over 3 years with various lab workflows.
-
-ddpcr_data_merged_samples <- ddpcr_data %>%
-  # Remove single wells and controls
-  filter(substr(well, 1, 1) == "M" & !(sample %in% controls$sample)) %>%
-  # Count the number of wells which have been merged together,
-  # which is the number of commas in "merged_wells" string plus one
-  mutate(num_wells = str_count(merged_wells, ",")+1)
-
-# Reshape the data frame to sum all values by Target.
-# Often cfDNA from the same sample was tested across
-# multiple worksheets and then must be summed together
-# for the analysis.
-ddpcr_data_reshape <- ddpcr_data_merged_samples %>% 
-  group_by(sample, target) %>% 
-  summarise(positives = sum(positives),
-            droplets = sum(droplets),
-            num_wells = sum(num_wells),
-            .groups="drop")
-
-# Add on the category for each ddPCR target
-# Data model: 4 categories - variant, reference, ff_allele1 and ff_allele2
-ddpcr_with_target <- ddpcr_data_reshape %>% 
-  left_join(ddpcr_target_panel %>%
-              select(target, target_category), 
-            by = "target")
-
-# Use pivot_wider to get one row per sample
-pivotted_ddpcr <- ddpcr_with_target %>% 
-  pivot_wider(id_cols = sample,
-              names_from = target_category,
-              values_from = c(droplets, positives, num_wells),
-              # Use names_glue to keep new columns names with naming
-              # convention
-              names_glue = "{target_category}_{.value}")
-
-# Add on assay and inheritance pattern to the table.
-# Do this first by adding the information to the "variant" rows, then to
-# the "ff_allele1" rows.
-ref_table_var <- left_join(
-  # First table
-  ddpcr_with_target %>%
-    filter(target_category == "variant"),
-  # Second table
-  ddpcr_target_panel %>%
-    select(assay, inheritance_chromosomal, inheritance_pattern, target) %>%
-    # Rename the assay column to avoid clash with fetal fraction assay
-    dplyr::rename(vf_assay = assay),
-  # Join by
-  by = "target")
-
-ref_table_ff <- left_join(
-  # First table
-  ddpcr_with_target %>%
-    filter(target_category == "ff_allele1"),
-  # Second table
-  ddpcr_target_panel %>%
-    select(assay, target) %>%
-    dplyr::rename(ff_assay = assay),
-  # Join by
-  by = "target")
-
-cfdna_ddpcr_data <- pivotted_ddpcr %>%
-  left_join(ref_table_var %>%
-              select(sample, inheritance_chromosomal, inheritance_pattern, 
-                     vf_assay), by = "sample",
-            .groups="drop") %>% 
-  left_join(ref_table_ff %>%
-              select(sample, ff_assay), by = "sample",
-            .groups="drop") %>%
-  
-  # Remove any samples which haven't had both assays performed.
-  # This removes several samples which didn't have both assays performed
-  # for various reasons.
-  filter(!is.na(variant_positives) & !is.na(ff_allele1_positives)) %>%
-  
-  # Remove duplicate columns. Reference and variant targets have the same
-  # number of droplets because they originate from the same ddPCR well.
-  select(-c(ff_allele2_droplets, reference_droplets, 
-            reference_num_wells,
-            ff_allele2_num_wells)) %>%
-  # Rename to be compatible with functions
-  dplyr::rename(ff_assay_droplets = ff_allele1_droplets,
-                vf_assay_droplets = variant_droplets,
-                ff_assay_num_wells = ff_allele1_num_wells,
-                vf_assay_num_wells = variant_num_wells) %>%
-  
-  # Determine the maternal and paternally-inherited alleles for the 
-  # fetal fraction calculation
-  mutate(maternal_positives = pmax(ff_allele1_positives, ff_allele2_positives),
-         paternal_positives = pmin(ff_allele1_positives, ff_allele2_positives))
-
-#########################
-# Wrangle gDNA data into shape
-#########################
-
-# Check that controls csv does not contain duplicate sample names, which
-# will effect later pivot_wider steps
-stopifnot(nrow(controls) == length(unique(controls$sample)))
-
-# Get single well and merged well control data without NTCs
-ddpcr_controls <- ddpcr_data %>%
-  filter(sample %in% controls$sample & sample != "NTC")
-
-# Add on target category 
-ddpcr_controls_with_target <- ddpcr_controls %>% 
-  left_join(ddpcr_target_panel %>%
-              select(target, target_category, assay), by = "target") %>%
-  # Add on sample identity as "maternal", "paternal" or "generic"
-  left_join(controls %>%
-              select(sample,	identity),
-            by = "sample")
-
-# Use pivot_wider to get one row per well for 
-# each well tested with a variant assay, and then calculate
-# molecular counts using var_ref_calculations
-
-parent_gDNA_var_ref <- var_ref_calculations(
-  
-  ddpcr_controls_with_target %>%
-  filter(target_category %in% c("variant", "reference")) %>%
-  select(worksheet_well_sample, sample, identity, assay, 
-         target_category, droplets, positives) %>%
-  pivot_wider(id_cols = c(worksheet_well_sample, sample, identity, assay),
-              names_from = target_category,
-              values_from = c(droplets, positives),
-              names_glue = "{target_category}_{.value}") %>%
-  select(-reference_droplets) %>%
-  dplyr::rename(vf_assay_droplets = variant_droplets,
-                vf_assay = assay)
-)
-
-# Use pivot_wider to get one row per well for each well tested with 
-# a fetal fraction assay, and then calculate
-# molecular counts using ff_calculations
-
-parent_gDNA_ff <- ff_calculations(ddpcr_controls_with_target %>%
-  filter(target_category %in% c("ff_allele2", "ff_allele1") &
-           identity %in% c("maternal gDNA", "paternal gDNA")) %>%
-  select(worksheet_well_sample, sample, identity, assay,
-         target_category, droplets, positives) %>%
-  pivot_wider(id_cols = c(worksheet_well_sample, sample, identity, assay),
-              names_from = target_category,
-              values_from = c(droplets, positives),
-              names_glue = "{target_category}_{.value}") %>%
-  dplyr::rename(ff_assay_droplets = ff_allele1_droplets,
-                ff_assay = assay) %>%
-  
-  # Need to create the maternal_positives and paternal_positives columns.
-  mutate(
-    maternal_positives = case_when(
-      identity == "paternal gDNA" ~pmin(ff_allele1_positives, 
-                                        ff_allele2_positives),
-      identity == "maternal gDNA" ~ pmax(ff_allele1_positives, 
-                                         ff_allele2_positives)),
-    
-    paternal_positives = case_when(
-      identity == "paternal gDNA" ~pmax(ff_allele1_positives, 
-                                        ff_allele2_positives),
-      identity == "maternal gDNA" ~ pmin(ff_allele1_positives, 
-                                         ff_allele2_positives))) %>%
-  select(-c(ff_allele2_droplets, ff_allele2_positives, 
-         ff_allele1_positives)))
-
-#########################
 # RMD plot function
 #########################
 
@@ -583,13 +595,16 @@ parent_gDNA_ff <- ff_calculations(ddpcr_controls_with_target %>%
 draw_rmd_plot <- function(cfdna_sample, parent_vf_wells, parent_ff_wells) {
   
   # Get cfDNA data
-  cfDNA_rmd <- ddpcr_sprt_unblinded %>%
+  cfDNA_rmd <- all_samples_unblinded %>%
     filter(r_number %in% cfdna_sample) %>%
     dplyr::rename(sample = r_number) %>%
-    mutate(identity = "cfDNA") %>%
+    mutate(identity = "cfDNA",
+           # Convert to characters for "paste0" in plot step
+           sprt_prediction = as.character(sprt_prediction),
+           fetal_genotype = as.character(fetal_genotype)) %>%
     select(sample, identity, sprt_prediction, fetal_percent,
            variant_percent, 
-           vf_assay, ff_assay, mutation_genetic_info_fetus,
+           vf_assay, ff_assay, fetal_genotype,
            variant_molecules, reference_molecules,
            variant_molecules_max, variant_molecules_min, 
            reference_molecules_max, reference_molecules_min, 
@@ -713,19 +728,219 @@ draw_rmd_plot <- function(cfdna_sample, parent_vf_wells, parent_ff_wells) {
                           "Variant fraction: ",
                           round(cfDNA_rmd[1,5], 1),"%  ",
                           "Invasive result: ",
-                          cfDNA_rmd[1,8]))+
+                         cfDNA_rmd[1,8]))+
     geom_text(aes(x = identity, y = molecules_max, label = molecules), 
               position = position_dodge(width = 0.9), vjust = -1)
   
   return(rmd_plot)
 }
 
-# Standardise coloration of variant and reference alleles for plots
+#########################
+# Sequence functions
+#########################
 
-variant_colour <- "#3366FF"
-reference_colour <- "#FF0000"
+reverse_complement <- function(input_sequence){
+  
+  rev_comp <- stringi::stri_reverse(chartr("ATGC","TACG",input_sequence))
+  
+  return(rev_comp)
+  
+}
 
+#########################
+# Prediction functions
+#########################
 
+# Function to make fetal genotype predictions following SPRT analysis
 
+predict_sprt_genotypes <- function(df, lr_threshold) {
+  
+  stopifnot(c("inheritance_chromosomal", "inheritance_pattern",
+              "likelihood_ratio")
+            %in% colnames(df))
+  
+  predictions <- df %>%
+    mutate(
+      # Classify based on likelihood ratio threshold supplied
+      # Fetal genotype predictions are named consistently as 
+      # "inconclusive", "heterozygous", "homozygous/hemizygous reference/variant"
+      sprt_prediction = case_when(
+        inheritance_chromosomal == "autosomal" &
+          likelihood_ratio > lr_threshold &
+          major_allele == "reference allele" 
+        ~ "homozygous reference",
+        
+        inheritance_chromosomal == "autosomal" &
+          likelihood_ratio > lr_threshold &
+          major_allele == "variant allele" 
+        ~ "homozygous variant",
+        
+        inheritance_chromosomal == "autosomal" &
+          likelihood_ratio < (1/lr_threshold)
+        ~ "heterozygous",
+        
+        inheritance_chromosomal == "autosomal" &
+          likelihood_ratio < lr_threshold &
+          likelihood_ratio > (1/lr_threshold) 
+        ~ "inconclusive",
+        
+        inheritance_chromosomal == "x_linked" &
+          likelihood_ratio > lr_threshold &
+          major_allele == "reference allele" 
+        ~ "hemizygous reference",
+        
+        inheritance_chromosomal == "x_linked" &
+          likelihood_ratio > lr_threshold &
+          major_allele == "variant allele" 
+        ~ "hemizygous variant",
+        
+        inheritance_chromosomal == "x_linked" &
+          likelihood_ratio < lr_threshold 
+        ~ "inconclusive"),
+      
+      # Factorise for plotting
+      sprt_prediction = factor(sprt_prediction, levels = 
+                                 c("hemizygous variant",
+                                   "homozygous variant",
+                                   "heterozygous",
+                                   "homozygous reference",
+                                   "hemizygous reference",
+                                   "inconclusive")))
+  
+  return(predictions)
+  
+}
 
+# This function converts fetal genotype predictions for multiple inheritance 
+# patterns into binary "positive" and "negative" classifiers, to help
+# with sensitivity calculations.
 
+binary_predictions <- function(df, prediction) {
+  
+  stopifnot(c("inheritance_chromosomal", "inheritance_pattern")
+            %in% colnames(df))
+  
+  new_df <- df %>%
+    mutate(binary_call = case_when(
+      # Autosomal dominant inheritance
+      inheritance_chromosomal == "autosomal" &
+        inheritance_pattern == "dominant" &
+        !!prediction == "heterozygous" ~"positive",
+      inheritance_chromosomal == "autosomal" &
+        inheritance_pattern == "dominant" &
+        !!prediction == "homozygous reference" ~"negative",
+      
+      # Autosomal recessive inheritance: to condense 3 genotype classifications
+      # into a binary classification, both results for unbalanced fetuses 
+      # (homozygous reference and homozygous variant) are coded as "positive"
+      inheritance_chromosomal == "autosomal" &
+        inheritance_pattern == "recessive" &
+        !!prediction %in% c("homozygous variant",
+                            "homozygous reference")  ~"positive",
+      inheritance_chromosomal == "autosomal" &
+        inheritance_pattern == "recessive" &
+        !!prediction == "heterozygous" ~"negative",
+      
+      # X linked inheritance
+      inheritance_chromosomal == "x_linked" &
+        !!prediction == "hemizygous variant"  ~"positive",
+      inheritance_chromosomal == "x_linked" &
+        !!prediction == "hemizygous reference"  ~"negative",
+      TRUE ~"inconclusive"))
+  
+  return(new_df)
+}
+
+sensitivity_metrics <- function(df, prediction_binary, outcome, cohort_input,
+                          cohort_name) {
+  
+  # Example
+  # sensitivity_metrics(df = supplementary_table, 
+      # prediction_binary = quo(sprt_binary), 
+      # outcome = quo(outcome_sprt), 
+      # cohort_input = c("sickle cell disease", "bespoke design"),
+      # cohort_name = "all") 
+  
+  # Filter by cohort
+  df_cohort <- df %>%
+    filter(cohort %in% cohort_input)
+  
+  true_positives <- nrow(df_cohort %>%
+                           filter(!!prediction_binary == "positive" &
+                                    !!outcome == "correct"))
+  
+  true_negatives <- nrow(df_cohort %>%
+                           filter(!!prediction_binary == "negative" &
+                                    !!outcome == "correct"))
+  
+  false_positives <- nrow(df_cohort %>%
+                            filter(!!prediction_binary %in% "positive" &
+                                     !!outcome == "incorrect"))
+  
+  false_negatives <- nrow(df_cohort %>%
+                            filter(!!prediction_binary == "negative" &
+                                     !!outcome == "incorrect"))
+  
+  inconclusives <- nrow(df_cohort %>%
+                          filter(!!prediction_binary == "inconclusive"))
+  
+  # Generate an input table for the epiR::epi.tests function
+  # Order must go: TP, FP, FN, TN
+  data_table <- as.table(matrix(c(true_positives, false_positives, 
+                                  false_negatives, true_negatives), 
+                                nrow = 2, byrow = TRUE))
+  
+  # Use epiR to calculate sensitivity and specificity
+  data_results <- epiR::epi.tests(data_table, conf.level = 0.95)
+  
+  # Sensitivity
+  
+  sensitivity_paste <- paste0(round(data_results$detail$se$est, 3)*100, 
+         "% (",
+         round(data_results$detail$se$lower, 3)*100,
+         "-",
+         round(data_results$detail$se$upper, 3)*100,
+         ")")
+  
+  # Specificity
+  
+  specificity_paste <- paste0(round(data_results$detail$sp$est, 3)*100, 
+         "% (",
+         round(data_results$detail$sp$lower, 3)*100,
+         "-",
+         round(data_results$detail$sp$upper, 3)*100,
+         ")")
+  
+  output <- data.frame(
+    "group" = cohort_name,
+    true_positive = c(as.character(true_positives)),
+    true_negative = c(as.character(true_negatives)),
+    false_positive = c(as.character(false_positives)),
+    false_negative = c(as.character(false_negatives)),
+    inconclusive = c(as.character(inconclusives)),
+    sensitivity = c(sensitivity_paste),
+    specificity = c(specificity_paste)) %>%
+    
+    pivot_longer(cols = c(-group),
+                 names_to = "category",
+                 values_to = "analysis_method")
+  
+  return(output)
+  
+}
+
+#########################
+# Export function
+#########################
+
+# Function for exporting tables as csv files with a time-stamp
+export_timestamp <- function(input) {
+  
+  write.csv(input, 
+            file = paste0("analysis_outputs/", 
+                          deparse(substitute(input)),
+                          format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv"),
+            row.names = FALSE)
+}
+
+#########################

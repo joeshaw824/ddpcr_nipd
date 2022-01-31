@@ -1,0 +1,36 @@
+gene,transcript,variant_dna,variant_protein,vf_assay,condition
+L1CAM,NM_000425.3,c.23T>A,p.(Val8Glu),L1CAM c.23T>A,X-linked hydrocephalus
+XIAP,NM_001167.3,c.356_359del,p.(Asn119Ilefs*10),XIAP c.356_359del,X-linked lymphoproliferative syndrome type 2 
+FLNA,NM_001110556.1,c.5169T>G,p.(Cys1723Trp),FLNA c.5169T>G,Frontometaphyseal dysplasia 1 
+F8,NM_000132.3,c.1595G>A,p.(Trp532*),F8 c.1595G>A,Haemophilia A 
+TCOF1,NM_001135243.1,c.3611C>A,p.(Ser1204*),TCOF1 c.3611C>A,Treacher Collins syndrome 1 
+NF1,NM_000267.3,c.6792C>A ,p.(Tyr2264*) ,NF1 c.6792C>A,"Neurofibromatosis, type 1 "
+VHL,NM_000551.3,c.583C>T ,p.(Gln195*),VHL c.583C>T,von Hippel-Lindau syndrome 
+COL4A5,NM_033380.2,c.1295G>A,p.(Gly432Glu),COL4A5 c.1295G>A,Alport syndrome type 1
+FGFR3,NM_000142.4,c.1138G>A,p.(Gly380Arg),FGFR3 c.1138G>A,Achondroplasia
+F8,NM_000132.3,c.6046C>T,p.(Arg2016Trp),F8 c.6046C>T,Haemophilia A 
+ATP7A,NM_000052.6,c.2916+1G>A,p.?,ATP7A c.2916+1G>A,Menkes disease 
+NDP,NM_000266.3,c.163T>C,p.(Cys55Arg),NDP c.163T>C,Norrie disease 
+IDS,NM_000202.5,c.879+1G>T,p.?,IDS c.879+1G>T,Mucopolysaccharidosis type 2 
+ATP7A ,NM_000052.6,c.1949G>A,p.(Trp650*),ATP7A c.1949G>A,Menkes disease 
+FOXP3,NM_014009.3,c.1010G>A,p.(Arg337Gln),FOXP3 c.1010G>A,IPEX syndrome
+F8 ,NM_000132.3,c.6544C>T,p.(Arg2182Cys),F8 c.6544C>T,Haemophilia A 
+RNASEH2C,NM_032193.3,c.205C>T ,p.(Arg69Trp),RNASEH2C c.205C>T,Aicardi-Goutières syndrome type 3 
+ADAR,NM_001111.4,c.2997 G>T,p.(Lys999Asn),ADAR c.2997G>T,Aicardi-Goutières syndrome type 6 
+ALPL,NM_000478.5,c.331G>A,p.(Ala111Thr),ALPL c.331G>A,Hypophosphatasia
+FGFR2,NM_000141.4,c.1024T>A ,p.(Cys342Ser),FGFR2 c.1024T>A,Crouzon syndrome 
+F8,NM_000132.3,c.6686T>C,p.(Leu2229Pro),F8 c.6686T>C,Haemophilia A 
+F8,NM_000132.3,c.1409C>T,p.(Pro470Leu),F8 c.1409C>T,Haemophilia A 
+F8,NM_000132.3,c.5999G>T,p.(Gly2000Val),F8 c.5999G>T,Haemophilia A 
+ABCD1,NM_000033.3,c.3G>A,p.?,ABCD1 c.3G>A,Adrenoleukodystrophy 
+MAGED2,NM_177433.2,c.1426C>T,p.(Arg476*),MAGED2 c.1426C>T,Bartter syndrome type 5
+IDS,NM_000202.5,c.182_189del,p.(Ser61Tyrfs*2),IDS c.182_189del,Mucopolysaccharidosis type 2 
+OTC,NM_000531.5,c.905A>G,p.(His302Arg),OTC c.905A>G,Ornithine transcarbamylase deficiency 
+PMM2,NM_000303.2,c.691G>A,p.(Val231Met),PMM2 c.691G>A,Congenital disorder of glycosylation type 1a 
+CHM,NM_000390.3,c.1342C>T,p.(Gln448*),CHM c.1342C>T,X-linked choroideremia
+ADA,NM_000022.2,c.556G>A,p.(Glu186Lys),ADA c.556G>A,Severe combined immunodeficiency
+MMAA,NM_172250.2,c.733+1G>A,p.?,MMAA c.733+1G>A,Vitamin B12-responsive methylmalonic aciduria
+HBB,NM_000518.5,c.126_129del,p.(Phe42Leufs*19),HBB c.126_129del,Beta thalassemia
+HBB,NM_000518.5,c.93-21G>A,p.?,HBB c.93-21G>A,Beta thalassemia
+CFTR,NM_000492.3,c.1521_1523del,p.(Phe508del),CFTR c.1521_1523del,Cystic fibrosis
+HBB,NM_000518.5,c.20A>T,p.(Glu7Val),HBB c.20A>T,Sickle cell disease
