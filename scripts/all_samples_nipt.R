@@ -989,6 +989,101 @@ ggsave(plot = ddpcr_cohort,
        width = 12.5,
        height = 7)
 
+
+###################
+# Plot redraft without gDNA
+###################
+
+samples_longer <- all_samples_unblinded %>%
+  select(r_number, vf_assay_molecules, variant_percent, sprt_outcome, mcmc_outcome, zscore_outcome,
+         fetal_genotype) %>%
+  pivot_longer(cols = c(sprt_outcome, mcmc_outcome, zscore_outcome),
+               names_to = "analysis_type",
+               values_to = "analysis_outcome") %>%
+  mutate(fetal_genotype2 = case_when(
+    fetal_genotype %in% c("hemizygous reference", "homozygous reference") ~ "hemi/homozygous reference",
+    fetal_genotype %in% c("hemizygous variant", "homozygous variant") ~ "hemi/homozygous variant",
+    fetal_genotype == "heterozygous" ~"heterozygous"),
+    
+    fetal_genotype2 = factor(fetal_genotype2, levels = c("hemi/homozygous variant",
+                                                         "heterozygous",
+                                                         "hemi/homozygous reference")),
+    
+    analysis_outcome = factor(analysis_outcome, levels = c("correct", "incorrect", 
+                                                           "inconclusive")),
+    analysis_type2 = case_when(
+      analysis_type == "sprt_outcome" ~"SPRT analysis",
+      analysis_type == "mcmc_outcome" ~"MCMC analysis",
+      analysis_type == "zscore_outcome" ~"Z score analysis"),
+    
+    analysis_type2 = factor(analysis_type2, levels = c("SPRT analysis", 
+                                                       "MCMC analysis",
+                                                       "Z score analysis")))
+
+fig2v2_plot_title <- paste0("ddPCR analysis for ", nrow(all_samples_unblinded), " cfDNA samples")
+
+figure2v2 <- ggplot(samples_longer, aes(x = vf_assay_molecules, y = variant_percent)) +
+  theme_bw() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), 
+    legend.position = "right", 
+    plot.title = element_text(size = 11),
+    legend.text = element_text(size = 9)) +
+  ylim(38, 62) +
+  scale_x_continuous(limits = c(0,38000),
+                     breaks = c(0, 2000, 10000, 20000, 30000)) +
+  scale_fill_manual(values=c("#FFFFFF", "#000000", "#999999"), 
+                    guide = "none") +
+  scale_alpha_manual(values = c(1, 1, 0.2), guide = "none") +
+  scale_shape_manual(values = c(24, 21, 25)) +
+  geom_point(size = 2, aes(fill = analysis_outcome,
+                           alpha = analysis_outcome,
+                           shape = fetal_genotype2),
+             colour = "black") +
+  labs(y = "Variant fraction (%)", x = "Genome equivalents (GE)",
+       shape = "Fetal genotype",
+       title = fig2v2_plot_title) +
+  facet_wrap(~analysis_type2, nrow = 3, ncol = 1) +
+  geom_vline(data = subset(samples_longer, analysis_type2 == "Z score analysis"), 
+             aes(xintercept = 2000), linetype = "dashed") +
+  
+  geom_hline(data = subset(samples_longer, analysis_type2 == "Z score analysis"), 
+             # het_gDNA_mean_vp+(3*het_gDNA_sd_vp)
+             aes(yintercept = 52.02202), linetype = "dashed") +
+  
+  geom_hline(data = subset(samples_longer, analysis_type2 == "Z score analysis"), 
+             # het_gDNA_mean_vp-(3*het_gDNA_sd_vp) 
+             aes(yintercept = 47.8538), linetype = "dashed") +
+  
+  geom_hline(data = subset(samples_longer, analysis_type2 == "Z score analysis"), 
+             # het_gDNA_mean_vp+(2*het_gDNA_sd_vp)
+             aes(yintercept = 51.32731), linetype = "dashed") +
+  
+  geom_hline(data = subset(samples_longer, analysis_type2 == "Z score analysis"), 
+             # het_gDNA_mean_vp-(2*het_gDNA_sd_vp)
+             aes(yintercept = 48.5485), linetype = "dashed") +
+  
+  geom_text(data = subset(samples_longer, analysis_type2 == "Z score analysis"),
+            aes(x = 36000, y = 55), label = "z > 3") +
+  
+  geom_text(data = subset(samples_longer, analysis_type2 == "Z score analysis"),
+            aes(x = 36000, y = 45), label = "z < -3") +
+  
+  geom_text(data = subset(samples_longer, analysis_type2 == "Z score analysis"),
+            aes(x = 36000, y = 50), label = "-2 < z < 2")
+
+ggsave(plot = figure2v2, 
+       filename = paste0("figure_2_v2_",
+                         format(Sys.time(), "%Y%m%d_%H%M%S"),
+                         ".tiff"),
+       path = "plots/", 
+       device='tiff', 
+       dpi=600,
+       units = "in",
+       width = 12.5,
+       height = 10)
+
 ###################
 # Analysis summary plot
 ###################
