@@ -7,7 +7,7 @@
 
 #library(tidyverse)
 
-#supplementary_table <- read.csv("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/Digital PCR Paper Drafts/ddPCR cohort paper/ddPCR cohort paper v2/Supplementary_data_20211110_170750.csv")
+supplementary_table <- read.csv("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/Digital PCR Paper Drafts/ddPCR cohort paper/ddPCR cohort paper v3/all_samples_unblinded20211115_111019.csv")
 
 #vf_assay_count_table <- read.csv("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/Digital PCR Paper Drafts/ddPCR cohort paper/ddPCR cohort paper v2/Table 1 20211110_171532.csv")
 
@@ -318,10 +318,15 @@ paste0("of ",
 # Conclusions
 ######################
 
+setwd("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/ddPCR_R_Analysis/ddpcr_nipd/")
+
+source("scripts/mody_nipt.R")
+
 #In addition, our cohort had a lower average 
 paste0("number of molecules tested per case (median: ",
        round(median(supplementary_table$total_molecules), 0),
-       ").")
+       ") versus the data reported by Caswell et al (median: ",
+       round(median(caswell_supp_calc$total_molecules), 0), ").")
 
 ######################
 # Figures
