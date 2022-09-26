@@ -53,6 +53,12 @@ sprt_hbaa_inconclusive <- nrow(sickle_cell_results[sickle_cell_results$fetal_gen
 sprt_hbaa_incorrect <- nrow(sickle_cell_results[sickle_cell_results$fetal_genotype == "homozygous reference" 
                                                 & sickle_cell_results$sprt_outcome == "incorrect", "sample_id"])  
 
+sprt_correct_total <- nrow(sickle_cell_results[sickle_cell_results$sprt_outcome == "correct", "sample_id"])  
+
+sprt_inconclusive_total <- nrow(sickle_cell_results[sickle_cell_results$sprt_outcome == "inconclusive", "sample_id"])  
+
+sprt_incorrect_total <- nrow(sickle_cell_results[sickle_cell_results$sprt_outcome == "incorrect", "sample_id"])  
+
 ###################
 # MCMC
 ###################
@@ -82,6 +88,12 @@ mcmc_hbaa_inconclusive <- nrow(sickle_cell_results[sickle_cell_results$fetal_gen
 
 mcmc_hbaa_incorrect <- nrow(sickle_cell_results[sickle_cell_results$fetal_genotype == "homozygous reference" 
                                                 & sickle_cell_results$mcmc_outcome == "incorrect", "sample_id"])
+
+mcmc_correct_total <- nrow(sickle_cell_results[sickle_cell_results$mcmc_outcome == "correct", "sample_id"])  
+
+mcmc_inconclusive_total <- nrow(sickle_cell_results[sickle_cell_results$mcmc_outcome == "inconclusive", "sample_id"])  
+
+mcmc_incorrect_total <- nrow(sickle_cell_results[sickle_cell_results$mcmc_outcome == "incorrect", "sample_id"])  
 
 ###################
 # Z score
@@ -114,8 +126,14 @@ zscore_hbaa_inconclusive <- nrow(sickle_cell_results[sickle_cell_results$fetal_g
 zscore_hbaa_incorrect <- nrow(sickle_cell_results[sickle_cell_results$fetal_genotype == "homozygous reference" 
                                                   & sickle_cell_results$zscore_outcome == "incorrect", "sample_id"])
 
+zscore_correct_total <- nrow(sickle_cell_results[sickle_cell_results$zscore_outcome == "correct", "sample_id"])  
+
+zscore_inconclusive_total <- nrow(sickle_cell_results[sickle_cell_results$zscore_outcome == "inconclusive", "sample_id"])  
+
+zscore_incorrect_total <- nrow(sickle_cell_results[sickle_cell_results$zscore_outcome == "incorrect", "sample_id"])  
+
 ###################
-# New table
+# New sickle cell disease table
 ###################
 
 sickle_table_new <- data.frame(
@@ -123,12 +141,20 @@ sickle_table_new <- data.frame(
   HbSS = c(sprt_hbss_correct, sprt_hbss_inconclusive, sprt_hbss_incorrect),
   HbAS = c(sprt_hbas_correct, sprt_hbas_inconclusive, sprt_hbas_incorrect),
   HbAA = c(sprt_hbaa_correct, sprt_hbaa_inconclusive, sprt_hbaa_incorrect),
+  total = c(sprt_correct_total, sprt_inconclusive_total, sprt_incorrect_total),
   HbSS = c(mcmc_hbss_correct, mcmc_hbss_inconclusive, mcmc_hbss_incorrect),
   HbAS = c(mcmc_hbas_correct, mcmc_hbas_inconclusive, mcmc_hbas_incorrect),
   HbAA = c(mcmc_hbaa_correct, mcmc_hbaa_inconclusive, mcmc_hbaa_incorrect),
+  total = c(mcmc_correct_total, mcmc_inconclusive_total, mcmc_incorrect_total),
   HbSS = c(zscore_hbss_correct, zscore_hbss_inconclusive, zscore_hbss_incorrect),
   HbAS = c(zscore_hbas_correct, zscore_hbas_inconclusive, zscore_hbas_incorrect),
-  HbAA = c(zscore_hbaa_correct, zscore_hbaa_inconclusive, zscore_hbaa_incorrect))
+  HbAA = c(zscore_hbaa_correct, zscore_hbaa_inconclusive, zscore_hbaa_incorrect),
+  total = c(zscore_correct_total, zscore_inconclusive_total, zscore_incorrect_total))
+
+write.csv(sickle_table_new, 
+          file = (paste0("analysis_outputs/sickle_table_new",
+                         format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv")),
+          row.names = FALSE)
 
 ######################################
 # Bespoke results table
@@ -154,18 +180,70 @@ bespoke_zscore <- supplementary_table %>%
 
 bespoke_table_new <- cbind(bespoke_sprt, bespoke_mcmc, bespoke_zscore)
 
+write.csv(bespoke_table_new, 
+          file = (paste0("analysis_outputs/bespoke_table_new",
+                         format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv")),
+          row.names = FALSE)
+
 ######################################
 # Streamlined supplementary table
 ######################################
 
-# Restructure table to make it simpler.
+# Restructure table to make it simpler following Lizzie's comment.
 
 supp_2 <- supplementary_table %>%
   select(-c("variant_percent_max", "variant_percent_min", "vf_assay_molecules_max", 
             "vf_assay_molecules_min", "fetal_percent_max", "fetal_percent_min", 
             "ff_assay_molecules_max", "ff_assay_molecules_min",
             "vf_assay_molecules", "ff_assay_molecules")) %>%
-  dplyr::rename(variant_fraction = variant_percent) %>%
-  dplyr::rename(fetal_fraction = fetal_percent)
+  dplyr::rename(variant_fraction = variant_percent,
+                fetal_fraction = fetal_percent,
+                family = family_number,
+                partner_sample_available = partner_sample,
+                variant_fraction_assay = vf_assay,
+                fetal_fraction_determination = ff_determination,
+                fetal_fraction_assay =  ff_assay,
+                sprt_likelihood_ratio = likelihood_ratio) %>%
+  select(sample_id, family, cohort, inheritance, condition, gestation, partner_sample_available,
+         variant_fraction_assay, fetal_fraction_determination, fetal_fraction_assay, variant_fraction, fetal_fraction,
+         sprt_prediction, mcmc_prediction, zscore_prediction, fetal_genotype,
+         sprt_outcome, mcmc_outcome, zscore_outcome, 
+         # sampling information
+         vacutainer, hours_to_first_spin, days_to_storage, diagnostic_sampling,
+         plasma_volume_ml, extraction_replicates,
+         # ddpcr information,
+         vf_assay_num_wells, ff_assay_num_wells, variant_positives, reference_positives,
+         vf_assay_droplets, maternal_positives, paternal_positives, variant_molecules,
+         reference_molecules, maternal_molecules, paternal_molecules, 
+         totalGE_ml_plasma,
+         # analysis information
+         sprt_likelihood_ratio, p_G0, p_G1, p_G2, p_G3, zscore)
+
+draft_filepath <- "W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/Digital PCR Paper Drafts/ddPCR cohort paper/ddPCR cohort paper v5"
+
+write.csv(supp_2, 
+          file = (paste0(draft_filepath, "supplementary_table_rearranged_",
+                         format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv")),
+          row.names = FALSE)
+
+######################################
+# Adding transcript IDs to bespoke results table
+######################################
+
+bespoke_results <- read.csv("analysis_outputs/bespoke_results_table20211124_142605.csv")
+
+vf_assay_info <- read.csv("resources/vf_assay_gene_information.csv")
+
+new_bespoke_results_table <- bespoke_results %>%
+  left_join(vf_assay_info %>%
+              dplyr::rename(DNA = variant_dna) %>%
+              select(transcript, DNA), by = "DNA") %>%
+  select(Inheritance, Sample.number, Condition, transcript, Gene, DNA,
+         Fetal.genotype, SPRT, MCMC, Z.score)
+
+write.csv(new_bespoke_results_table, 
+          file = (paste0("analysis_outputs/new_bespoke_results_table",
+                         format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv")),
+          row.names = FALSE)
 
 ################################################################################
