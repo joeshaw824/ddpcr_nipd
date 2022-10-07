@@ -796,16 +796,7 @@ predict_sprt_genotypes <- function(df, lr_threshold) {
         
         inheritance_chromosomal == "x_linked" &
           likelihood_ratio < lr_threshold 
-        ~ "inconclusive"),
-      
-      # Factorise for plotting
-      sprt_prediction = factor(sprt_prediction, levels = 
-                                 c("hemizygous variant",
-                                   "homozygous variant",
-                                   "heterozygous",
-                                   "homozygous reference",
-                                   "hemizygous reference",
-                                   "inconclusive")))
+        ~ "inconclusive"))
   
   return(predictions)
   

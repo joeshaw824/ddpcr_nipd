@@ -24,7 +24,7 @@ source("scripts/load_ddpcr_data.R")
 # epiR for sensitivity calculations
 library(epiR)
 
-#ggpubr for plot collation
+# ggpubr for plot collation
 library(ggpubr)
 
 # cmdstanr required for running stan models
@@ -69,7 +69,6 @@ het_gdna <- parent_gDNA_var_ref %>%
   filter(sample %in% het_controls$sample &
            # Remove empty well 
            reference_positives != 0) %>%
-  
   # New column to distinguish control gDNA
   mutate(sample_type = "gDNA") %>%
   dplyr::rename(r_number = sample) %>%
@@ -83,6 +82,19 @@ het_gdna_range <- het_gdna %>%
   # Filter the gDNA dataset to a similar range to the cfDNA dataset
   filter(vf_assay_molecules < (cfdna_molecules_max +1000) &
            vf_assay_molecules > vf_assay_molecules_limit)
+
+#########################
+# cfDNA Quality Filtering
+#########################
+
+fetal_fraction_threshold <- 4
+
+cfdna_ddpcr_data_molecules <- cfdna_ddpcr_data_molecules %>%
+  mutate(quality_filter = case_when(
+    fetal_percent < fetal_fraction_threshold | 
+      vf_assay_molecules < vf_assay_molecules_limit ~"fail",
+    fetal_percent > fetal_fraction_threshold & 
+      vf_assay_molecules > vf_assay_molecules_limit ~"pass"))
 
 #########################
 # SPRT analysis - cfDNA
@@ -101,7 +113,20 @@ all_samples_sprt <- cfdna_ddpcr_data_molecules %>%
                           vf_assay_molecules)))
 
 # Predict genotypes with a likelihood ratio threshold of 8
-all_samples_sprt <- predict_sprt_genotypes(all_samples_sprt, 8)
+all_samples_sprt <- predict_sprt_genotypes(all_samples_sprt, 8) %>% 
+  # Add in quality filtering step
+  dplyr::rename(sprt_prediction_pre_qc = sprt_prediction) %>%
+  mutate(sprt_prediction = case_when(
+    quality_filter == "fail" ~"inconclusive",
+    quality_filter == "pass" ~sprt_prediction_pre_qc),
+    # Factorise for plotting
+    sprt_prediction = factor(sprt_prediction, levels = 
+                             c("hemizygous variant",
+                               "homozygous variant",
+                               "heterozygous",
+                               "homozygous reference",
+                               "hemizygous reference",
+                               "inconclusive")))
 
 # Convert SPRT predictions into a binary format, for assistance with
 # sensitivity calculations later on
@@ -127,7 +152,7 @@ ddpcr_data_mcmc <- cfdna_ddpcr_data %>%
   select(r_number, inheritance_chromosomal, inheritance_pattern, 
          vf_assay, n_K, n_Z, K_N, K_M, n_Z, Z_X, Z_Y)
 
-# 07/11/2021 - 15 minutes for 127 cfDNA samples
+# 07/10/2022 - 16 minutes 42 seconds for 127 cfDNA samples
 all_samples_mcmc <- run_mcmc(ddpcr_data_mcmc, 0.95)
 
 all_samples_mcmc <- binary_predictions(
@@ -212,7 +237,12 @@ all_samples_blinded <- left_join(
   left_join(
     all_samples_zscore %>%
       select(r_number, zscore, zscore_prediction, zscore_binary),
-    by = "r_number")
+    by = "r_number") %>%
+  # Add quality filtering steps for MCMC
+  dplyr::rename(mcmc_prediction_pre_qc = mcmc_prediction) %>%
+  mutate(mcmc_prediction  = case_when(
+    quality_filter == "fail" ~"inconclusive",
+    quality_filter == "pass" ~mcmc_prediction_pre_qc))
 
 #########################
 # Compare predictions against invasive outcomes
@@ -338,11 +368,28 @@ write.csv(supplementary_table %>%
             sample_id, family_number, cohort , inheritance_abbreviation,
             condition,
             # Sample details
-            gestation_character, vacutainer, 
-            hours_to_first_spin, days_to_storage,
-            partner_sample_available, diagnostic_sampling, 
+            gestation_character, 
             # Assay details
             vf_assay, ff_determination, ff_assay, 
+            # Fractional abundance
+            variant_percent, fetal_percent,
+            vf_assay_molecules, ff_assay_molecules,
+            # Quality filtering
+            quality_filter,
+            # SPRT analysis
+            likelihood_ratio, sprt_prediction, 
+            # MCMC analysis
+            p_G0, p_G1, p_G2, p_G3,
+            mcmc_prediction, 
+            # Z score analysis
+            zscore, zscore_prediction,
+            # Outcomes
+            fetal_genotype, sprt_outcome, mcmc_outcome,
+            zscore_outcome,
+            # Other sample details
+            vacutainer, 
+            hours_to_first_spin, days_to_storage,
+            partner_sample_available, diagnostic_sampling,
             # Extraction info
             plasma_volume_ml, extraction_replicates, 
             # Number of wells
@@ -354,30 +401,19 @@ write.csv(supplementary_table %>%
             # Molecules info
             variant_molecules, reference_molecules, 
             maternal_molecules, paternal_molecules,
-            vf_assay_molecules, ff_assay_molecules,
-            # Fractional abundance
-            variant_percent, fetal_percent,
             # Poisson confidence intervals
-            variant_percent_max, variant_percent_min,
-            vf_assay_molecules_max, vf_assay_molecules_min,
-            fetal_percent_max, fetal_percent_min, 
-            ff_assay_molecules_max, ff_assay_molecules_min, 
-            totalGE_ml_plasma,
-            # SPRT analysis
-            likelihood_ratio, sprt_prediction, 
-            # MCMC analysis
-            p_G0, p_G1, p_G2, p_G3,
-            mcmc_prediction, 
-            # Z score analysis
-            zscore, zscore_prediction,
-            # Outcomes
-            fetal_genotype, sprt_outcome, mcmc_outcome,
-            zscore_outcome) %>%
+            #variant_percent_max, variant_percent_min,
+            #vf_assay_molecules_max, vf_assay_molecules_min,
+            #fetal_percent_max, fetal_percent_min, 
+            #ff_assay_molecules_max, ff_assay_molecules_min, 
+            totalGE_ml_plasma) %>%
             
             dplyr::rename(
               inheritance = inheritance_abbreviation,
               gestation = gestation_character,
-              partner_sample = partner_sample_available), 
+              partner_sample = partner_sample_available,
+              fetal_fraction = fetal_percent,
+              variant_fraction = variant_percent), 
           file = (paste0("analysis_outputs/supplementary_table",
                          format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv")),
           row.names = FALSE)
@@ -422,7 +458,6 @@ write.csv(bespoke_results_table,
           file = paste0("analysis_outputs/bespoke_results_table",
           format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv"),
           row.names = FALSE)
-
 
 ###################
 # Incorrect results table
