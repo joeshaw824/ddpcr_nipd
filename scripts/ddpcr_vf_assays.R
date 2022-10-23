@@ -1,7 +1,6 @@
 ################################################################################
 ## ddPCR variant fraction assays
-## November 2021
-## Joseph.Shaw@gosh.nhs.uk
+## joseph.shaw3@nhs.net
 ## Collation of all variant fraction assays used in the ddPCR project.
 ################################################################################
 
@@ -17,7 +16,7 @@
 #########################
 
 # Read in amplicons
-amplicons <- read_excel("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/ddPCR Assay Design/ddPCR_Assay_Ordering.xlsx",
+amplicons <- read_excel("resources/ddpcr_assay_details.xlsx",
                         sheet = "amplicons") %>%
   mutate(
     reference_amplicon_length = case_when(
@@ -30,7 +29,7 @@ amplicons <- read_excel("W:/MolecularGenetics/NIPD translational data/NIPD Dropl
   # Remove ZFXY assay
   filter(assay_name != "ZFXY")
 
-primer_probes <- read_excel("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/ddPCR Assay Design/ddPCR_Assay_Ordering.xlsx",
+primer_probes <- read_excel("resources/ddpcr_assay_details.xlsx",
                             sheet = "sequences") %>%
   # Remove "+" from locked nucleic acid probes
   mutate(variant_probe_no_lnas = gsub("+","",variant_probe, fixed = TRUE),
@@ -62,7 +61,7 @@ amplicons_primers_probes <- full_join(
     forward_rc_in_ref_amp = str_detect(reference_amplicon, forward_primer_rc),
     forward_in_var_amp = str_detect(variant_amplicon, forward_primer),
     forward_rc_in_var_amp = str_detect(variant_amplicon, forward_primer_rc),
-    
+    # Check reverse primer
     reverse_in_ref_amp = str_detect(reference_amplicon, reverse_primer),
     reverse_rc_in_ref_amp = str_detect(reference_amplicon, reverse_primer_rc),
     reverse_in_var_amp = str_detect(variant_amplicon, reverse_primer),

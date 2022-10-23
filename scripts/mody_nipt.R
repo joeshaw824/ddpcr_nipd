@@ -59,4 +59,8 @@ caswell_supp_calc <- ff_calculations(var_ref_calculations(caswell_supp)) %>%
   mutate(total_molecules = ff_assay_molecules + vf_assay_molecules) %>%
   filter(!is.na(total_molecules))
 
+median(caswell_s1$weeks_gestation)
+min(caswell_s1$weeks_gestation)
+max(caswell_s1$weeks_gestation)
+
 #########################

@@ -93,7 +93,7 @@ ddpcr_data_merged_samples <- ddpcr_data %>%
   # which is the number of commas in "merged_wells" string plus one
   mutate(num_wells = stringr::str_count(merged_wells, ",")+1)
 
-# Reshape the data frame to sum all values by Target.
+# Reshape the data frame to sum all values by target.
 # Often cfDNA from the same sample was tested across
 # multiple worksheets and then must be summed together
 # for the analysis.
