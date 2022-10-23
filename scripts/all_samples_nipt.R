@@ -10,9 +10,9 @@
 ## models supplied by Tristan Snowsill (Exeter).
 ################################################################################
 
-#########################
+##################################################
 # Load packages, functions and data
-#########################
+##################################################
 
 # Source functions
 source("functions/ddPCR_nipd_functions.R")
@@ -32,8 +32,10 @@ library(cmdstanr)
 # pROC for plotting ROC curves
 library(pROC)
 
-# Source RAPID biobank
-source("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/RAPID_project_biobank/scripts/RAPID_biobank.R")
+# Sample outcome information (generated on 23/10/2022 from the RAPID
+# biobank, with study ID and maternal date of birth removed.)
+sample_details <- read.csv("resources/sample_details.csv") %>%
+  mutate(r_number = as.character(r_number))
 
 # Load ddPCR SNP panel (from Camunas Soler et al 2018)
 ddpcr_snp_panel <- read.csv("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/ddPCR SNP Panel/Camunas_Soler_panel_47_GnomAD_frequencies.csv")
@@ -46,6 +48,12 @@ source("scripts/ddpcr_vf_assays.R")
 # Load sample wells for drawing RMD plots
 sample_wells <- read.csv("resources/sample_wells.csv")
 
+# Assay gene information
+vf_assay_info <- read.csv("resources/vf_assay_gene_information.csv")
+
+##################################################
+# ANALYSIS
+##################################################
 #########################
 # Heterozygous gDNA cohort
 #########################
@@ -92,6 +100,74 @@ het_gDNA_sd_vp <- sd(het_gdna_range$variant_percent)
 # cv is coefficient of variation
 het_gDNA_cv_vp <- (het_gDNA_sd_vp/het_gDNA_mean_vp) * 100
 
+
+#########################
+# SPRT analysis - gDNA
+#########################
+
+het_gdna_sprt <- het_gdna %>%
+  # Remove replicates outside the DNA input range of cfDNA
+  filter(vf_assay_molecules < 30000) %>%
+  # Assign an artificial fetal fraction of 4% for SPRT calculations
+  mutate(fetal_fraction = 0.04,
+         # Calculate the likelihood ratio
+         likelihood_ratio = case_when(
+           inheritance_chromosomal == "x_linked" ~ 
+             calc_lr_x_linked(fetal_fraction, (major_allele_percent/100), 
+                              vf_assay_molecules),
+           inheritance_chromosomal == "autosomal" ~ 
+             calc_lr_autosomal(fetal_fraction, (major_allele_percent/100), 
+                               vf_assay_molecules)))
+
+# Predict genotypes
+het_gdna_sprt <- predict_sprt_genotypes(het_gdna_sprt, 8)
+
+#########################
+# MCMC analysis - gDNA
+#########################
+
+# Set an artificial fetal fraction of 4%
+mcmc_fetal_fraction <- 0.04
+
+gdna_data_mcmc <- het_gdna %>%
+  # Remove replicates outside the DNA input range of cfDNA
+  filter(vf_assay_molecules < 30000) %>%
+  mutate(
+    var_ref_positives = variant_positives + reference_positives,
+    var_ref_molecules = poisson_correct(vf_assay_droplets, var_ref_positives),
+    
+    # Create an artificial dataset for the fetal fraction.
+    # Use the same number of total droplets as the variant fraction assay.
+    ff_assay_droplets = vf_assay_droplets,
+    
+    #Calculate the number of fetal-specific and maternal molecules
+    paternal_molecules = var_ref_molecules * mcmc_fetal_fraction,
+    maternal_molecules = var_ref_molecules * (1-mcmc_fetal_fraction),
+    
+    # Calculate the expected number of positive partitions
+    paternal_positives = reverse_poisson(paternal_molecules, 
+                                         ff_assay_droplets),
+    maternal_positives = reverse_poisson(maternal_molecules, 
+                                         ff_assay_droplets)) %>%
+  # Rename for pipeline
+  dplyr::rename(n_K = vf_assay_droplets,
+                K_M = variant_positives,
+                K_N = reference_positives,
+                Z_X = maternal_positives,
+                Z_Y = paternal_positives,
+                n_Z = ff_assay_droplets) %>%
+  select(worksheet_well_sample, inheritance_chromosomal, inheritance_pattern,
+         vf_assay, n_K, n_Z, K_N, K_M, n_Z, Z_X, Z_Y)
+
+# Analysing the gDNA replicates takes ~1 hour 4 mins
+gdna_mcmc_analysed <- run_mcmc(gdna_data_mcmc, 0.95)
+
+# Export the file as a csv so you don't have to keep rerunning the analysis.
+
+write.csv(gdna_mcmc_analysed, paste0("analysis_outputs/gdna_mcmc_analysed ",
+                                     format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv"),
+          row.names = FALSE)
+
 #########################
 # SPRT analysis - cfDNA
 #########################
@@ -129,7 +205,7 @@ ddpcr_data_mcmc <- cfdna_ddpcr_data %>%
   select(r_number, inheritance_chromosomal, inheritance_pattern, 
          vf_assay, n_K, n_Z, K_N, K_M, n_Z, Z_X, Z_Y)
 
-# 07/10/2022 - 16 minutes 42 seconds for 127 cfDNA samples
+# 23/10/2022 - 17 minutes 19 seconds for 127 cfDNA samples
 all_samples_mcmc <- run_mcmc(ddpcr_data_mcmc, 0.95)
 
 #########################
@@ -175,7 +251,7 @@ all_samples_zscore <- cfdna_ddpcr_data_molecules %>%
              zscore < -zscore_balance_threshold ~ "inconclusive"))
 
 #########################
-# Collate analyses and quality filtering
+# Collate cfDNA analyses and quality filtering
 #########################
 
 fetal_fraction_threshold <- 4
@@ -210,7 +286,32 @@ all_samples_blinded <- left_join(
       quality_filter == "pass" ~mcmc_prediction_pre_qc),
     zscore_prediction  = case_when(
       quality_filter == "fail" ~"inconclusive",
-      quality_filter == "pass" ~zscore_prediction_pre_qc))
+      quality_filter == "pass" ~zscore_prediction_pre_qc),
+    
+    cohort = ifelse(vf_assay == "HBB c.20A>T", "sickle cell disease",
+                       "bespoke design"),
+       cohort = factor(cohort, levels = c("bespoke design",
+                                          "sickle cell disease")),
+    
+    # Add on abbreviation of inheritance patterns
+    inheritance_abbreviation = case_when(
+      inheritance_chromosomal == "autosomal" &
+        inheritance_pattern == "recessive" ~"AR",
+      inheritance_chromosomal == "autosomal" &
+        inheritance_pattern == "dominant" ~"AD",
+      inheritance_chromosomal == "x_linked" &
+        inheritance_pattern == "dominant" ~"XLD",
+      inheritance_chromosomal == "x_linked" &
+        inheritance_pattern == "recessive" ~"XLR"),
+      
+      # Factorise for ordering
+      inheritance_abbreviation = factor(inheritance_abbreviation,
+                                        levels = c("AR", "AD", 
+                                                   "XLR", "XLD"))) %>%
+  # Bind to gene information
+  left_join(gene_info,
+            by = "vf_assay") %>%
+  arrange(cohort, inheritance_abbreviation, vf_assay)
 
 write.csv(all_samples_blinded, 
           file = (paste0("analysis_outputs/all_samples_blinded",
@@ -218,28 +319,19 @@ write.csv(all_samples_blinded,
           row.names = FALSE)
 
 #########################
-# Compare predictions against invasive outcomes
+# Compare analysis predictions against invasive outcomes
 #########################
 
 # Samples to exclude
-# 13262 MAN387 - this sample had contamination
-# 17004 UCLH1160302 - father was HbAC
-# 20915 UCLH1787363 - twin pregnancy
+# 13262 - contamination
+# 17004 - father was HbAC
+# 20915 - twin pregnancy
 samples_to_exclude <- c("13262", "20915", "17004")
 
 all_samples_unblinded <- all_samples_blinded %>%
   filter(!r_number %in% samples_to_exclude) %>%
-  left_join(RAPID_biobank %>%
-            # Change r_number to a character
-            mutate(r_number = as.character(r_number)) %>%
-            select(r_number, study_id, site, gestation_weeks, gestation_days, 
-                   gestation_total_weeks, gestation_character,
-                   hours_to_first_spin, days_to_storage, vacutainer, 
-                   mutation_genetic_info_fetus, 
-                   partner_sample_available, original_plasma_vol, 
-                   tubes_plasma_current, report_acquired),
+  left_join(sample_details, 
           by = "r_number") %>%
-  
   # Change the nomenclature of the outcomes for sickle cell disease
   mutate(fetal_genotype = case_when(
     mutation_genetic_info_fetus == "HbSS" ~"homozygous variant",
@@ -312,45 +404,12 @@ write.csv(all_samples_unblinded,
           row.names = FALSE)
 
 #########################
-# Summary of all results: Supplementary Data
+# Summary of all cfDNA results: Supplementary Data
 #########################
 
-all_samples_arranged <- all_samples_unblinded %>%
-  mutate(cohort = ifelse(vf_assay == "HBB c.20A>T", "sickle cell disease",
-                       "bespoke design"),
-         cohort = factor(cohort, levels = c("bespoke design",
-                                            "sickle cell disease"))) %>%
-  # Bind to gene information
-  left_join(gene_info,
-          by = "vf_assay") %>%
-  # Add on abbreviation of inheritance patterns
-  mutate(inheritance_abbreviation = case_when(
-    inheritance_chromosomal == "autosomal" &
-      inheritance_pattern == "recessive" ~"AR",
-    inheritance_chromosomal == "autosomal" &
-      inheritance_pattern == "dominant" ~"AD",
-    inheritance_chromosomal == "x_linked" &
-      inheritance_pattern == "dominant" ~"XLD",
-    inheritance_chromosomal == "x_linked" &
-      inheritance_pattern == "recessive" ~"XLR"),
-    
-    # Factorise for ordering
-    inheritance_abbreviation = factor(inheritance_abbreviation,
-                                      levels = c("AR", "AD", 
-                                                 "XLR", "XLD"))) %>%
-  arrange(cohort, inheritance_abbreviation, vf_assay, study_id)
-  
-families <- data.frame(
-  study_id = unique(all_samples_arranged$study_id))
-
-families <- families %>%
-  mutate(family_number = rownames(families))
-
-supplementary_table <- families %>%
-  full_join(all_samples_arranged,
-            by = "study_id") %>%
+supplementary_table <- all_samples_unblinded %>%
   mutate(sample_id = 
-         paste0("cfDNA-", as.character(row.names(all_samples_arranged))),
+         paste0("cfDNA-", as.character(row.names(all_samples_unblinded))),
          
          # Specify the method used to determine the fetal fraction
          ff_determination = case_when(
@@ -358,15 +417,15 @@ supplementary_table <- families %>%
            inheritance_chromosomal == "autosomal" & ff_assay %in%
              ddpcr_snp_panel$dbSNP ~ "ddPCR SNP panel - workflow 2",
            TRUE ~"NGS SNP panel - workflow 1")) %>%
-  # Reorder and remove r_number and study_id
+  # Reorder and remove r_number
   select(
     # Case details
-    sample_id, family_number, cohort , inheritance_abbreviation,
+    sample_id, family_number, cohort, inheritance_abbreviation,
     condition,
     # Sample details
     gestation_character, 
     # Assay details
-    vf_assay, ff_determination, ff_assay, 
+    gene, vf_assay, ff_determination, ff_assay, 
     # Fractional abundance
     variant_percent, fetal_percent,
     vf_assay_molecules, ff_assay_molecules,
@@ -416,15 +475,21 @@ write.csv(supplementary_table,
                          format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv")),
           row.names = FALSE)
 
-###################
+##################################################
+# TABLES
+##################################################
+#########################
 # Bespoke cohort individual results table
-################### 
+#########################
 
 bespoke_results_table <- supplementary_table %>%
   filter(vf_assay != "HBB c.20A>T") %>%
-  select(inheritance_abbreviation, sample_id, condition,
+  left_join(vf_assay_info %>%
+              dplyr::rename(DNA = variant_dna) %>%
+              select(transcript, DNA), by = "DNA") %>%
+  select(inheritance, sample_id, condition,
          gene, variant_dna, fetal_genotype, sprt_prediction, 
-         mcmc_prediction, zscore_prediction) %>%
+         mcmc_prediction, zscore_prediction)
   
   # Remove factor levels for renaming
   mutate(
@@ -444,6 +509,11 @@ bespoke_results_table <- supplementary_table %>%
     MCMC = mcmc_prediction,
     `Z score` = zscore_prediction)
 
+
+
+  select(Inheritance, Sample.number, Condition, transcript, Gene, DNA,
+         Fetal.genotype, SPRT, MCMC, Z.score)
+
 # Rename with shortened names to allow easier presentation in the paper
 bespoke_results_table[bespoke_results_table == "homozygous reference"] <- "hom ref"
 bespoke_results_table[bespoke_results_table == "homozygous variant"] <- "hom var"
@@ -457,18 +527,18 @@ write.csv(bespoke_results_table,
           format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv"),
           row.names = FALSE)
 
-###################
+#########################
 # Incorrect results table
-################### 
+#########################
 
 incorrect_results_table <- supplementary_table %>%
   filter(sprt_outcome == "incorrect" |
            mcmc_outcome == "incorrect" |
            zscore_outcome == "incorrect") %>%
   mutate(
-    fetal_percent = round(fetal_percent, 1),
-    variant_percent = round(variant_percent, 1)) %>%
-  select(sample_id, vf_assay, fetal_percent, variant_percent,
+    fetal_fraction = round(fetal_fraction, 1),
+    variant_fraction = round(variant_fraction, 1)) %>%
+  select(sample_id, vf_assay, fetal_fraction, variant_fraction,
          vf_assay_molecules, fetal_genotype, sprt_prediction, 
          mcmc_prediction, zscore_prediction) %>%
   
@@ -481,8 +551,8 @@ incorrect_results_table <- supplementary_table %>%
   dplyr::rename(
     `Sample number` = sample_id,
     Variant = vf_assay,
-    `Fetal fraction (%)` = fetal_percent,
-    `Variant fraction (%)` = variant_percent,
+    `Fetal fraction (%)` = fetal_fraction,
+    `Variant fraction (%)` = variant_fraction,
     `Molecules detected` = vf_assay_molecules,
     `Fetal genotype` = fetal_genotype,
     SPRT = sprt_prediction,
@@ -501,134 +571,116 @@ write.csv(incorrect_results_table,
                         format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv"),
           row.names = FALSE)
 
-###################
-# Sickle cell disease results table
-################### 
 
-scd_results <- supplementary_table %>%
-  filter(vf_assay == "HBB c.20A>T")
 
-genotype_count <- count(scd_results, fetal_genotype)
+#########################
+# Sickle cell results table
+#########################
 
-get_scd_counts <- function(analysis_method, analysis_outcome, df) {
+get_scd_table <- function(analysis_type) {
   
-  stopifnot("fetal_genotype" %in% colnames(df))
+  genotype_count <- nrow(supplementary_table %>%
+                           filter(cohort == "sickle cell disease"))
   
-  output <- count(df, fetal_genotype,
-                  !!analysis_outcome) %>%
-    mutate(analysis = analysis_method) %>%
-    pivot_wider(
-      id_cols = fetal_genotype,
-      names_from = c(analysis, !!analysis_outcome),
-      values_from = n)
-  return(output)
+  count_incon_excluded <- nrow(supplementary_table %>%
+                                 filter(cohort == "sickle cell disease"
+                                        & !!analysis_type != "inconclusive"))
+  
+  table_1 <- supplementary_table %>%
+    filter(cohort == "sickle cell disease") %>%
+    group_by(!!analysis_type, fetal_genotype) %>%
+    summarise(total = n()) %>%
+    pivot_wider(id_cols = !!analysis_type,
+                names_from = fetal_genotype,
+                values_from = total) %>%
+    replace(is.na(.), 0) %>%
+    mutate(total_count = `homozygous variant` + heterozygous +
+             `homozygous reference`,
+           percent = round((total_count/genotype_count)*100,0),
+           percent_2 = round((total_count/count_incon_excluded)*100,0)) %>%
+    dplyr::rename(HbSS = `homozygous variant`,
+                  HbAS = heterozygous,
+                  HbAA = `homozygous reference`)
+  
+  return(table_1)
+  
 }
 
-sprt_scd_count <- get_scd_counts(analysis_method = "sprt", 
-               analysis_outcome = quo(sprt_outcome),
-               df = scd_results)
+scd_results_table <- cbind(get_scd_table(quo(sprt_outcome)), 
+      get_scd_table(quo(mcmc_outcome)),
+      get_scd_table(quo(zscore_outcome))) %>%
+  dplyr::rename(outcome = sprt_outcome) %>%
+  select(-c(mcmc_outcome, zscore_outcome))
 
-mcmc_scd_count <- get_scd_counts(analysis_method = "mcmc", 
-                                 analysis_outcome = quo(mcmc_outcome),
-                                 df = scd_results)
-
-zscore_scd_count <- get_scd_counts(analysis_method = "zscore", 
-                                 analysis_outcome = quo(zscore_outcome),
-                                 df = scd_results)
-
-scd_analysis_results <- cbind(
-  genotype_count,
-  sprt_scd_count %>%
-    select(-fetal_genotype),
-  mcmc_scd_count%>%
-    select(-fetal_genotype),
-  zscore_scd_count%>%
-    select(-fetal_genotype)) %>%
-  dplyr::rename(Samples = n) %>%
-  mutate(fetal_genotype = as.character(fetal_genotype))
-
-# Replace NAs with 0s
-scd_analysis_results[is.na(scd_analysis_results)] = 0
-scd_analysis_results[scd_analysis_results == "homozygous variant"] <- "HbSS"
-scd_analysis_results[scd_analysis_results == "heterozygous"] <- "HbAS"
-scd_analysis_results[scd_analysis_results == "homozygous reference"] <- "HbAA"
-
-write.csv(scd_analysis_results,
-          file = paste0("analysis_outputs/scd_analysis_results",
+write.csv(scd_results_table,
+          file = paste0("analysis_outputs/scd_results_table",
                         format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv"),
           row.names = FALSE)
 
-###################
-# Gene information table
-###################
+#########################
+# Bespoke results summary table
+#########################
 
-xl_count_table <- all_samples_blinded %>%
-  filter(inheritance_chromosomal == "x_linked") %>%
-  count(vf_assay)
+get_bespoke_table <- function(analysis_type) {
+  
+  genotype_count <- nrow(supplementary_table %>%
+                           filter(cohort == "bespoke design"))
+  
+  count_incon_excluded <- nrow(supplementary_table %>%
+                                 filter(cohort == "bespoke design"
+                                        & !!analysis_type != "inconclusive"))
+  
+  table_1 <- supplementary_table %>%
+    filter(cohort == "bespoke design") %>%
+    group_by(!!analysis_type) %>%
+    summarise(total = n()) %>%
+    mutate(percent = round((total/genotype_count)*100,0),
+           percent_2 = round((total/count_incon_excluded)*100,0))
+  
+  return(table_1)
+  
+}
 
-ad_count_table <- all_samples_blinded %>%
-  filter(inheritance_chromosomal == "autosomal" &
-           inheritance_pattern == "dominant") %>%
-  count(vf_assay)
+bespoke_table <- cbind(get_bespoke_table(quo(sprt_outcome)),
+                       get_bespoke_table(quo(mcmc_outcome)),
+                       get_bespoke_table(quo(zscore_outcome)))
 
-ar_count_table <- all_samples_blinded %>%
-  filter(inheritance_chromosomal == "autosomal" &
-           inheritance_pattern == "recessive") %>%
-  count(vf_assay)
-
-vf_assay_count_table <- rbind(xl_count_table, 
-                              ad_count_table,
-                              ar_count_table) %>%
-  dplyr::rename(samples = n) %>%
-  
-  # Bind to gene information
-  left_join(gene_info,
-            by = "vf_assay") %>%
-  
-  # Add inheritance information
-  left_join(
-    ddpcr_target_panel %>%
-      select(assay, inheritance_chromosomal, inheritance_pattern) %>%
-      #Remove duplicate rows
-      distinct(.keep_all = TRUE) %>%
-      dplyr::rename(vf_assay = assay),
-    by = "vf_assay") %>%
-  
-  # Add on abbreviation of inheritance patterns
-  mutate(inheritance_abbreviation = case_when(
-    inheritance_chromosomal == "autosomal" &
-      inheritance_pattern == "recessive" ~"AR",
-    inheritance_chromosomal == "autosomal" &
-      inheritance_pattern == "dominant" ~"AD",
-    inheritance_chromosomal == "x_linked" &
-      inheritance_pattern == "dominant" ~"XLD",
-    inheritance_chromosomal == "x_linked" &
-      inheritance_pattern == "recessive" ~"XLR"),
-    
-    # Factorise for ordering
-    inheritance_abbreviation = factor(inheritance_abbreviation,
-                                      levels = c("AR", "AD", "XLR", "XLD"))) %>%
-  
-  arrange(inheritance_abbreviation, vf_assay) %>%
-  
-  select(inheritance_abbreviation, gene, transcript, variant_dna, 
-         variant_protein, condition,
-         samples) %>%
-  
-  # Rename without underscores
-  dplyr::rename(Inheritance = inheritance_abbreviation,
-                Gene = gene,
-                Transcript = transcript,
-                DNA = variant_dna,
-                Protein = variant_protein,
-                Condition = condition,
-                Samples = samples)
-
-write.csv(vf_assay_count_table, 
-          file = (paste0("analysis_outputs/Table 1 ",
-                         format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv")),
+write.csv(bespoke_table,
+          file = paste0("analysis_outputs/bespoke_table",
+                        format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv"),
           row.names = FALSE)
 
+#########################
+# Whole cohort summary table
+#########################
+
+get_summary_table <- function(analysis_type) {
+  
+  genotype_count <- nrow(supplementary_table)
+  
+  count_incon_excluded <- nrow(supplementary_table %>%
+                                 filter(!!analysis_type != "inconclusive"))
+  
+  table_1 <- supplementary_table %>%
+    group_by(!!analysis_type) %>%
+    summarise(total = n()) %>%
+    mutate(percent = round((total/genotype_count)*100,0),
+           percent_2 = round((total/count_incon_excluded)*100,0))
+  
+}
+
+summary_table <- cbind(get_summary_table(quo(sprt_outcome)),
+                       get_summary_table(quo(mcmc_outcome)),
+                       get_summary_table(quo(zscore_outcome)))
+
+write.csv(summary_table,
+          file = paste0("analysis_outputs/summary_table",
+                        format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv"),
+          row.names = FALSE)
+
+##################################################
+# PLOTS
+##################################################
 #########################
 # HBB c.20A>T limit of detection study
 #########################
@@ -742,7 +794,7 @@ ggsave(plot = lod_plot,
        height = 6)
 
 #########################
-# Plot cfDNA results
+# Plot themes
 #########################
 
 # Consistent theme and axes for plots
@@ -784,11 +836,12 @@ cfdna_alpha <- scale_alpha_manual(values = c(1, 1, 0.2), guide = "none")
 cfdna_shape <- scale_shape_manual(values = c(24, 24, 21, 25, 25))
 
 ###################
-# Plot redraft without gDNA
+# Plot cfDNA results
 ###################
 
 samples_longer <- all_samples_unblinded %>%
-  select(r_number, vf_assay_molecules, variant_percent, sprt_outcome, mcmc_outcome, zscore_outcome,
+  select(r_number, vf_assay_molecules, variant_percent, sprt_outcome, 
+         mcmc_outcome, zscore_outcome,
          fetal_genotype) %>%
   pivot_longer(cols = c(sprt_outcome, mcmc_outcome, zscore_outcome),
                names_to = "analysis_type",
@@ -813,9 +866,9 @@ samples_longer <- all_samples_unblinded %>%
                                                        "MCMC analysis",
                                                        "Z score analysis")))
 
-fig2v2_plot_title <- paste0("ddPCR analysis for ", nrow(all_samples_unblinded), " cfDNA samples")
+cfdna_plot_title <- paste0("ddPCR analysis for ", nrow(all_samples_unblinded), " cfDNA samples")
 
-figure2v2 <- ggplot(samples_longer, aes(x = vf_assay_molecules, y = variant_percent)) +
+cfdna_plot <- ggplot(samples_longer, aes(x = vf_assay_molecules, y = variant_percent)) +
   theme_bw() +
   theme(
     panel.grid.major = element_blank(),
@@ -836,26 +889,25 @@ figure2v2 <- ggplot(samples_longer, aes(x = vf_assay_molecules, y = variant_perc
              colour = "black") +
   labs(y = "Variant fraction (%)", x = "Genome equivalents (GE)",
        shape = "Fetal genotype",
-       title = fig2v2_plot_title) +
+       title = cfdna_plot_title) +
+  geom_vline(aes(xintercept = 2000), linetype = "dashed") +
   facet_wrap(~analysis_type2, nrow = 3, ncol = 1) +
-  geom_vline(data = subset(samples_longer, analysis_type2 == "Z score analysis"), 
-             aes(xintercept = 2000), linetype = "dashed") +
   
   geom_hline(data = subset(samples_longer, analysis_type2 == "Z score analysis"), 
-             # het_gDNA_mean_vp+(3*het_gDNA_sd_vp)
-             aes(yintercept = 52.02202), linetype = "dashed") +
+             aes(yintercept = het_gDNA_mean_vp+(3*het_gDNA_sd_vp)), 
+             linetype = "dashed") +
   
   geom_hline(data = subset(samples_longer, analysis_type2 == "Z score analysis"), 
-             # het_gDNA_mean_vp-(3*het_gDNA_sd_vp) 
-             aes(yintercept = 47.8538), linetype = "dashed") +
+             aes(yintercept = het_gDNA_mean_vp-(3*het_gDNA_sd_vp)),
+             linetype = "dashed") +
   
   geom_hline(data = subset(samples_longer, analysis_type2 == "Z score analysis"), 
-             # het_gDNA_mean_vp+(2*het_gDNA_sd_vp)
-             aes(yintercept = 51.32731), linetype = "dashed") +
+             aes(yintercept = het_gDNA_mean_vp+(2*het_gDNA_sd_vp)), 
+             linetype = "dashed") +
   
-  geom_hline(data = subset(samples_longer, analysis_type2 == "Z score analysis"), 
-             # het_gDNA_mean_vp-(2*het_gDNA_sd_vp)
-             aes(yintercept = 48.5485), linetype = "dashed") +
+  geom_hline(data = subset(samples_longer, analysis_type2 == "Z score analysis"),
+             aes(yintercept = het_gDNA_mean_vp-(2*het_gDNA_sd_vp)), 
+             linetype = "dashed") +
   
   geom_text(data = subset(samples_longer, analysis_type2 == "Z score analysis"),
             aes(x = 36000, y = 55), label = "z > 3") +
@@ -866,8 +918,8 @@ figure2v2 <- ggplot(samples_longer, aes(x = vf_assay_molecules, y = variant_perc
   geom_text(data = subset(samples_longer, analysis_type2 == "Z score analysis"),
             aes(x = 36000, y = 50), label = "-2 < z < 2")
 
-ggsave(plot = figure2v2, 
-       filename = paste0("figure_2_v2_",
+ggsave(plot = cfdna_plot, 
+       filename = paste0("cfdna_plot_",
                          format(Sys.time(), "%Y%m%d_%H%M%S"),
                          ".tiff"),
        path = "plots/", 
@@ -878,7 +930,7 @@ ggsave(plot = figure2v2,
        height = 10)
 
 ###################
-# Analysis summary plot
+# cfDNA analysis summary plot
 ###################
 
 # Summary of how each analysis method performed.
@@ -1029,75 +1081,10 @@ ggsave(plot = roc_plot,
        width = 10,
        height = 4)
 
-#########################
-# SPRT analysis - gDNA
-#########################
 
-het_gdna_sprt <- het_gdna %>%
-  # Remove replicates outside the DNA input range of cfDNA
-  filter(vf_assay_molecules < 30000) %>%
-  # Assign an artificial fetal fraction of 4% for SPRT calculations
-  mutate(fetal_fraction = 0.04,
-         # Calculate the likelihood ratio
-         likelihood_ratio = case_when(
-           inheritance_chromosomal == "x_linked" ~ 
-             calc_lr_x_linked(fetal_fraction, (major_allele_percent/100), 
-                              vf_assay_molecules),
-           inheritance_chromosomal == "autosomal" ~ 
-             calc_lr_autosomal(fetal_fraction, (major_allele_percent/100), 
-                               vf_assay_molecules)))
-
-# Predict genotypes
-het_gdna_sprt <- predict_sprt_genotypes(het_gdna_sprt, 8)
-
-#########################
-# MCMC analysis - gDNA
-#########################
-
-# Set an artificial fetal fraction of 4%
-mcmc_fetal_fraction <- 0.04
-
-gdna_data_mcmc <- het_gdna %>%
-  # Remove replicates outside the DNA input range of cfDNA
-  filter(vf_assay_molecules < 30000) %>%
-  mutate(
-    var_ref_positives = variant_positives + reference_positives,
-    var_ref_molecules = poisson_correct(vf_assay_droplets, var_ref_positives),
-    
-    # Create an artificial dataset for the fetal fraction.
-    # Use the same number of total droplets as the variant fraction assay.
-    ff_assay_droplets = vf_assay_droplets,
-    
-    #Calculate the number of fetal-specific and maternal molecules
-    paternal_molecules = var_ref_molecules * mcmc_fetal_fraction,
-    maternal_molecules = var_ref_molecules * (1-mcmc_fetal_fraction),
-    
-    # Calculate the expected number of positive partitions
-    paternal_positives = reverse_poisson(paternal_molecules, 
-                                         ff_assay_droplets),
-    maternal_positives = reverse_poisson(maternal_molecules, 
-                                         ff_assay_droplets)) %>%
-  # Rename for pipeline
-  dplyr::rename(n_K = vf_assay_droplets,
-                K_M = variant_positives,
-                K_N = reference_positives,
-                Z_X = maternal_positives,
-                Z_Y = paternal_positives,
-                n_Z = ff_assay_droplets) %>%
-  select(worksheet_well_sample, inheritance_chromosomal, inheritance_pattern,
-         vf_assay, n_K, n_Z, K_N, K_M, n_Z, Z_X, Z_Y)
-
-# Analysing the gDNA replicates takes ~1 hour 4 mins
-gdna_mcmc_analysed <- run_mcmc(gdna_data_mcmc, 0.95)
-
-# Export the file as a csv so you don't have to keep rerunning the analysis.
-
-write.csv(gdna_mcmc_analysed, paste0("analysis_outputs/gdna_mcmc_analysed ",
-                                     format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv"),
-          row.names = FALSE)
 
 ###################
-# SPRT and MCMC gDNA plots - Supplemental Figure 5
+# SPRT and MCMC gDNA plots
 ###################
 # Set fetal fraction and likelihood ratio thresholds
 ff_for_graph <- 0.04
@@ -1172,7 +1159,7 @@ gdna_plots_x <- xlim(0, 30000)
 gdna_plots_y <- ylim(43, 57)
 
 ###########
-# Plot S5A: SPRT on gDNA for HBB c.20A>T
+# SPRT on gDNA for HBB c.20A>T
 ###########
 
 gdna_plot_title <- expression(paste(italic("HBB"), 
@@ -1201,7 +1188,7 @@ plot_s5a <- ggplot(het_gdna_sprt %>%
   geom_vline(xintercept = 3000, linetype = "dashed")
   
 ###########
-# Plot S5B: SPRT on gDNA for autosomal assays
+# SPRT on gDNA for autosomal assays
 ###########
 
 plot_s5b <- ggplot(het_gdna_sprt %>%
@@ -1230,7 +1217,7 @@ plot_s5b <- ggplot(het_gdna_sprt %>%
   geom_vline(xintercept = 2000, linetype = "dashed")
 
 ###########
-# Plot S5C: SPRT on gDNA for X-linked assays
+# SPRT on gDNA for X-linked assays
 ###########
 
 plot_s5c <- ggplot(het_gdna_sprt %>%
@@ -1254,7 +1241,7 @@ plot_s5c <- ggplot(het_gdna_sprt %>%
        title = "X-linked variant gDNA: SPRT results")
  
 ###########
-# Plot S5D: MCMC on gDNA for HBB c.20A>T
+# MCMC on gDNA for HBB c.20A>T
 ###########
 
 mcmc_gdna_for_plot <- gdna_mcmc_analysed %>%
@@ -1293,7 +1280,7 @@ plot_s5d <- ggplot(mcmc_gdna_for_plot %>%
        title = gdna_plot_title)
 
 ###########
-# Plot S5E: MCMC on gDNA for autosomal assays
+# MCMC on gDNA for autosomal assays
 ###########
 
 plot_s5e <- ggplot(mcmc_gdna_for_plot %>%
@@ -1316,7 +1303,7 @@ plot_s5e <- ggplot(mcmc_gdna_for_plot %>%
        title = "Autosomal variant gDNA: MCMC results")
 
 ###########
-# Plot S5F: MCMC on gDNA for X-linked assays
+# MCMC on gDNA for X-linked assays
 ###########
 
 plot_s5f <- ggplot(mcmc_gdna_for_plot %>%
