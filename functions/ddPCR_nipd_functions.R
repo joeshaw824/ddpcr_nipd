@@ -1,7 +1,6 @@
 ################################################################################
 ## Functions for ddPCR NIPD
-## October 2021
-## Joseph.Shaw@gosh.nhs.uk
+# joseph.shaw3@nhs.net
 ################################################################################
 
 #########################
@@ -216,7 +215,7 @@ calc_hemi_ref_boundary <- function(total_copies, ff, lr) {
 # MCMC functions
 #########################
 
-# This function runs Tristan's MCMC pipeline for 3 inheritance patterns.
+# This function runs the Bayesian MCMC pipeline for 3 inheritance patterns.
 
 # n_K	= number of droplets tested for variant assay
 # K_M	= number of droplets positive for variant (mutant) allele
@@ -384,7 +383,7 @@ run_mcmc <- function(data_input, threshold) {
 
 # These functions calculate the number of molecules and fractional
 # abundance for each target, including 95% Poisson confidence intervals.
-# This is to prevent massive duplication of code when performing these
+# This is to prevent duplication of code when performing these
 # calculations for gDNA, cfDNA and limit of detection datasets.
 
 var_ref_calculations <- function(data_input) {
@@ -929,8 +928,9 @@ export_timestamp <- function(input) {
   
   write.csv(input, 
             file = paste0("analysis_outputs/", 
-                          deparse(substitute(input)),
-                          format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv"),
+                          format(Sys.time(), "%Y_%m_%d_%H_%M_%S"),
+                          "_",
+                          deparse(substitute(input)), ".csv"),
             row.names = FALSE)
 }
 

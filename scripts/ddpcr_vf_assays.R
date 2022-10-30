@@ -8,15 +8,23 @@
 # Load resources
 #########################
 
-# No resources required as this script is loaded from the main script
-# (all_samples_nipt.R)
+library(tidyverse)
+library(readxl)
+library(stringr)
+library(stringi)
+
+# Working directory
+setwd("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/ddPCR_R_Analysis/ddpcr_nipd")
+
+# Load functions for "reverse_complement"
+source("functions/ddPCR_nipd_functions.R")
 
 #########################
 # Load sequences
 #########################
 
 # Read in amplicons
-amplicons <- read_excel("resources/ddpcr_assay_details.xlsx",
+amplicons <- read_excel("resources/ddpcr_assay_primer_probe_sequences.xlsx",
                         sheet = "amplicons") %>%
   mutate(
     reference_amplicon_length = case_when(
@@ -29,7 +37,7 @@ amplicons <- read_excel("resources/ddpcr_assay_details.xlsx",
   # Remove ZFXY assay
   filter(assay_name != "ZFXY")
 
-primer_probes <- read_excel("resources/ddpcr_assay_details.xlsx",
+primer_probes <- read_excel("resources/ddpcr_assay_primer_probe_sequences.xlsx",
                             sheet = "sequences") %>%
   # Remove "+" from locked nucleic acid probes
   mutate(variant_probe_no_lnas = gsub("+","",variant_probe, fixed = TRUE),
@@ -121,10 +129,6 @@ ddpcr_assay_sequences <- amplicons_primers_probes %>%
                                           "ThermoFisher TaqMan"))) %>%
   arrange(manufacturer)
 
-write.csv(ddpcr_assay_sequences, 
-          paste0("analysis_outputs/ddpcr_assay_sequences_", 
-                 format(Sys.time(), "%Y%m%d_%H%M%S"),
-                 ".csv"),
-          row.names = FALSE)
+export_timestamp(ddpcr_assay_sequences)
 
 #########################
