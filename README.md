@@ -7,6 +7,9 @@ Each cfDNA test for a pathogenic variant comprises of two ddPCR assays: an assay
 
 The targets contained within each assay fall into 4 categories. The vf_assay detects the “variant” allele (i.e. “mutant”) and the “reference” allele (i.e. “wild type” or “normal”). The ff_assay detects a “maternal” allele, which is homozygous in the maternal cfDNA and heterozygous in the fetal cfDNA, and a “paternal” allele, which is not present in the maternal cfDNA and is heterozygous/hemizygous in the fetal cfDNA. 
 
+## Bayesian Analysis
+The Bayesian MCMC analysis section is compiled from scripts and models kindly provided by Tristan Snowsill.
+
 ## Naming Convention
 
 New variables are named in a consistent format: target_category_qualifier.  
