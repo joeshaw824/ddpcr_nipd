@@ -211,7 +211,8 @@ SNP_data <- data.frame()
 
 # Read and collate each worksheet csv
 for (dataFile in ddpcr_files){
-  tmp_dat <- read_csv(paste0(dataPath,dataFile), col_names = TRUE) %>%
+  tmp_dat <- read_csv(paste0(dataPath,dataFile), col_names = TRUE,
+                      show_col_types = FALSE) %>%
     janitor::clean_names()
   SNP_data <-rbind(SNP_data, tmp_dat)
   rm(tmp_dat)
@@ -282,5 +283,3 @@ pre_amplification_fractions <- SNP_data %>%
                 preamp_minor_fractionmin = minor_fractionmin)
 
 #############################################################
-
-     

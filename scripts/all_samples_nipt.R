@@ -1465,14 +1465,11 @@ gdna_data_mcmc <- het_gdna %>%
   select(worksheet_well_sample, inheritance_chromosomal, inheritance_pattern,
          vf_assay, n_K, n_Z, K_N, K_M, n_Z, Z_X, Z_Y)
 
-# Analysing the gDNA replicates takes ~1 hour 4 mins
+# 30/10/22: Analysing the 551 gDNA replicates takes ~1 hour 23 minutes
 gdna_mcmc_analysed <- run_mcmc(gdna_data_mcmc, 0.95)
 
 # Export the file as a csv so you don't have to keep rerunning the analysis.
-
-write.csv(gdna_mcmc_analysed, paste0("analysis_outputs/gdna_mcmc_analysed ",
-                                     format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv"),
-          row.names = FALSE)
+export_timestamp(gdna_mcmc_analysed)
 
 ###################
 # SPRT and MCMC gDNA plots
@@ -1553,13 +1550,30 @@ gdna_plots_y <- ylim(43, 57)
 # SPRT on gDNA for HBB c.20A>T
 ###########
 
+# Factorise for plots
+het_gdna_sprt_factored <- het_gdna_sprt %>%
+  mutate(sprt_prediction = factor(sprt_prediction,
+                                     levels = c("inconclusive",
+                                                "heterozygous",
+                                                "homozygous reference",
+                                                "hemizygous reference",
+                                                "homozygous variant",
+                                                "hemizygous variant")))
+
 gdna_plot_title <- expression(paste(italic("HBB"), 
-                                    "c.20A>T gDNA: SPRT results"))
-plot_s5a <- ggplot(het_gdna_sprt %>%
+                                   "c.20A>T gDNA: SPRT results"))
+
+plot_s5a <- ggplot(het_gdna_sprt_factored %>%
          filter(vf_assay == "HBB c.20A>T"), 
        aes(x = vf_assay_molecules, y = variant_percent)) +
   # Four colours required
-  scale_fill_manual(values=c("#000000", "#FFFFFF", "#000000", "#999999"), 
+  scale_fill_manual(values=c(
+    # Inconclusive - grey
+    "#999999",
+    # Heterozygous - white
+    "#FFFFFF",
+    # Homozygous reference and homozygous variant - black
+    "#000000",  "#000000"), 
                     guide = "none") +
   geom_point(size = 2,
              aes(fill = sprt_prediction), 
@@ -1575,20 +1589,23 @@ plot_s5a <- ggplot(het_gdna_sprt %>%
   gdna_plots_y +
   labs(x = "",
        y = "Variant fraction (%)",
-       title = gdna_plot_title) +
-  geom_vline(xintercept = 3000, linetype = "dashed")
+       title = gdna_plot_title)
   
 ###########
 # SPRT on gDNA for autosomal assays
 ###########
 
-plot_s5b <- ggplot(het_gdna_sprt %>%
+plot_s5b <- ggplot(het_gdna_sprt_factored %>%
          filter(inheritance_chromosomal == "autosomal" &
                   vf_assay != "HBB c.20A>T"), 
        aes(x = vf_assay_molecules, y = variant_percent))+
   # Three colours required
-  scale_fill_manual(values=c("#000000", "#FFFFFF", "#999999"), 
-                    guide = "none") +      
+  scale_fill_manual(values=c(
+    # Inconclusive - grey
+    "#999999",
+    # Heterozygous - white
+    "#FFFFFF",
+    "#000000"), guide = "none") +      
   geom_point(size = 2, 
              colour = "black", 
              aes(fill = sprt_prediction), 
@@ -1611,11 +1628,15 @@ plot_s5b <- ggplot(het_gdna_sprt %>%
 # SPRT on gDNA for X-linked assays
 ###########
 
-plot_s5c <- ggplot(het_gdna_sprt %>%
+plot_s5c <- ggplot(het_gdna_sprt_factored %>%
          filter(inheritance_chromosomal == "x_linked"), 
        aes(x = vf_assay_molecules, y = variant_percent))+
   # Three colours required
-  scale_fill_manual(values=c("#000000", "#000000", "#999999"), 
+  scale_fill_manual(values=c(
+    # Inconclusive - grey
+    "#999999",
+    # Hemizygous reference and hemizygous variant - black
+    "#000000", "#000000"), 
                     guide = "none") +
   geom_point(size = 2, 
              aes(fill = sprt_prediction),
@@ -1735,7 +1756,7 @@ ggsave(plot = gdna_results_plot,
        height = 10)
 
 #########################
-# RMD plots for each case
+# Relative mutation dosage plots for each case
 #########################
 
 rmd_plots <-list()
@@ -1754,5 +1775,9 @@ for (i in sample_wells$cfdna_sample) {
 }
 
 # Export RMD plots for every sample as a single pdf
-ggexport(plotlist = rmd_plots, filename = "plots/rmd_plots_all_samples.pdf",
-         width=15, height=8, res=300)
+ggexport(plotlist = rmd_plots, filename = paste0(
+  "plots/rmd_plots_all_samples_", 
+  format(Sys.time(), "%Y%m%d_%H%M%S"),
+  ".pdf"), width=15, height=8, res=300)
+
+#########################
