@@ -958,6 +958,8 @@ lod_data_merged <- var_ref_calculations(rbind(
                    "0%",
                    "AA 2%", "AA 4%", "AA 6%", "AA 8%", "AA 10%", "AA 12%")))
 
+lod_plot_title <- expression(paste(italic("HBB"), " c.20A>T ddPCR limit of detection study"))
+
 # Limit of detection plot
 lod_plot <- ggplot(lod_data_merged, 
                    aes(x = vf_assay_molecules, y = variant_percent)) +
@@ -991,23 +993,26 @@ lod_plot <- ggplot(lod_data_merged,
     "#CCCCCC", "#9999CC", "#999999", "#666666", "#333333","#000000")) +
   scale_shape_manual(values = c(24, 24, 24, 24, 24, 24, 21, 
                                 25,25, 25, 25, 25, 25)) +
-  geom_point(size = 2, aes(fill = sample, shape = sample)) +
+  geom_point(size = 1, aes(fill = sample, shape = sample)) +
   ylim(39, 61) +
   xlim(0, 15000) +
   geom_hline(yintercept = 50, linetype = "dashed") +
   labs(x = "Genome Equivalents (GE)",
        y = "Variant fraction (%)",
-       title = "")
+       title = lod_plot_title)
+
+# 01/11/22: choose png as filetype instead of tiff (pngs have compressed file-sizes)
+# A4 page is 21.6cm wide. 15 cm width for plots gives good results.
 
 ggsave(plot = lod_plot, 
        filename = paste0("lod_plot_",
-                         format(Sys.time(), "%Y%m%d_%H%M%S"), ".tiff"),
+                         format(Sys.time(), "%Y%m%d_%H%M%S"), ".png"),
        path = "plots/", 
-       device='tiff', 
-       dpi=300,
-       units = "in",
-       width = 8,
-       height = 6)
+       device='png', 
+       dpi=1200,
+       units = "cm",
+       width = 15,
+       height = 10)
 
 #########################
 # Plot themes
@@ -1077,11 +1082,12 @@ samples_longer <- all_samples_unblinded %>%
                                                            "inconclusive")),
     analysis_type2 = case_when(
       analysis_type == "sprt_outcome" ~"SPRT analysis",
-      analysis_type == "mcmc_outcome" ~"MCMC analysis",
+      # Change name based on Sarah's comment
+      analysis_type == "mcmc_outcome" ~"Bayesian analysis",
       analysis_type == "zscore_outcome" ~"Z score analysis"),
     
     analysis_type2 = factor(analysis_type2, levels = c("SPRT analysis", 
-                                                       "MCMC analysis",
+                                                       "Bayesian analysis",
                                                        "Z score analysis")))
 
 cfdna_plot_title <- paste0("ddPCR analysis for ", nrow(all_samples_unblinded), " cfDNA samples")
@@ -1091,9 +1097,10 @@ cfdna_plot <- ggplot(samples_longer, aes(x = vf_assay_molecules, y = variant_per
   theme(
     panel.grid.major = element_blank(),
     panel.grid.minor = element_blank(), 
-    legend.position = "right", 
+    legend.position = "bottom", 
     plot.title = element_text(size = 11),
-    legend.text = element_text(size = 9)) +
+    legend.text = element_text(size = 8),
+    legend.title = element_text(size = 9)) +
   ylim(38, 62) +
   scale_x_continuous(limits = c(0,38000),
                      breaks = c(0, 2000, 10000, 20000, 30000)) +
@@ -1101,14 +1108,14 @@ cfdna_plot <- ggplot(samples_longer, aes(x = vf_assay_molecules, y = variant_per
                     guide = "none") +
   scale_alpha_manual(values = c(1, 1, 0.2), guide = "none") +
   scale_shape_manual(values = c(24, 21, 25)) +
-  geom_point(size = 2, aes(fill = analysis_outcome,
+  geom_point(size = 1, aes(fill = analysis_outcome,
                            alpha = analysis_outcome,
                            shape = fetal_genotype2),
              colour = "black") +
   labs(y = "Variant fraction (%)", x = "Genome equivalents (GE)",
        shape = "Fetal genotype",
        title = cfdna_plot_title) +
-  geom_vline(aes(xintercept = vf_assay_molecules_limit), linetype = "dashed") +
+  geom_vline(aes(xintercept = 2000), linetype = "dashed") +
   facet_wrap(~analysis_type2, nrow = 3, ncol = 1) +
   
   geom_hline(data = subset(samples_longer, analysis_type2 == "Z score analysis"), 
@@ -1134,18 +1141,18 @@ cfdna_plot <- ggplot(samples_longer, aes(x = vf_assay_molecules, y = variant_per
             aes(x = 36000, y = 45), label = "z < -3") +
   
   geom_text(data = subset(samples_longer, analysis_type2 == "Z score analysis"),
-            aes(x = 36000, y = 50), label = "-2 < z < 2")
+            aes(x = 36000, y = 50), label = "2 > z > -2")
 
 ggsave(plot = cfdna_plot, 
        filename = paste0("cfdna_plot_",
                          format(Sys.time(), "%Y%m%d_%H%M%S"),
-                         ".tiff"),
+                         ".png"),
        path = "plots/", 
-       device='tiff', 
+       device='png', 
        dpi=600,
-       units = "in",
-       width = 12.5,
-       height = 10)
+       units = "cm",
+       width = 15,
+       height = 18)
 
 ###################
 # cfDNA analysis summary plot
@@ -1561,7 +1568,7 @@ het_gdna_sprt_factored <- het_gdna_sprt %>%
                                                 "hemizygous variant")))
 
 gdna_plot_title <- expression(paste(italic("HBB"), 
-                                   "c.20A>T gDNA: SPRT results"))
+                                   "c.20A>T gDNA: SPRT"))
 
 plot_s5a <- ggplot(het_gdna_sprt_factored %>%
          filter(vf_assay == "HBB c.20A>T"), 
@@ -1575,7 +1582,7 @@ plot_s5a <- ggplot(het_gdna_sprt_factored %>%
     # Homozygous reference and homozygous variant - black
     "#000000",  "#000000"), 
                     guide = "none") +
-  geom_point(size = 2,
+  geom_point(size = 1,
              aes(fill = sprt_prediction), 
              pch=21,
              alpha = 0.8) +
@@ -1606,7 +1613,7 @@ plot_s5b <- ggplot(het_gdna_sprt_factored %>%
     # Heterozygous - white
     "#FFFFFF",
     "#000000"), guide = "none") +      
-  geom_point(size = 2, 
+  geom_point(size = 1, 
              colour = "black", 
              aes(fill = sprt_prediction), 
                    pch=21,
@@ -1621,8 +1628,7 @@ plot_s5b <- ggplot(het_gdna_sprt_factored %>%
   gdna_plots_y +
   labs(x = "",
        y = "Variant fraction (%)",
-       title = "Autosomal variant gDNA: SPRT results") +
-  geom_vline(xintercept = 2000, linetype = "dashed")
+       title = "Autosomal variant gDNA: SPRT")
 
 ###########
 # SPRT on gDNA for X-linked assays
@@ -1638,7 +1644,7 @@ plot_s5c <- ggplot(het_gdna_sprt_factored %>%
     # Hemizygous reference and hemizygous variant - black
     "#000000", "#000000"), 
                     guide = "none") +
-  geom_point(size = 2, 
+  geom_point(size = 1, 
              aes(fill = sprt_prediction),
              pch=21,
              alpha = 0.8) +
@@ -1650,7 +1656,7 @@ plot_s5c <- ggplot(het_gdna_sprt_factored %>%
   gdna_plots_y +
   labs(x = "Genome equivalents (GE)",
        y = "Variant fraction (%)",
-       title = "X-linked variant gDNA: SPRT results")
+       title = "X-linked variant gDNA: SPRT")
  
 ###########
 # MCMC on gDNA for HBB c.20A>T
@@ -1671,7 +1677,7 @@ mcmc_gdna_for_plot <- gdna_mcmc_analysed %>%
                                "inconclusive")))
 
 gdna_plot_title <- expression(paste(italic("HBB"), 
-                                   "c.20A>T gDNA: MCMC results"))
+                                   "c.20A>T gDNA: Bayesian"))
 
 plot_s5d <- ggplot(mcmc_gdna_for_plot %>%
                    filter(vf_assay == "HBB c.20A>T"), 
@@ -1679,7 +1685,7 @@ plot_s5d <- ggplot(mcmc_gdna_for_plot %>%
   # Two colours required
   scale_fill_manual(values=c("#FFFFFF", "#999999"), 
                     guide = "none") +
-  geom_point(size = 2,
+  geom_point(size = 1,
              aes(fill = mcmc_prediction), 
              pch=21,
              alpha = 0.8) +
@@ -1702,7 +1708,7 @@ plot_s5e <- ggplot(mcmc_gdna_for_plot %>%
   # Two colours required
   scale_fill_manual(values=c("#FFFFFF", "#999999"), 
                     guide = "none") +
-  geom_point(size = 2,
+  geom_point(size = 1,
              aes(fill = mcmc_prediction), 
              pch=21,
              alpha = 0.8) +
@@ -1712,7 +1718,7 @@ plot_s5e <- ggplot(mcmc_gdna_for_plot %>%
   gdna_plots_y +
   labs(x = "",
        y = "",
-       title = "Autosomal variant gDNA: MCMC results")
+       title = "Autosomal variant gDNA: Bayesian")
 
 ###########
 # MCMC on gDNA for X-linked assays
@@ -1724,7 +1730,7 @@ plot_s5f <- ggplot(mcmc_gdna_for_plot %>%
   # Three colours required
   scale_fill_manual(values=c("#000000", "#000000", "#999999"), 
                     guide = "none") +
-  geom_point(size = 2, 
+  geom_point(size = 1, 
              aes(fill = mcmc_prediction),
              pch=21,
              alpha = 0.8) +
@@ -1734,7 +1740,7 @@ plot_s5f <- ggplot(mcmc_gdna_for_plot %>%
   gdna_plots_y +
   labs(x = "Genome equivalents (GE)",
        y = "",
-       title = "X-linked variant gDNA: MCMC results")
+       title = "X-linked variant gDNA: Bayesian")
 
 ###########
 # Arrange plots together
@@ -1749,11 +1755,11 @@ gdna_results_plot <- ggpubr::ggarrange(plot_s5a, plot_s5d,
 ggsave(plot = gdna_results_plot,
        filename = paste0("gdna_results_plot_",
               format(Sys.time(), "%Y%m%d_%H%M%S"),
-              ".tiff"),
-       path = "plots/", device='tiff', dpi=600,
-       units = "in",
-       width = 8,
-       height = 10)
+              ".png"),
+       path = "plots/", device='png', dpi=600,
+       units = "cm",
+       width = 15,
+       height = 18)
 
 #########################
 # Relative mutation dosage plots for each case
