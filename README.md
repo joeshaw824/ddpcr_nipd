@@ -1,4 +1,4 @@
-# ddpcr_nipd
+# Droplet Digital PCR for Non-Invasive Prenatal Diagnosis
 Analysis scripts for developing non-invasive prenatal diagnosis of maternal variants using ddPCR. Raw ddPCR data is exported as csv files from Quantasoft and stored on the W drive at Great Ormond Street Hospital.
 
 I have aimed to keep a consistent coding style as per tidyverse guidance:
