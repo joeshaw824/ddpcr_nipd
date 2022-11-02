@@ -1,7 +1,6 @@
 ################################################################################
 ## ddPCR variant fraction assays
-## November 2021
-## Joseph.Shaw@gosh.nhs.uk
+## joseph.shaw3@nhs.net
 ## Collation of all variant fraction assays used in the ddPCR project.
 ################################################################################
 
@@ -9,15 +8,23 @@
 # Load resources
 #########################
 
-# No resources required as this script is loaded from the main script
-# (all_samples_nipt.R)
+library(tidyverse)
+library(readxl)
+library(stringr)
+library(stringi)
+
+# Working directory
+setwd("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/ddPCR_R_Analysis/ddpcr_nipd")
+
+# Load functions for "reverse_complement"
+source("functions/ddPCR_nipd_functions.R")
 
 #########################
 # Load sequences
 #########################
 
 # Read in amplicons
-amplicons <- read_excel("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/ddPCR Assay Design/ddPCR_Assay_Ordering.xlsx",
+amplicons <- read_excel("resources/ddpcr_assay_primer_probe_sequences.xlsx",
                         sheet = "amplicons") %>%
   mutate(
     reference_amplicon_length = case_when(
@@ -30,7 +37,7 @@ amplicons <- read_excel("W:/MolecularGenetics/NIPD translational data/NIPD Dropl
   # Remove ZFXY assay
   filter(assay_name != "ZFXY")
 
-primer_probes <- read_excel("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/ddPCR Assay Design/ddPCR_Assay_Ordering.xlsx",
+primer_probes <- read_excel("resources/ddpcr_assay_primer_probe_sequences.xlsx",
                             sheet = "sequences") %>%
   # Remove "+" from locked nucleic acid probes
   mutate(variant_probe_no_lnas = gsub("+","",variant_probe, fixed = TRUE),
@@ -62,7 +69,7 @@ amplicons_primers_probes <- full_join(
     forward_rc_in_ref_amp = str_detect(reference_amplicon, forward_primer_rc),
     forward_in_var_amp = str_detect(variant_amplicon, forward_primer),
     forward_rc_in_var_amp = str_detect(variant_amplicon, forward_primer_rc),
-    
+    # Check reverse primer
     reverse_in_ref_amp = str_detect(reference_amplicon, reverse_primer),
     reverse_rc_in_ref_amp = str_detect(reference_amplicon, reverse_primer_rc),
     reverse_in_var_amp = str_detect(variant_amplicon, reverse_primer),
@@ -122,10 +129,6 @@ ddpcr_assay_sequences <- amplicons_primers_probes %>%
                                           "ThermoFisher TaqMan"))) %>%
   arrange(manufacturer)
 
-write.csv(ddpcr_assay_sequences, 
-          paste0("analysis_outputs/ddpcr_assay_sequences_", 
-                 format(Sys.time(), "%Y%m%d_%H%M%S"),
-                 ".csv"),
-          row.names = FALSE)
+export_timestamp(ddpcr_assay_sequences)
 
 #########################

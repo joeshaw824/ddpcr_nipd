@@ -1,5 +1,5 @@
 ##############################
-# Text for paper
+# Checking text in paper
 ##############################
 
 # Load tidyverse and pipeline exports if not performing this 
@@ -7,13 +7,52 @@
 
 #library(tidyverse)
 
-#supplementary_table <- read.csv("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/Digital PCR Paper Drafts/ddPCR cohort paper/ddPCR cohort paper v2/Supplementary_data_20211110_170750.csv")
+setwd("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/ddPCR_R_Analysis/ddpcr_nipd")
 
-#vf_assay_count_table <- read.csv("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/Digital PCR Paper Drafts/ddPCR cohort paper/ddPCR cohort paper v2/Table 1 20211110_171532.csv")
+# Analysis to check
+
+analysis_file <- "supplementary_table20221023_104808.csv"
+
+supplementary_table <- read.csv(paste0("analysis_outputs/", analysis_file))
 
 ######################
 # Abstract
 ######################
+
+# Number of cfDNA samples
+length(unique(supplementary_table$sample_id))
+
+# Samples per cohort
+supplementary_table %>%
+  group_by(cohort) %>%
+  summarise(total = n())
+
+# Inconclusive percentages
+
+######################
+# Results
+######################
+
+# Number of families
+length(unique(supplementary_table$family_number))
+
+# Number of pathogenic variants
+length(unique(supplementary_table$vf_assay))
+
+# Number of genes
+length(unique(supplementary_table$gene))
+
+# Gestation range
+min(all_samples_unblinded$gestation_total_weeks)
+max(all_samples_unblinded$gestation_total_weeks)
+median(all_samples_unblinded$gestation_total_weeks)
+
+# Fetal fraction range
+min(supplementary_table$fetal_fraction)
+max(supplementary_table$fetal_fraction)
+median(supplementary_table$fetal_fraction)
+
+
 
 paste0(
   nrow(all_samples_blinded),
@@ -318,10 +357,15 @@ paste0("of ",
 # Conclusions
 ######################
 
+setwd("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/ddPCR_R_Analysis/ddpcr_nipd/")
+
+source("scripts/mody_nipt.R")
+
 #In addition, our cohort had a lower average 
 paste0("number of molecules tested per case (median: ",
        round(median(supplementary_table$total_molecules), 0),
-       ").")
+       ") versus the data reported by Caswell et al (median: ",
+       round(median(caswell_supp_calc$total_molecules), 0), ").")
 
 ######################
 # Figures

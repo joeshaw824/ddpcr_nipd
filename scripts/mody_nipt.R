@@ -14,14 +14,14 @@ library(readxl)
 library(janitor)
 
 ## Set working directory
-setwd("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/ddPCR_R_Analysis")
+setwd("W:/MolecularGenetics/NIPD translational data/NIPD Droplet Digital PCR/ddPCR_R_Analysis/")
 
 # Source functions (this includes loading ddPCR data)
 source("ddpcr_nipd/functions/ddPCR_nipd_functions.R")
 
 # Load Caswell et al supplementary info
 
-caswell_s1 <- read_excel(path = "archived_files/data/Paper_data_comparison/Caswell_et_al_supp_data.xlsx",
+caswell_s1 <- read_excel(path = "ddpcr_nipd/data/clc319137-file002.xlsx",
                          sheet = "supp_table_1",
                          skip = 3, 
                          n_max = 57) %>%
@@ -29,7 +29,7 @@ caswell_s1 <- read_excel(path = "archived_files/data/Paper_data_comparison/Caswe
   mutate(sample_id = paste(family_number, pregnancy_number, weeks_gestation, 
                            sep = "_"))
 
-caswell_s2 <- read_excel(path = "archived_files/data/Paper_data_comparison/Caswell_et_al_supp_data.xlsx",
+caswell_s2 <- read_excel(path = "ddpcr_nipd/data/clc319137-file002.xlsx",
                          sheet = "supp_table_2",
                          skip = 2) %>%
   janitor::clean_names() %>%
@@ -39,7 +39,7 @@ caswell_s2 <- read_excel(path = "archived_files/data/Paper_data_comparison/Caswe
          predicted_genotype, actual_genotype)
 
 #########################
-# Analyse using SPRT
+# Calculate number of molecules
 #########################
 
 # Join s1 and s2 together, and rename for SPRT calculations
@@ -55,21 +55,12 @@ caswell_supp <- caswell_s1 %>%
 
 lr_threshold <- 8
 
-caswell_supp_sprt <- ff_calculations(var_ref_calculations(caswell_supp)) %>%
-  mutate(likelihood_ratio = calc_lr_autosomal(fetal_fraction,
-                                         major_allele_percent/100,
-                                         vf_assay_molecules),
-    sprt_genotype_prediction = case_when(
-    likelihood_ratio > lr_threshold &
-      major_allele == "variant allele"
-    ~"hom",
-    likelihood_ratio > lr_threshold &
-      major_allele == "reference allele"
-    ~"hom",
-    likelihood_ratio < 1/lr_threshold
-    ~"het",
-    TRUE ~"no call")) %>%
-  select(sample_id, predicted_genotype, sprt_genotype_prediction,
-         actual_genotype)
+caswell_supp_calc <- ff_calculations(var_ref_calculations(caswell_supp)) %>%
+  mutate(total_molecules = ff_assay_molecules + vf_assay_molecules) %>%
+  filter(!is.na(total_molecules))
+
+median(caswell_s1$weeks_gestation)
+min(caswell_s1$weeks_gestation)
+max(caswell_s1$weeks_gestation)
 
 #########################
