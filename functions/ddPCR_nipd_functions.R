@@ -3,6 +3,9 @@
 # joseph.shaw3@nhs.net
 ################################################################################
 
+# DISCLAIMER: This software is intended for research purposes only, and is not 
+# validated for clinical use. No guarantee is provided for third party usage.
+
 #########################
 # Load packages
 #########################

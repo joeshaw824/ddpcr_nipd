@@ -8,6 +8,9 @@
 ## analysis.
 ################################################################################
 
+# DISCLAIMER: This software is intended for research purposes only, and is not 
+# validated for clinical use. No guarantee is provided for third party usage.
+
 ##################################################
 # Load packages, functions and data
 ##################################################
@@ -406,6 +409,7 @@ ddpcr_data_mcmc <- cfdna_ddpcr_data %>%
 
 # 23/10/2022 - 17 minutes 19 seconds for 127 cfDNA samples
 # 30/10/2022 - 21 minutes 20 seconds for 127 cfDNA samples
+# 07/12/2022 - 20 minutes 4 seconds for 127 cfDNA samples
 all_samples_mcmc <- run_mcmc(ddpcr_data_mcmc, 0.95)
 
 #########################
@@ -752,7 +756,6 @@ bespoke_individual_results_table[bespoke_individual_results_table == "homozygous
 bespoke_individual_results_table[bespoke_individual_results_table == "heterozygous"] <- "het"
 bespoke_individual_results_table[bespoke_individual_results_table == "hemizygous reference"] <- "hemi ref"
 bespoke_individual_results_table[bespoke_individual_results_table == "hemizygous variant"] <- "hemi var"
-bespoke_individual_results_table[bespoke_individual_results_table == "inconclusive"] <- "no call"
 
 export_timestamp(bespoke_individual_results_table)
 
@@ -793,7 +796,6 @@ incorrect_results_table[incorrect_results_table == "homozygous variant"] <- "hom
 incorrect_results_table[incorrect_results_table == "heterozygous"] <- "het"
 incorrect_results_table[incorrect_results_table == "hemizygous reference"] <- "hemi ref"
 incorrect_results_table[incorrect_results_table == "hemizygous variant"] <- "hemi var"
-incorrect_results_table[incorrect_results_table == "inconclusive"] <- "no call"
 
 export_timestamp(incorrect_results_table)
 
@@ -960,6 +962,34 @@ lod_data_merged <- var_ref_calculations(rbind(
 
 lod_plot_title <- expression(paste(italic("HBB"), " c.20A>T ddPCR limit of detection study"))
 
+## Colour schemes
+
+# In order of shade
+# "#FFFFFF" = white
+# "#CCCCCC" = grey 1
+# "#9999CC" = grey 2
+# "#999999" = grey 3
+# "#666666" = grey 4
+# "#333333" = grey 5
+# "#000000" = black; 
+
+black_and_white_scheme <- c(
+  # SS 12% to 2%
+  "#000000", "#333333", "#666666", "#999999", "#9999CC", "#CCCCCC",
+  # 0%
+  "#FFFFFF",
+  # AA 2% to 12%
+  "#CCCCCC", "#9999CC", "#999999", "#666666", "#333333","#000000")
+
+red_and_blue_scheme <- c(
+  # SS 12% to 2%
+  "#660000", "#990000", "#CC0000", "#FF3333", "#FF6666", "#FF9999",
+  # 0%
+  "#FFFFFF",
+  # AA 2% to 12%
+  "#CCCCFF", "#9999FF", "#6666FF", "#3333CC", "#0000CC", "#000099")
+
+
 # Limit of detection plot
 lod_plot <- ggplot(lod_data_merged, 
                    aes(x = vf_assay_molecules, y = variant_percent)) +
@@ -976,21 +1006,7 @@ lod_plot <- ggplot(lod_data_merged,
   geom_errorbarh(aes(xmin = vf_assay_molecules_min, 
                      xmax = vf_assay_molecules_max),
                  alpha = 0.2) +
-  # In order of shade
-  # "#FFFFFF" = white
-  # "#CCCCCC" = grey 1
-  # "#9999CC" = grey 2
-  # "#999999" = grey 3
-  # "#666666" = grey 4
-  # "#333333" = grey 5
-  # "#000000" = black; 
-  scale_fill_manual(values = c(
-    # SS 12% to 2%
-    "#000000", "#333333", "#666666", "#999999", "#9999CC", "#CCCCCC",
-    # 0%
-    "#FFFFFF",
-    # 2% to 12%
-    "#CCCCCC", "#9999CC", "#999999", "#666666", "#333333","#000000")) +
+  scale_fill_manual(values = red_and_blue_scheme) +
   scale_shape_manual(values = c(24, 24, 24, 24, 24, 24, 21, 
                                 25,25, 25, 25, 25, 25)) +
   geom_point(size = 1, aes(fill = sample, shape = sample)) +
@@ -1049,14 +1065,12 @@ zminus2_line <- geom_hline(yintercept = het_gDNA_mean_vp-(2*het_gDNA_sd_vp),
 vertical_line <- geom_vline(xintercept = vf_assay_molecules_limit,
            linetype = "dashed", alpha = 0.5)
 
-cfdna_fill <- scale_fill_manual(values=c("#FFFFFF", "#000000", "#999999"), 
+cfdna_fill <- scale_fill_manual(values=c("#FFFFFF", "#FF0000", "#999999"), 
                   guide = "none")
 
 cfdna_alpha <- scale_alpha_manual(values = c(1, 1, 0.2), guide = "none")
 
 cfdna_shape <- scale_shape_manual(values = c(24, 24, 21, 25, 25))
-
-vf_assay_molecules_limit
 
 ###################
 # Plot cfDNA results
@@ -1104,7 +1118,7 @@ cfdna_plot <- ggplot(samples_longer, aes(x = vf_assay_molecules, y = variant_per
   ylim(38, 62) +
   scale_x_continuous(limits = c(0,38000),
                      breaks = c(0, 2000, 10000, 20000, 30000)) +
-  scale_fill_manual(values=c("#FFFFFF", "#000000", "#999999"), 
+  scale_fill_manual(values=c("#FFFFFF", "#FF0000", "#999999"), 
                     guide = "none") +
   scale_alpha_manual(values = c(1, 1, 0.2), guide = "none") +
   scale_shape_manual(values = c(24, 21, 25)) +
@@ -1579,8 +1593,8 @@ plot_s5a <- ggplot(het_gdna_sprt_factored %>%
     "#999999",
     # Heterozygous - white
     "#FFFFFF",
-    # Homozygous reference and homozygous variant - black
-    "#000000",  "#000000"), 
+    # Homozygous reference and homozygous variant - red
+    "#FF0000",  "#FF0000"), 
                     guide = "none") +
   geom_point(size = 1,
              aes(fill = sprt_prediction), 
