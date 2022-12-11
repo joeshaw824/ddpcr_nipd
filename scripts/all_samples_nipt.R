@@ -11,6 +11,9 @@
 # DISCLAIMER: This software is intended for research purposes only, and is not 
 # validated for clinical use. No guarantee is provided for third party usage.
 
+# Clear environment
+rm(list=ls())
+
 ##################################################
 # Load packages, functions and data
 ##################################################
@@ -1487,6 +1490,7 @@ gdna_data_mcmc <- het_gdna %>%
          vf_assay, n_K, n_Z, K_N, K_M, n_Z, Z_X, Z_Y)
 
 # 30/10/22: Analysing the 551 gDNA replicates takes ~1 hour 23 minutes
+# 11/12/22: 1 hour 3 minutes.
 gdna_mcmc_analysed <- run_mcmc(gdna_data_mcmc, 0.95)
 
 # Export the file as a csv so you don't have to keep rerunning the analysis.
@@ -1548,20 +1552,20 @@ hemi_ref_line <- geom_function(fun = "calc_hemi_ref_boundary",
                 args = c(ff_for_graph, lr_for_graph),
                 alpha = 0.5)
   
-het_region_label <- annotate(geom = "text", x = 28000, y = 50, 
-                             label = "heterozygous")
+het_region_label <- geom_text(aes(x = 28000, y = 50), size = 3,
+                             label = "het")
 
-hom_ref_region_label <- annotate(geom = "text", x = 28000, y = 47, 
-                          label = "homozygous reference")
+hom_ref_region_label <- geom_text(aes(x = 28000, y = 47), size = 3, 
+                          label = "hom ref")
 
-hom_var_region_label <- annotate(geom = "text", x = 28000, y = 53, 
-                          label = "homozygous variant")
+hom_var_region_label <- geom_text(aes(x = 28000, y = 53), size = 3,
+                          label = "hom var")
 
-hemi_ref_region_label <- annotate(geom = "text", x = 28000, y = 47, 
-                           label = "hemizygous reference")
+hemi_ref_region_label <- geom_text(aes(x = 28000, y = 47), size = 3,
+                           label = "hemi ref")
 
-hemi_var_region_label <- annotate(geom = "text", x = 28000, y = 53, 
-                           label = "hemizygous variant")
+hemi_var_region_label <- geom_text(aes(x = 28000, y = 53), size = 3, 
+                           label = "hemi var")
 
 gdna_plots_x <- xlim(0, 30000)
   
@@ -1579,7 +1583,17 @@ het_gdna_sprt_factored <- het_gdna_sprt %>%
                                                 "homozygous reference",
                                                 "hemizygous reference",
                                                 "homozygous variant",
-                                                "hemizygous variant")))
+                                                "hemizygous variant")),
+         outcome = case_when(
+           sprt_prediction == "inconclusive" ~"inconclusive",
+           sprt_prediction %in% c("homozygous reference",
+                                  "hemizygous reference",
+                                  "homozygous variant",
+                                  "hemizygous variant") ~"imbalance",
+           sprt_prediction == "heterozygous" ~"balance"),
+         outcome = factor(outcome, levels = c("balance",
+                                              "inconclusive",
+                                              "imbalance")))
 
 gdna_plot_title <- expression(paste(italic("HBB"), 
                                    "c.20A>T gDNA: SPRT"))
@@ -1587,21 +1601,25 @@ gdna_plot_title <- expression(paste(italic("HBB"),
 plot_s5a <- ggplot(het_gdna_sprt_factored %>%
          filter(vf_assay == "HBB c.20A>T"), 
        aes(x = vf_assay_molecules, y = variant_percent)) +
-  # Four colours required
   scale_fill_manual(values=c(
+    # Balance - white
+    "#FFFFFF",
     # Inconclusive - grey
     "#999999",
-    # Heterozygous - white
-    "#FFFFFF",
-    # Homozygous reference and homozygous variant - red
-    "#FF0000",  "#FF0000"), 
-                    guide = "none") +
+    # Imbalance - red
+    "#FF0000")) +
   geom_point(size = 1,
-             aes(fill = sprt_prediction), 
+             aes(fill = outcome), 
              pch=21,
              alpha = 0.8) +
   theme_bw()+
-  multiplot_theme +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), 
+    legend.position = "bottom", 
+    plot.title = element_text(size = 11),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 9)) +
   het_upper_line +
   het_lower_line +
   hom_var_line +
@@ -1610,8 +1628,11 @@ plot_s5a <- ggplot(het_gdna_sprt_factored %>%
   gdna_plots_y +
   labs(x = "",
        y = "Variant fraction (%)",
-       title = gdna_plot_title)
-  
+       title = gdna_plot_title) +
+  het_region_label +
+  hom_ref_region_label +
+  hom_var_region_label
+
 ###########
 # SPRT on gDNA for autosomal assays
 ###########
@@ -1620,16 +1641,16 @@ plot_s5b <- ggplot(het_gdna_sprt_factored %>%
          filter(inheritance_chromosomal == "autosomal" &
                   vf_assay != "HBB c.20A>T"), 
        aes(x = vf_assay_molecules, y = variant_percent))+
-  # Three colours required
   scale_fill_manual(values=c(
+    # Balance - white
+    "#FFFFFF",
     # Inconclusive - grey
     "#999999",
-    # Heterozygous - white
-    "#FFFFFF",
-    "#000000"), guide = "none") +      
+    # Imbalance - red
+    "#FF0000")) +    
   geom_point(size = 1, 
              colour = "black", 
-             aes(fill = sprt_prediction), 
+             aes(fill = outcome), 
                    pch=21,
                    alpha = 0.8) +
   theme_bw()+
@@ -1642,7 +1663,10 @@ plot_s5b <- ggplot(het_gdna_sprt_factored %>%
   gdna_plots_y +
   labs(x = "",
        y = "Variant fraction (%)",
-       title = "Autosomal variant gDNA: SPRT")
+       title = "Autosomal variant gDNA: SPRT") +
+  het_region_label +
+  hom_ref_region_label +
+  hom_var_region_label
 
 ###########
 # SPRT on gDNA for X-linked assays
@@ -1651,15 +1675,13 @@ plot_s5b <- ggplot(het_gdna_sprt_factored %>%
 plot_s5c <- ggplot(het_gdna_sprt_factored %>%
          filter(inheritance_chromosomal == "x_linked"), 
        aes(x = vf_assay_molecules, y = variant_percent))+
-  # Three colours required
   scale_fill_manual(values=c(
     # Inconclusive - grey
     "#999999",
-    # Hemizygous reference and hemizygous variant - black
-    "#000000", "#000000"), 
-                    guide = "none") +
+    # Imbalance - red
+    "#FF0000")) +  
   geom_point(size = 1, 
-             aes(fill = sprt_prediction),
+             aes(fill = outcome),
              pch=21,
              alpha = 0.8) +
   theme_bw()+
@@ -1670,7 +1692,9 @@ plot_s5c <- ggplot(het_gdna_sprt_factored %>%
   gdna_plots_y +
   labs(x = "Genome equivalents (GE)",
        y = "Variant fraction (%)",
-       title = "X-linked variant gDNA: SPRT")
+       title = "X-linked variant gDNA: SPRT") +
+  hemi_ref_region_label +
+  hemi_var_region_label
  
 ###########
 # MCMC on gDNA for HBB c.20A>T
@@ -1688,7 +1712,17 @@ mcmc_gdna_for_plot <- gdna_mcmc_analysed %>%
                                "heterozygous",
                                "homozygous reference",
                                "hemizygous reference",
-                               "inconclusive")))
+                               "inconclusive")),
+         outcome = case_when(
+           mcmc_prediction == "inconclusive" ~"inconclusive",
+           mcmc_prediction %in% c("homozygous reference",
+                                  "hemizygous reference",
+                                  "homozygous variant",
+                                  "hemizygous variant") ~"imbalance",
+           mcmc_prediction == "heterozygous" ~"balance"),
+         outcome = factor(outcome, levels = c("balance",
+                                              "inconclusive",
+                                              "imbalance")))
 
 gdna_plot_title <- expression(paste(italic("HBB"), 
                                    "c.20A>T gDNA: Bayesian"))
@@ -1696,11 +1730,13 @@ gdna_plot_title <- expression(paste(italic("HBB"),
 plot_s5d <- ggplot(mcmc_gdna_for_plot %>%
                    filter(vf_assay == "HBB c.20A>T"), 
                  aes(x = vf_assay_molecules, y = variant_percent)) +
-  # Two colours required
-  scale_fill_manual(values=c("#FFFFFF", "#999999"), 
-                    guide = "none") +
+  scale_fill_manual(values=c(
+    # Balance - white
+    "#FFFFFF",
+    # Inconclusive - grey
+    "#999999")) +    
   geom_point(size = 1,
-             aes(fill = mcmc_prediction), 
+             aes(fill = outcome), 
              pch=21,
              alpha = 0.8) +
   theme_bw()+
@@ -1719,11 +1755,13 @@ plot_s5e <- ggplot(mcmc_gdna_for_plot %>%
          filter(inheritance_chromosomal == "autosomal" &
                   vf_assay != "HBB c.20A>T"), 
        aes(x = vf_assay_molecules, y = variant_percent)) +
-  # Two colours required
-  scale_fill_manual(values=c("#FFFFFF", "#999999"), 
-                    guide = "none") +
+  scale_fill_manual(values=c(
+    # Balance - white
+    "#FFFFFF",
+    # Inconclusive - grey
+    "#999999")) +    
   geom_point(size = 1,
-             aes(fill = mcmc_prediction), 
+             aes(fill = outcome), 
              pch=21,
              alpha = 0.8) +
   theme_bw()+
@@ -1741,11 +1779,13 @@ plot_s5e <- ggplot(mcmc_gdna_for_plot %>%
 plot_s5f <- ggplot(mcmc_gdna_for_plot %>%
          filter(inheritance_chromosomal == "x_linked"), 
        aes(x = vf_assay_molecules, y = variant_percent))+
-  # Three colours required
-  scale_fill_manual(values=c("#000000", "#000000", "#999999"), 
-                    guide = "none") +
+  scale_fill_manual(values=c(
+    # Inconclusive - grey
+    "#999999",
+    # Imbalance - red
+    "#FF0000")) +    
   geom_point(size = 1, 
-             aes(fill = mcmc_prediction),
+             aes(fill = outcome),
              pch=21,
              alpha = 0.8) +
   theme_bw()+
@@ -1763,9 +1803,12 @@ plot_s5f <- ggplot(mcmc_gdna_for_plot %>%
 gdna_results_plot <- ggpubr::ggarrange(plot_s5a, plot_s5d,
                                        plot_s5b, plot_s5e, 
                                        plot_s5c, plot_s5f,
+                                       common.legend = TRUE,
+                                       legend = "bottom",
                                   ncol = 2, nrow = 3, align = "v",
                                   labels = c("A", "D", "B",
                                              "E", "C", "F"))
+
 ggsave(plot = gdna_results_plot,
        filename = paste0("gdna_results_plot_",
               format(Sys.time(), "%Y%m%d_%H%M%S"),
