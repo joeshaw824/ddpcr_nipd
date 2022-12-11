@@ -11,7 +11,7 @@ Each cfDNA test for a pathogenic variant comprises of two ddPCR assays: an assay
 The targets contained within each assay fall into 4 categories. The vf_assay detects the “variant” allele (i.e. “mutant”) and the “reference” allele (i.e. “wild type” or “normal”). The ff_assay detects a “maternal” allele, which is homozygous in the maternal cfDNA and heterozygous in the fetal cfDNA, and a “paternal” allele, which is not present in the maternal cfDNA and is heterozygous/hemizygous in the fetal cfDNA. 
 
 ## Bayesian Analysis
-The Bayesian MCMC analysis section is compiled from R scripts and stan models kindly provided by Tristan Snowsill (University of Exeter).
+The Bayesian MCMC analysis section is compiled from R scripts and stan models kindly provided by Tristan Snowsill (University of Exeter), and run with cmdstan version 2.26.1.
 
 ## Naming Convention
 
@@ -27,7 +27,8 @@ New variables are named in a consistent format: target_category_qualifier.
 
 ## Sample Identification
 
-Cell free DNA samples are named by the research number (R number) assigned in the RAPID Biobank. Parental genomic DNA samples are named by an episode number from either Omni (example: 18G07200) or Epic (example: 19RG-220G0191).
+Cell free DNA samples are named by the research number (R number) assigned in the RAPID (Reliable, Accurate Prenatal, non-Invasive Diagnosis)
+Biobank. Parental genomic DNA samples are named by an episode number from either Omni (example: 18G07200) or Epic (example: 19RG-220G0191).
 
 ## Disclaimer
 This software is intended for research purposes only, and is not validated for clinical use. No guarantee is provided for third party usage.
