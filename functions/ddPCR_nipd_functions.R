@@ -91,7 +91,7 @@ poisson_fraction_min <- function(copies_allele_min, copies_allele_other) {
 # q0 and q1 (autosomal inheritance): 
     # Barrett et al 2012 (PMID: 22451622 - supp info)
 # Delta, gamma values and decision boundaries: 
-    # Lo et al 2007 (PMID: 17664418 - supp info)
+    # Lo et al 2007 (PMID: 17664418 - supp info: "Construction of SPRT Curves")
 
 # These functions all should use inputs in decimal format.
 # I.e. fetal fraction formatted as "0.04" rather than "4%"

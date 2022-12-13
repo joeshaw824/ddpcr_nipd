@@ -1109,7 +1109,8 @@ samples_longer <- all_samples_unblinded %>%
 
 cfdna_plot_title <- paste0("ddPCR analysis for ", nrow(all_samples_unblinded), " cfDNA samples")
 
-cfdna_plot <- ggplot(samples_longer, aes(x = vf_assay_molecules, y = variant_percent)) +
+cfdna_plot <- ggplot(samples_longer, aes(x = vf_assay_molecules, 
+                                         y = variant_percent)) +
   theme_bw() +
   theme(
     panel.grid.major = element_blank(),
@@ -1130,7 +1131,7 @@ cfdna_plot <- ggplot(samples_longer, aes(x = vf_assay_molecules, y = variant_per
                            shape = fetal_genotype2),
              colour = "black") +
   labs(y = "Variant fraction (%)", x = "Genome equivalents (GE)",
-       shape = "Fetal genotype",
+       shape = "Fetal genotype (shape)",
        title = cfdna_plot_title) +
   geom_vline(aes(xintercept = 2000), linetype = "dashed") +
   facet_wrap(~analysis_type2, nrow = 3, ncol = 1) +
