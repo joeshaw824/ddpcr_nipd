@@ -27,8 +27,8 @@ New variables are named in a consistent format: target_category_qualifier.
 
 ## Sample Identification
 
-Cell free DNA samples are named by the research number (R number) assigned in the RAPID (Reliable, Accurate Prenatal, non-Invasive Diagnosis)
-Biobank. Parental genomic DNA samples are named by an episode number from either Omni (example: 18G07200) or Epic (example: 19RG-220G0191).
+Cell free DNA samples are named by the 4 or 5 digit research number (R number) assigned in the RAPID (Reliable, Accurate Prenatal, non-Invasive Diagnosis)
+Biobank (example: 30216). Parental genomic DNA samples are named by an episode number from either the Omni (example: 18G07200) or Epic (example: 19RG-220G0191) laboratory information management systems.
 
 ## Disclaimer
 This software is intended for research purposes only, and is not validated for clinical use. No guarantee is provided for third party usage.
