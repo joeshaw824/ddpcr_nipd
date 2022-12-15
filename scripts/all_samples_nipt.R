@@ -1845,3 +1845,34 @@ ggexport(plotlist = rmd_plots, filename = paste0(
   ".pdf"), width=15, height=8, res=300)
 
 #########################
+# Why are is there a higher inconclusive rate in the bespoke cohort?
+#########################
+
+bespoke_inconclusive_plot <- all_samples_unblinded %>%
+  mutate(combined_sample_id = paste0(r_number, "_", sample_id)) %>%
+  filter(cohort == "bespoke design") %>%
+  ggplot(aes(x = reorder(combined_sample_id, desc(vf_assay_molecules)), y = vf_assay_molecules, 
+             colour = quality_filter))+
+  scale_shape_manual(values = c(15, 17)) +
+  scale_colour_manual(values = c("#CC0000", "#0000FF")) +
+  geom_point(size = 3, aes(shape = inheritance_chromosomal)) +
+  geom_hline(yintercept = 2000, linetype = "dashed") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90),
+        panel.grid = element_blank()) +
+  scale_y_continuous(limits = c(0,20000),
+                      breaks = c(0, 2000, 10000, 15000, 20000)) +
+  labs(x = "", y = "Molecules detected in variant fraction assay",
+       title = "Bespoke design ddPCR NIPD cohort")
+  
+ggsave(plot = bespoke_inconclusive_plot, 
+       filename = paste0("bespoke_inconclusive_plot",
+                         format(Sys.time(), "%Y%m%d_%H%M%S"), ".png"),
+       path = "plots/", 
+       device='png', 
+       dpi=1200,
+       units = "cm",
+       width = 20,
+       height = 15)
+
+#########################
