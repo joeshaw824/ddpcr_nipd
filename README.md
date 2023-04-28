@@ -1,8 +1,10 @@
 # Droplet Digital PCR for Non-Invasive Prenatal Diagnosis
-Analysis scripts for developing non-invasive prenatal diagnosis of maternal variants using ddPCR. Raw ddPCR data is exported as csv files from Quantasoft and stored on the W drive at Great Ormond Street Hospital.
 
-I have aimed to keep a consistent coding style as per tidyverse guidance:
-https://style.tidyverse.org/
+Shaw, J., Scotchman, E., Paternoster, B., Ramos, M., Nesbitt, S., Sheppard, S., Snowsill, T., Chitty, L. S. & Chandler, N. 2023. Non-invasive fetal genotyping for maternal alleles with droplet digital PCR: A comparative study of analytical approaches. Prenat Diagn.\
+PMID: [36760169](https://pubmed.ncbi.nlm.nih.gov/36760169/)\
+DOI: [10.1002/pd.6333](https://doi.org/10.1002/pd.6333)
+
+These are analysis scripts for developing non-invasive prenatal diagnosis for maternal variants using ddPCR. ddPCR data was exported as csv files from Quantasoft (v1.7.4) and stored on the W drive at Great Ormond Street Hospital.
 
 ## Testing Structure
 
